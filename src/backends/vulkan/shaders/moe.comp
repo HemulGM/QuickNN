@@ -1,0 +1,100 @@
+#version 450
+// MoE routing and expert dispatch are independent of image/dense tensor kernels.
+layout(local_size_x=256) in;
+layout(set=0,binding=0,std430) readonly buffer A { uint a[]; };
+layout(set=0,binding=1,std430) readonly buffer B { uint b[]; };
+layout(set=0,binding=2,std430) readonly buffer C { uint c[]; };
+layout(set=0,binding=3,std430) buffer D { uint d[]; };
+layout(push_constant) uniform Params { uint op,n,unused0,unused1,unused2,unused3; uint v0,v1,v2,v3,v4,v5,v6,v7,v8,v9; } p;
+shared float int4Input[256];
+shared float int4Weights[1024];
+shared float reduction[256];
+shared float rotation[256];
+shared uint candidates[256];
+shared uint topIds[64];
+shared float topValues[64];
+float av(uint i){return uintBitsToFloat(a[i]);}
+float cv(uint i){return uintBitsToFloat(c[i]);}
+float dv(uint i){return uintBitsToFloat(d[i]);}
+void put(uint i,float x){d[i]=floatBitsToUint(x);}
+float sumGroup(float x){uint lane=gl_LocalInvocationID.x;reduction[lane]=x;barrier();for(uint s=128u;s>0u;s>>=1u){if(lane<s)reduction[lane]+=reduction[lane+s];barrier();}float r=reduction[0];barrier();return r;}
+void main(){
+ uint id=gl_GlobalInvocationID.x,lane=gl_LocalInvocationID.x,row=gl_WorkGroupID.x;
+ // Qwen3 MoE router: full FP32 softmax, exact top-k and optional
+ // renormalization. IDs precede a separate probability plane; only IDs need a host readback.
+ if(p.op==52u){
+  uint experts=p.v1,k=p.v2;float score=lane<experts?av(row*experts+lane):-3.402823466e38;
+  reduction[lane]=score;barrier();
+  for(uint stride=128u;stride>0u;stride>>=1u){if(lane<stride)reduction[lane]=max(reduction[lane],reduction[lane+stride]);barrier();}
+  float maximum=reduction[0];barrier();
+  float probability=lane<experts?exp(score-maximum):0.0;
+  float denominator=sumGroup(probability);
+  rotation[lane]=lane<experts?probability/denominator:-1.0;barrier();
+  for(uint rank=0u;rank<k;++rank){
+   reduction[lane]=rotation[lane];candidates[lane]=lane<experts?lane:0xffffffffu;barrier();
+   for(uint stride=128u;stride>0u;stride>>=1u){
+    if(lane<stride){float other=reduction[lane+stride];uint otherId=candidates[lane+stride];
+     if(other>reduction[lane] || (other==reduction[lane] && otherId<candidates[lane])){reduction[lane]=other;candidates[lane]=otherId;}
+    }barrier();
+   }
+   if(lane==0u){topIds[rank]=candidates[0];topValues[rank]=reduction[0];rotation[candidates[0]]=-1.0;}barrier();
+  }
+  float total=0.0;for(uint rank=0u;rank<k;++rank)total+=topValues[rank];
+  if(lane<k){uint target=row*k+lane;d[target]=topIds[lane];put(p.v0*k+target,p.v3!=0u?topValues[lane]/total:topValues[lane]);}
+  return;
+ }
+ // INT4 group-32 matvec: eight independent warp-sized row reductions.
+ // Scales and nibbles are decoded in registers; no expanded weight buffer exists.
+ if(p.op==55u){
+  uint outputRow=row*8u+lane/32u,localLane=lane%32u;
+  vec4 acc0=vec4(0.0),acc1=vec4(0.0);
+  if(outputRow<p.v1){
+   for(uint j=localLane*8u;j<p.v0;j+=256u){
+    uint base=outputRow*p.v3+(j/32u)*5u;
+    float scale=uintBitsToFloat(b[base]);uint packed=b[base+1u+(j%32u)/8u];
+    vec4 q0=vec4(int(packed&15u)-8,int((packed>>4u)&15u)-8,int((packed>>8u)&15u)-8,int((packed>>12u)&15u)-8);
+    vec4 q1=vec4(int((packed>>16u)&15u)-8,int((packed>>20u)&15u)-8,int((packed>>24u)&15u)-8,int(packed>>28u)-8);
+    vec4 x0=vec4(av(j),j+1u<p.v0?av(j+1u):0.0,j+2u<p.v0?av(j+2u):0.0,j+3u<p.v0?av(j+3u):0.0);
+    vec4 x1=vec4(j+4u<p.v0?av(j+4u):0.0,j+5u<p.v0?av(j+5u):0.0,j+6u<p.v0?av(j+6u):0.0,j+7u<p.v0?av(j+7u):0.0);
+    acc0+=x0*(q0*scale);acc1+=x1*(q1*scale);
+   }
+  }
+  vec4 acc=acc0+acc1;reduction[lane]=(acc.x+acc.y)+(acc.z+acc.w);barrier();
+  for(uint stride=16u;stride>0u;stride>>=1u){if(localLane<stride)reduction[lane]+=reduction[lane+stride];barrier();}
+  if(localLane==0u && outputRow<p.v1)put(outputRow,reduction[lane]);
+  return;
+ }
+ // Multi-row expert prefill uses an 8x32 output tile. Dequantization is
+ // fused with a 32-wide shared-memory tile and never materializes a matrix.
+ if(p.op==56u){
+  uint tiles=(p.v1+31u)/32u,tileRow=row/tiles,tileOut=row%tiles;
+  uint r=tileRow*8u+lane/32u,o=tileOut*32u+lane%32u;
+  float value=0.0;
+  for(uint baseK=0u;baseK<p.v0;baseK+=32u){
+   uint ir=tileRow*8u+lane/32u,k=baseK+lane%32u;
+   int4Input[lane]=(ir<p.v2 && k<p.v0)?av(ir*p.v0+k):0.0;
+   for(uint t=lane;t<1024u;t+=256u){
+    uint wo=tileOut*32u+t/32u,wk=baseK+t%32u;float w=0.0;
+    if(wo<p.v1 && wk<p.v0){
+     uint address=wo*p.v3+(baseK/32u)*5u;
+     uint packed=b[address+1u+(t%32u)/8u];
+     w=float(int((packed>>((t%8u)*4u))&15u)-8)*uintBitsToFloat(b[address]);
+    }
+    int4Weights[t]=w;
+   }
+   barrier();
+   for(uint j=0u;j<32u;++j)value+=int4Input[(lane/32u)*32u+j]*int4Weights[(lane%32u)*32u+j];
+   barrier();
+  }
+  if(r<p.v2 && o<p.v1)put(r*p.v1+o,value);
+  return;
+ }
+
+
+ if(id>=p.n)return;
+ // Packed dispatch indices are CPU control metadata. Activations and
+ // routing probabilities stay on the device throughout expert execution.
+ if(p.op==53u){uint r=id/p.v0,j=id%p.v0,route=b[p.v2+r];put(id,av((route/p.v1)*p.v0+j));return;}
+ if(p.op==54u){uint r=id/p.v0,j=id%p.v0,route=p.v4!=0u?p.v3:b[p.v2+r],target=(route/p.v1)*p.v0+j;
+  put(target,dv(target)+av(id)*cv(p.v5+route));return;}
+}

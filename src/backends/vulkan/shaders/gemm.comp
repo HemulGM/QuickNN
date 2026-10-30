@@ -1,0 +1,82 @@
+#version 450
+
+// 64 x 64 output tile, 4 x 4 register tile per invocation, 32-wide K tile.
+// Baseline Vulkan 1.0: no FP16/BF16 device features or external math library.
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+layout(set = 0, binding = 0, std430) readonly buffer ABuffer { float a[]; };
+layout(set = 0, binding = 1, std430) readonly buffer BBuffer { uint b[]; };
+layout(set = 0, binding = 2, std430) buffer CBuffer { float c[]; };
+layout(push_constant) uniform Params {
+    uint m; uint n; uint k; float alpha;
+    uint offsetA; uint lda; uint offsetB; uint ldb;
+    float beta; uint offsetC; uint ldc; uint flags;
+} p;
+shared float tileA[64][32];
+shared float tileB[32][64];
+
+float readA(uint row, uint col) {
+    if (row >= p.m || col >= p.k) return 0.0;
+    uint index = p.offsetA + (((p.flags & 1u) != 0u) ? col * p.lda + row : row * p.lda + col);
+    return a[index];
+}
+float readB(uint row, uint col) {
+    if (row >= p.k || col >= p.n) return 0.0;
+    uint index = p.offsetB + (((p.flags & 2u) != 0u) ? col * p.ldb + row : row * p.ldb + col);
+    if ((p.flags & 8u) != 0u) {
+        uint word = b[index >> 2u];
+        int value = int((word >> ((index & 3u) * 8u)) & 255u);
+        if (value >= 128) value -= 256;
+        uint scaleOffset = (p.n * p.k + 3u) >> 2u;
+        return float(value) * uintBitsToFloat(b[scaleOffset + col]);
+    }
+    if ((p.flags & 4u) != 0u) {
+        uint word = b[index >> 1u];
+        return uintBitsToFloat(((word >> ((index & 1u) * 16u)) & 65535u) << 16u);
+    }
+    return uintBitsToFloat(b[index]);
+}
+void storeRow(uint row, uint col, vec4 value) {
+    if (row >= p.m) return;
+    for (uint j = 0u; j < 4u; ++j) {
+        if (col + j < p.n) {
+            uint index = p.offsetC + row * p.ldc + col + j;
+            // beta == 0 must never read uninitialized/NaN C.
+            float result = p.alpha * value[j];
+            if (p.beta != 0.0) result += p.beta * c[index];
+            c[index] = result;
+        }
+    }
+}
+void main() {
+    uint tx = gl_LocalInvocationID.x;
+    uint ty = gl_LocalInvocationID.y;
+    uint tid = ty * 16u + tx;
+    uint rowBase = gl_WorkGroupID.y * 64u;
+    uint colBase = gl_WorkGroupID.x * 64u;
+    vec4 sum0 = vec4(0.0), sum1 = vec4(0.0), sum2 = vec4(0.0), sum3 = vec4(0.0);
+    for (uint baseK = 0u; baseK < p.k; baseK += 32u) {
+        for (uint i = tid; i < 2048u; i += 256u) {
+            // Load consecutive elements in the physical source layout.
+            uint ar = ((p.flags & 1u) != 0u) ? i % 64u : i / 32u;
+            uint ak = ((p.flags & 1u) != 0u) ? i / 64u : i % 32u;
+            tileA[ar][ak] = readA(rowBase + ar, baseK + ak);
+            uint bk = ((p.flags & 2u) != 0u) ? i % 32u : i / 64u;
+            uint bc = ((p.flags & 2u) != 0u) ? i / 32u : i % 64u;
+            tileB[bk][bc] = readB(baseK + bk, colBase + bc);
+        }
+        barrier();
+        for (uint kk = 0u; kk < 32u; ++kk) {
+            vec4 bv = vec4(tileB[kk][tx * 4u], tileB[kk][tx * 4u + 1u],
+                           tileB[kk][tx * 4u + 2u], tileB[kk][tx * 4u + 3u]);
+            sum0 += tileA[ty * 4u][kk] * bv;
+            sum1 += tileA[ty * 4u + 1u][kk] * bv;
+            sum2 += tileA[ty * 4u + 2u][kk] * bv;
+            sum3 += tileA[ty * 4u + 3u][kk] * bv;
+        }
+        barrier();
+    }
+    storeRow(rowBase + ty * 4u, colBase + tx * 4u, sum0);
+    storeRow(rowBase + ty * 4u + 1u, colBase + tx * 4u, sum1);
+    storeRow(rowBase + ty * 4u + 2u, colBase + tx * 4u, sum2);
+    storeRow(rowBase + ty * 4u + 3u, colBase + tx * 4u, sum3);
+}

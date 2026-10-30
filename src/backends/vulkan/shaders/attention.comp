@@ -1,0 +1,77 @@
+#version 450
+// One query/head per workgroup. K is transposed for coalesced score loads;
+// V keeps channels contiguous for coalesced weighted-value loads.
+layout(local_size_x=128, local_size_y=1, local_size_z=1) in;
+layout(set=0,binding=0,std430) readonly buffer QBuffer { float q[]; };
+layout(set=0,binding=1,std430) readonly buffer KVBuffer { uint kv[]; };
+layout(set=0,binding=2,std430) writeonly buffer OBuffer { float o[]; };
+layout(push_constant) uniform Params { uint rows; uint heads; uint kvHeads; uint dim; uint causalRows; uint maskMode; } p;
+shared float scores[6144];
+shared float query[1152];
+shared float reduce[128];
+void main() {
+    uint lane=gl_LocalInvocationID.x, row=gl_WorkGroupID.x, head=gl_WorkGroupID.y;
+    uint kh=head/(p.heads/p.kvHeads);
+    for(uint d=lane;d<p.dim;d+=128u) query[d]=q[(row*p.heads+head)*p.dim+d];
+    barrier();
+
+    if(p.rows>6144u || p.maskMode==2u){
+        float sums[9];for(uint i=0u;i<9u;++i)sums[i]=0.0;
+        float runningMax=-3.402823466e38,runningSum=0.0;
+        uint keyEnd=row<p.causalRows?row+1u:p.rows;
+        if(p.maskMode==2u)keyEnd=p.causalRows+row+1u;
+        else if(p.maskMode!=0u)keyEnd=kv[2u*p.rows*p.kvHeads*p.dim+row];
+        for(uint base=0u;base<keyEnd;base+=128u){uint j=base+lane;float score=-3.402823466e38;
+            if(j<keyEnd){score=0.0;for(uint d=0u;d<p.dim;++d)score+=query[d]*uintBitsToFloat(kv[(kh*p.dim+d)*p.rows+j]);score*=inversesqrt(float(p.dim));}
+            scores[lane]=score;reduce[lane]=score;barrier();
+            for(uint stride=64u;stride>0u;stride>>=1u){if(lane<stride)reduce[lane]=max(reduce[lane],reduce[lane+stride]);barrier();}
+            float nextMax=max(runningMax,reduce[0]),oldScale=exp(runningMax-nextMax);barrier();
+            float weight=j<keyEnd?exp(scores[lane]-nextMax):0.0;scores[lane]=weight;reduce[lane]=weight;barrier();
+            for(uint stride=64u;stride>0u;stride>>=1u){if(lane<stride)reduce[lane]+=reduce[lane+stride];barrier();}
+            runningSum=runningSum*oldScale+reduce[0];
+            for(uint d=lane;d<p.dim;d+=128u){float value=0.0;for(uint k=0u;k<min(128u,keyEnd-base);++k)value+=scores[k]*uintBitsToFloat(kv[p.rows*p.kvHeads*p.dim+(kh*p.rows+base+k)*p.dim+d]);sums[d/128u]=sums[d/128u]*oldScale+value;}
+            runningMax=nextMax;barrier();
+        }
+        for(uint d=lane;d<p.dim;d+=128u)o[(row*p.heads+head)*p.dim+d]=sums[d/128u]/runningSum;
+        return;
+    }
+
+    uint keyEnd = row < p.causalRows ? row + 1u : p.rows;
+    if (p.maskMode != 0u) keyEnd = kv[2u*p.rows*p.kvHeads*p.dim+row];
+    float maximum=-3.402823466e38;
+    for(uint j=lane;j<p.rows;j+=128u) {
+        float score=-3.402823466e38;
+        if(j<keyEnd) {
+            score=0.0;
+            for(uint d=0u;d<p.dim;++d) score+=query[d]*uintBitsToFloat(kv[(kh*p.dim+d)*p.rows+j]);
+            score*=inversesqrt(float(p.dim));
+        }
+        scores[j]=score;maximum=max(maximum,score);
+    }
+    reduce[lane]=maximum;
+    barrier();
+    for(uint stride=64u;stride>0u;stride>>=1u) {
+        if(lane<stride) reduce[lane]=max(reduce[lane],reduce[lane+stride]);
+        barrier();
+    }
+    maximum=reduce[0];
+    float denominator=0.0;
+    for(uint j=lane;j<p.rows;j+=128u) {
+        float value=exp(scores[j]-maximum);scores[j]=value;denominator+=value;
+    }
+    // All invocations must have read reduce[0] before it is reused for the sum.
+    barrier();
+    reduce[lane]=denominator;
+    barrier();
+    for(uint stride=64u;stride>0u;stride>>=1u) {
+        if(lane<stride) reduce[lane]+=reduce[lane+stride];
+        barrier();
+    }
+    denominator=reduce[0];
+    for(uint d=lane;d<p.dim;d+=128u) {
+        float value=0.0;
+        uint vBase=p.rows*p.kvHeads*p.dim;
+        for(uint j=0u;j<p.rows;++j) value+=scores[j]*uintBitsToFloat(kv[vBase+(kh*p.rows+j)*p.dim+d]);
+        o[(row*p.heads+head)*p.dim+d]=value/denominator;
+    }
+}

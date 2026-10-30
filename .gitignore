@@ -1,0 +1,77 @@
+# Object files
+*.o
+
+# Compiled binaries
+
+# Compiled Units
+*.dcu
+*.identcache
+
+# Executable files
+*.exe
+*.dll
+
+# Model weights (large files)
+flux-klein-*/
+zimage-*/
+
+# Misc directories (tests, images, utilities, markdown files)
+misc/
+documents/
+backup/
+Win64/
+Win32/
+__*/
+
+# IDE and editor files
+.vscode/
+*.swp
+*.swo
+*~
+
+# Debug file
+*.dbg
+
+.DS_Store
+
+# Build artifacts
+*.a
+*.so
+*.dylib
+
+# Locally generated Qwen images and run metadata
+/output/
+
+# Machine-local IDE sessions and diagnostics
+*.dproj.local
+*.delphilsp.json
+*.dsk
+*.dsv
+*.~dsk
+*.rsm
+*.drc
+*.map
+*.log
+__pycache__/
+*.pyc
+
+# MSBuild-generated console resource stubs
+/Examples/Delphi/QwenImage21.res
+/tests/QuickNNTests.res
+/tests/Qwen21Checks.res
+/tools/model-probe/ModelProbe.res
+*.groupproj.local
+
+/Examples/ConsoleDemo/QuickNNDemo.res
+
+/Examples/LLMChat/QuickNNChat.res
+
+/tools/llm-benchmark/LLMBenchmark.res
+/tools/llm-benchmark/MoEBenchmark.res
+/tests/LLMUIChatChecks.res
+/assets/*
+/docs/*
+*.ps1
+*.sh
+/tests/*
+/tools/*

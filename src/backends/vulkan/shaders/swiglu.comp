@@ -1,0 +1,15 @@
+#version 450
+layout(local_size_x = 128) in;
+layout(set=0,binding=0,std430) readonly buffer Gate { float gate[]; };
+layout(set=0,binding=1,std430) readonly buffer Up { float up[]; };
+layout(set=0,binding=2,std430) buffer Output { float result[]; };
+layout(push_constant) uniform Params { uint count; } p;
+void main() {
+    uint index = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * gl_NumWorkGroups.x * 128u;
+    if (index >= p.count) return;
+    float value = gate[index];
+    // Stable SiLU for both signs, including large negative inputs.
+    float e = exp(-abs(value));
+    float silu = value >= 0.0 ? value / (1.0 + e) : value * e / (1.0 + e);
+    result[index] = silu * up[index];
+}

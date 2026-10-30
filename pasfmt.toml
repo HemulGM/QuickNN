@@ -1,0 +1,8 @@
+# Source formatting only; pasfmt is not an application dependency.
+wrap_column = 120
+begin_style = "always_wrap"
+encoding = "UTF-8"
+line_ending = "crlf"
+use_tabs = false
+tab_width = 2
+format_multiline_strings = false

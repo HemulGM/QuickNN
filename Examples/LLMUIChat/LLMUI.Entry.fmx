@@ -1,0 +1,143 @@
+object FrameEntry: TFrameEntry
+  Size.Width = 260.000000000000000000
+  Size.Height = 70.000000000000000000
+  Size.PlatformDefault = False
+  object ButtonSelect: TButton
+    Align = Client
+    Size.Width = 260.000000000000000000
+    Size.Height = 70.000000000000000000
+    Size.PlatformDefault = False
+    StyleLookup = 'chatrowbutton'
+    OnClick = ButtonSelectClick
+    object LayoutEntry: TLayout
+      Align = Client
+      Padding.Left = 14.000000000000000000
+      Padding.Top = 12.000000000000000000
+      Padding.Right = 12.000000000000000000
+      Padding.Bottom = 12.000000000000000000
+      Size.Width = 260.000000000000000000
+      Size.Height = 70.000000000000000000
+      Size.PlatformDefault = False
+      object LayoutEntryAvatar: TLayout
+        Align = Left
+        Margins.Right = 12.000000000000000000
+        Position.X = 14.000000000000000000
+        Position.Y = 12.000000000000000000
+        Size.Width = 36.000000000000000000
+        Size.Height = 46.000000000000000000
+        Size.PlatformDefault = False
+        object CircleEntryAvatar: TCircle
+          Align = Center
+          Fill.Color = xFF24312F
+          HitTest = False
+          Size.Width = 36.000000000000000000
+          Size.Height = 36.000000000000000000
+          Size.PlatformDefault = False
+          Stroke.Kind = None
+          object PathEntryIcon: TPath
+            Align = Center
+            Data.Path = {
+              55000000000000000000404100000040020000001A2F8C410000004002000000
+              0000B0419643CF40020000000000B04100004041020000000000B0411A2F8C41
+              020000001A2F8C410000B04102000000000040410000B04102000000BE762641
+              8304B041020000000A4B0D4175F7AC41020000004937ED40A01AA74101000000
+              63916540D7A3AF4102000000DFC049403C9CB0410200000012EA2B40ADA1AF41
+              02000000B67E17404214AD410200000059130340D786AA4102000000B77DF63F
+              FCCBA6410200000006020340EC51A34101000000225C47406BBC844102000000
+              AC5718405CC4724102000000E8BBFF3F319159410200000000000040FFFF3F41
+              02000000000000409643CF40020000009643CF40000000400200000000004041
+              000000400000000000004041000060400200000039EE1B410000604002000000
+              46ADF24036A88C4002000000BEAABF40BEAABF400200000035A88C4047ADF240
+              02000000FFFF5F403AEE1B410200000000006040010040410200000000006040
+              20855741020000003BDF7740C6206E4102000000045692409418814101000000
+              D12297408A41834101000000A01A6740C520A34101000000D122F340653B9A41
+              01000000A8C6FB40986E9B4102000000E59E2F41D541A941020000004B4F6D41
+              DE23A641020000009F408C41949E93410200000099D9A1414A19814102000000
+              5CA2A941402E46410200000042C39F412AD010410200000028E4954127E4B640
+              0200000001E77841300B60400200000000004041000060400000000000000C41
+              0000504101000000CFF753410000504102000000CC465A417E00504102000000
+              A5815F4162E3544102000000B9EF5F419D2E5B4102000000CD5D6041D8796141
+              0200000084D95B4132076741020000009A99554154E3674101000000CFF75341
+              000068410100000000000C41000068410200000003B1054182FF674102000000
+              2A7600419E1C6341020000001608004163D15C41020000000434FF4027865641
+              020000004B1E0441CEF8504102000000355E0A41AC1C50410300000000000C41
+              0000504101000000CFF75341000050410300000000000C410000504100000000
+              00000C4100001841010000007B1474410000184102000000B0627A41A2021841
+              02000000859B7F411FE61C41020000003C048041A730234102000000B63A8041
+              2F7B29410200000053F17B4151072F41020000002DB2754154E32F4101000000
+              7B147441000030410100000000000C41000030410200000003B1054182FF2F41
+              020000002A7600419E1C2B41020000001608004163D12441020000000434FF40
+              27861E41020000004B1E0441CEF8184102000000355E0A41AC1C184103000000
+              00000C4100001841010000007B147441000018410300000000000C4100001841}
+            Fill.Color = xFFC5D5CF
+            HitTest = False
+            Size.Width = 19.000000000000000000
+            Size.Height = 19.000000000000000000
+            Size.PlatformDefault = False
+            Stroke.Kind = None
+            WrapMode = Fit
+          end
+        end
+      end
+      object LayoutEntryText: TLayout
+        Align = Client
+        Size.Width = 186.000000000000000000
+        Size.Height = 46.000000000000000000
+        Size.PlatformDefault = False
+        object LayoutEntryHeadline: TLayout
+          Align = Top
+          Size.Width = 186.000000000000000000
+          Size.Height = 24.000000000000000000
+          Size.PlatformDefault = False
+          object LabelBadge: TLabel
+            Align = Right
+            StyledSettings = []
+            Position.X = 144.000000000000000000
+            Size.Width = 42.000000000000000000
+            Size.Height = 24.000000000000000000
+            Size.PlatformDefault = False
+            TextSettings.Font.Size = 10.000000000000000000
+            TextSettings.FontColor = xFF7DAA9B
+            TextSettings.HorzAlign = Trailing
+            TextSettings.WordWrap = False
+          end
+          object LabelEntryTitle: TLabel
+            Align = Client
+            StyledSettings = []
+            Margins.Right = 6.000000000000000000
+            Size.Width = 138.000000000000000000
+            Size.Height = 24.000000000000000000
+            Size.PlatformDefault = False
+            TextSettings.Font.Size = 14.000000000000000000
+            TextSettings.Font.StyleExt = {00070000000000000004000000}
+            TextSettings.FontColor = xFFE5EDEC
+            TextSettings.WordWrap = False
+            Text = #1063#1072#1090
+          end
+        end
+        object LabelEntrySubtitle: TLabel
+          Align = Top
+          StyledSettings = []
+          Position.Y = 24.000000000000000000
+          Size.Width = 186.000000000000000000
+          Size.Height = 22.000000000000000000
+          Size.PlatformDefault = False
+          TextSettings.FontColor = xFF93A8A4
+          TextSettings.WordWrap = False
+        end
+      end
+    end
+    object RectangleSelectedMarker: TRectangle
+      Align = Left
+      Fill.Color = xFF55D0A8
+      HitTest = False
+      Margins.Top = 12.000000000000000000
+      Margins.Bottom = 12.000000000000000000
+      Size.Width = 3.000000000000000000
+      Size.Height = 50.000000000000000000
+      Size.PlatformDefault = False
+      Stroke.Kind = None
+      Visible = False
+    end
+  end
+end

@@ -1,0 +1,276 @@
+#version 450
+// Pure Vulkan 1.0 tensor operations. Weights retain their native BF16 / INT8
+// storage. Workgroups own independent reductions/ConvRot groups.
+layout(local_size_x=256) in;
+layout(set=0,binding=0,std430) readonly buffer A { uint a[]; };
+layout(set=0,binding=1,std430) readonly buffer B { uint b[]; };
+layout(set=0,binding=2,std430) readonly buffer C { uint c[]; };
+layout(set=0,binding=3,std430) buffer D { uint d[]; };
+layout(push_constant) uniform Params { uint op,n,unused0,unused1,unused2,unused3; uint v0,v1,v2,v3,v4,v5,v6,v7,v8,v9; } p;
+shared float reduction[256];
+shared float rotation[1024];
+shared uint candidates[512];
+shared uint topIds[64];
+shared float topValues[64];
+float av(uint i){return uintBitsToFloat(a[i]);}
+float bv(uint i){if(p.v8!=0u)return uintBitsToFloat(((b[i>>1u]>>((i&1u)*16u))&65535u)<<16u);return uintBitsToFloat(b[i]);}
+float cv(uint i){if(p.v9!=0u)return uintBitsToFloat(((c[i>>1u]>>((i&1u)*16u))&65535u)<<16u);return uintBitsToFloat(c[i]);}
+float dv(uint i){return uintBitsToFloat(d[i]);}
+void put(uint i,float x){d[i]=floatBitsToUint(x);}
+float silu(float x){return x>=20.0?x:(x<=-20.0?0.0:x/(1.0+exp(-x)));}
+float gelu(float x){return 0.5*x*(1.0+tanh(0.7978845608028654*(x+0.044715*x*x*x)));}
+float geluExact(float x){float z=abs(x)*0.7071067811865475,t=1.0/(1.0+0.3275911*z);float e=1.0-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-0.284496736)*t+0.254829592)*t*exp(-z*z);return 0.5*x*(1.0+(x<0.0?-e:e));}
+float sumGroup(float x){uint lane=gl_LocalInvocationID.x;reduction[lane]=x;barrier();for(uint s=128u;s>0u;s>>=1u){if(lane<s)reduction[lane]+=reduction[lane+s];barrier();}float r=reduction[0];barrier();return r;}
+void main(){
+ uint id=gl_GlobalInvocationID.x,lane=gl_LocalInvocationID.x,row=gl_WorkGroupID.x;
+ if(p.op==1u){
+  uint size=p.v0,base=row*size;
+  for(uint j=lane;j<size;j+=256u)rotation[j]=av(base+j);barrier();
+  for(uint stride=1u;stride<size;stride*=4u){
+   for(uint t=lane;t<size/4u;t+=256u){uint j=(t/stride)*(4u*stride)+t%stride;
+    precise float x0=rotation[j],x1=rotation[j+stride],x2=rotation[j+2u*stride],x3=rotation[j+3u*stride];
+    precise float r0=x0+x1+x2-x3,r1=x0+x1-x2+x3,r2=x0-x1+x2+x3,r3=-x0+x1+x2+x3;
+    rotation[j]=r0;rotation[j+stride]=r1;rotation[j+2u*stride]=r2;rotation[j+3u*stride]=r3;
+   }barrier();
+  }
+  for(uint j=lane;j<size;j+=256u)put(base+j,rotation[j]*inversesqrt(float(size)));return;
+ }
+ if(p.op==2u||p.op==5u){
+  uint dim=p.v1;bool chw=(p.v2&2u)!=0u;float mean=0.0,part=0.0;
+  if((p.v2&1u)!=0u||p.op==5u){for(uint j=lane;j<dim;j+=256u)part+=av(p.v5+(chw?j*p.v0+row:row*dim+j));mean=sumGroup(part)/float(dim);}
+  part=0.0;for(uint j=lane;j<dim;j+=256u){float x=av(p.v5+(chw?j*p.v0+row:row*dim+j))-mean;part+=x*x;}
+  float squares=sumGroup(part);float inv=chw?sqrt(float(dim))/max(sqrt(squares),1e-12):inversesqrt(squares/float(dim)+(p.v7==0u?1e-6:uintBitsToFloat(p.v7)));
+  for(uint j=lane;j<dim;j+=256u){uint i=chw?j*p.v0+row:row*dim+j;float scale,beta=0.0;
+   if(p.op==5u)scale=1.0+bv(p.v4+(row<p.v3?4u*dim:0u)+j);
+   else{scale=(p.v6!=0u?1.0:bv(j))+((p.v2&4u)!=0u?1.0:0.0);if((p.v2&1u)!=0u&&(p.v2&8u)==0u)beta=cv(j);}
+   put(i,(av(p.v5+i)-mean)*inv*scale+beta);
+  }return;
+ }
+
+ // GroupNorm reduces contiguous CHW groups, then applies per-channel affine weights.
+ if(p.op==30u){uint size=p.n/p.v0,base=row*size;float part=0.0;
+  for(uint j=lane;j<size;j+=256u)part+=av(base+j);
+  float mean=sumGroup(part)/float(size);part=0.0;
+  for(uint j=lane;j<size;j+=256u){float x=av(base+j)-mean;part+=x*x;}
+  float inv=inversesqrt(sumGroup(part)/float(size)+uintBitsToFloat(p.v3));
+  for(uint j=lane;j<size;j+=256u){uint i=base+j,ch=i/p.v2;put(i,(av(i)-mean)*inv*bv(ch)+cv(ch));}return;
+ }
+
+ // Eight 32-lane rows per group: read four BF16 weights from two packed
+ // words per lane. Independent accumulators hide load/FMA latency; a row
+ // remains contiguous and native BF16 storage is never expanded in VRAM.
+ if(p.op==49u){
+  uint outputRow=row*8u+lane/32u,localLane=lane%32u;
+  vec4 value=vec4(0.0);
+  if(outputRow<p.v1){
+   uint base=outputRow*(p.v0/2u);
+   for(uint j=localLane*4u;j<p.v0;j+=128u){
+    uint lo=b[base+j/2u],hi=b[base+j/2u+1u];
+    vec4 weight=uintBitsToFloat(uvec4(lo<<16u,lo&0xffff0000u,hi<<16u,hi&0xffff0000u));
+    value+=vec4(av(j),av(j+1u),av(j+2u),av(j+3u))*weight;
+   }
+  }
+  reduction[lane]=(value.x+value.y)+(value.z+value.w);barrier();
+  for(uint stride=16u;stride>0u;stride>>=1u){
+   if(localLane<stride)reduction[lane]+=reduction[lane+stride];barrier();
+  }
+  if(localLane==0u && outputRow<p.v1)put(outputRow,reduction[lane]);
+  return;
+ }
+ // Four independent 64-lane dot products per group. Native BF16 stays packed.
+ if(p.op==47u){
+  uint outputRow=row*4u+lane/64u, localLane=lane%64u;
+  float value=0.0;
+  if(outputRow<p.v1)
+   for(uint j=localLane;j<p.v0;j+=64u)value+=av(j)*bv(outputRow*p.v0+j);
+  reduction[lane]=value;barrier();
+  for(uint stride=32u;stride>0u;stride>>=1u){
+   if(localLane<stride)reduction[lane]+=reduction[lane+stride];barrier();
+  }
+  if(localLane==0u && outputRow<p.v1)put(outputRow,reduction[lane]);
+  return;
+ }
+ // Exact local top-k over independent 512-token tiles. A token outside
+ // its tile's top-k cannot be in the global top-k. Keep score and original ID.
+ if(p.op==50u){
+  uint k=p.v1;
+  for(uint i=lane;i<512u;i+=256u){
+   uint token=row*512u+i;float score=-3.402823466e38;uint tokenId=0xffffffffu;
+   if(token<p.v0 && b[token]!=0xffffffffu){
+    score=av(token);tokenId=token;
+    if(b[token]!=0u){float penalty=uintBitsToFloat(p.v4);score=score<0.0?score*penalty:score/penalty;}
+   }
+   rotation[i]=score;candidates[i]=tokenId;
+  }barrier();
+  if(k==1u){
+   for(uint stride=256u;stride>0u;stride>>=1u){
+    if(lane<stride){float other=rotation[lane+stride];uint otherId=candidates[lane+stride];
+     if(other>rotation[lane] || (other==rotation[lane] && otherId<candidates[lane])){
+      rotation[lane]=other;candidates[lane]=otherId;
+     }
+    }barrier();
+   }
+  }else{
+   for(uint width=2u;width<=512u;width<<=1u)
+    for(uint stride=width>>1u;stride>0u;stride>>=1u){
+     for(uint i=lane;i<512u;i+=256u){uint other=i^stride;
+      if(other>i){
+       float x=rotation[i],y=rotation[other];uint xi=candidates[i],yi=candidates[other];
+       bool betterX=x>y || (x==y && xi<yi),betterY=y>x || (y==x && yi<xi);
+       if(((i&width)==0u)?betterY:betterX){rotation[i]=y;rotation[other]=x;candidates[i]=yi;candidates[other]=xi;}
+      }
+     }barrier();
+    }
+  }
+  if(lane<k){uint target=2u*(row*k+lane);d[target]=floatBitsToUint(rotation[lane]);d[target+1u]=candidates[lane];}
+  return;
+ }
+ // Top-k, then nucleus sampling runs entirely on the device. Only the chosen ID
+ // crosses to the host. K<=64 bounds shared memory and work; K=1 is greedy.
+ if(p.op==46u || p.op==51u){
+  uint vocab=p.v0,k=min(vocab,clamp(p.v1,1u,64u));
+  float temperature=uintBitsToFloat(p.v2),nucleus=uintBitsToFloat(p.v3);
+  float penalty=uintBitsToFloat(p.v4);
+  if(temperature<=0.0)k=1u;
+  for(uint rank=0u;rank<k;++rank){
+   float best=-3.402823466e38;uint bestId=0xffffffffu;
+   for(uint item=lane;item<vocab;item+=256u){
+    uint token=p.op==51u?a[2u*item+1u]:item;
+    if(token==0xffffffffu || (p.op==46u && b[token]==0xffffffffu))continue;
+    bool used=false;
+    for(uint j=0u;j<rank;++j)if(topIds[j]==token)used=true;
+    if(used)continue;
+    float score=p.op==51u?av(2u*item):av(token);
+    if(p.op==46u && b[token]!=0u)score=score<0.0?score*penalty:score/penalty;
+    if(score>best || (score==best && token<bestId)){best=score;bestId=token;}
+   }
+   reduction[lane]=best;candidates[lane]=bestId;barrier();
+   for(uint stride=128u;stride>0u;stride>>=1u){
+    if(lane<stride){float other=reduction[lane+stride];uint otherId=candidates[lane+stride];
+     if(other>reduction[lane] || (other==reduction[lane] && otherId<candidates[lane])){
+      reduction[lane]=other;candidates[lane]=otherId;
+     }
+    }barrier();
+   }
+   if(lane==0u){topIds[rank]=candidates[0];topValues[rank]=reduction[0];}barrier();
+  }
+  if(lane==0u){
+   uint selected=topIds[0];
+   if(temperature>0.0 && k>1u){
+    float total=0.0,maximum=topValues[0];
+    for(uint j=0u;j<k;++j){topValues[j]=exp((topValues[j]-maximum)/temperature);total+=topValues[j];}
+    float retained=0.0;uint count=0u;
+    do{retained+=topValues[count];++count;}while(count<k && retained<nucleus*total);
+    float target=uintBitsToFloat(p.v5)*retained,accumulated=0.0;
+    selected=topIds[count-1u];
+    for(uint j=0u;j<count;++j){accumulated+=topValues[j];if(target<accumulated){selected=topIds[j];break;}}
+   }
+   d[0]=selected;
+  }
+  return;
+ }
+ if(id>=p.n)return;
+ if(p.op==0u){put(id,uintBitsToFloat(p.v0));return;}
+ if(p.op==3u){float x=av(id);put(id,p.v0==0u?silu(x):(p.v0==1u?gelu(x):geluExact(x)));return;}
+ if(p.op==4u){uint r=id/p.v0,j=id%p.v0;put(p.v3+r*p.v1+j,dv(p.v3+r*p.v1+j)+uintBitsToFloat(p.v2)*av(p.v4+id));return;}
+ if(p.op==6u){uint dim=p.v0,r=id/dim,j=id%dim;put(id,dv(id)+tanh(bv(p.v2+(r<p.v1?4u*dim:0u)+j))*av(id));return;}
+ if(p.op==7u){uint dim=p.v1,j=id%(dim/2u),hrow=id/(dim/2u),r=hrow/p.v0,axis=j<60u?j%3u:0u;float pos=float(b[axis*p.v2+r]);float angle=pos*exp(-log(uintBitsToFloat(p.v3))*float(2u*j)/float(dim));uint off=hrow*dim+j;float x=av(off),y=av(off+dim/2u);put(off,x*cos(angle)-y*sin(angle));put(off+dim/2u,x*sin(angle)+y*cos(angle));return;}
+ if(p.op==8u){uint j=id%64u,hrow=id/64u,r=hrow/p.v0,axis,localj,dim,off;
+  if(j<8u){axis=0u;localj=j;dim=16u;off=0u;}else if(j<36u){axis=1u;localj=j-8u;dim=56u;off=16u;}else{axis=2u;localj=j-36u;dim=56u;off=72u;}
+  float angle=bv(r*3u+axis)*exp(-log(10000.0)*float(2u*localj)/float(dim));uint i=hrow*128u+off+2u*localj;float x=av(i),y=av(i+1u);put(i,x*cos(angle)-y*sin(angle));put(i+1u,x*sin(angle)+y*cos(angle));return;
+ }
+ if(p.op==9u){uint r=id/p.v0,j=id%p.v0;if(p.v1!=0u)put(id,silu(av(r*2u*p.v0+j))*av(r*2u*p.v0+p.v0+j));else put(id,silu(av(id))*bv(id));return;}
+ if(p.op==10u){uint base=p.v0*p.v1*p.v2;
+  if(id<base){uint r=id%p.v0,hd=id/p.v0,h=hd/p.v2,j=hd%p.v2;put(id,av((r*p.v1+h)*p.v2+j));}
+  else{uint i=id-base,j=i%p.v2,r=(i/p.v2)%p.v0,h=i/(p.v0*p.v2);put(id,bv((r*p.v1+h)*p.v2+j));}return;
+ }
+ if(p.op==11u){uint r=id/p.v0,j=id%p.v0;put(p.v3+id,av(r*p.v1+p.v2+j));return;}
+ if(p.op==12u){uint r=id/256u,j=id%128u;float angle=(r==0u?uintBitsToFloat(p.v0)*1000.0:0.0)*exp(-log(10000.0)*float(j)/128.0);put(id,id%256u<128u?cos(angle):sin(angle));return;}
+ if(p.op==13u){float x=av(id);if(isnan(x)||isinf(x))atomicOr(d[0],1u);return;}
+ if(p.op==14u){put(id,bv(id)+uintBitsToFloat(p.v0)*(av(id)-bv(id)));return;}
+ if(p.op==15u){uint r=id/p.v0,j=id%p.v0,token=c[r],index=token*p.v0+j;float x;
+  if(p.v1==2u){int value=int((b[index>>2u]>>((index&3u)*8u))&255u);if(value>=128)value-=256;x=float(value)*uintBitsToFloat(b[((p.v2*p.v0+3u)>>2u)+token]);}
+  else if(p.v1==1u)x=uintBitsToFloat(((b[index>>1u]>>((index&1u)*16u))&65535u)<<16u);else x=uintBitsToFloat(b[index]);put(id,x);return;
+ }
+ if(p.op==16u){uint token=id/1536u,f=id%1536u,block=token/4u,sub=token%4u,py=(block/(p.v1/2u)*2u+sub/2u)*16u,px=(block%(p.v1/2u)*2u+sub%2u)*16u;uint channel=f/512u,y=f/16u%16u,x=f%16u;uint pixel=a[(py+y)*(p.v1*16u)+px+x];put(id,float((pixel>>(channel*8u))&255u)/127.5-1.0);return;}
+ if(p.op==17u){uint token=id/1152u,j=id%1152u,block=token/4u,sub=token%4u;float y=float(block/(p.v1/2u)*2u+sub/2u)*47.0/float(p.v0-1u),x=float(block%(p.v1/2u)*2u+sub%2u)*47.0/float(p.v1-1u);uint y0=uint(floor(y)),x0=uint(floor(x)),y1=min(y0+1u,47u),x1=min(x0+1u,47u);float fy=y-float(y0),fx=x-float(x0);float pos=(1.0-fy)*((1.0-fx)*bv((y0*48u+x0)*1152u+j)+fx*bv((y0*48u+x1)*1152u+j))+fy*((1.0-fx)*bv((y1*48u+x0)*1152u+j)+fx*bv((y1*48u+x1)*1152u+j));put(id,av(id)+pos);return;}
+ if(p.op==18u){uint j=id%36u,hrow=id/36u,token=hrow/16u,block=token/4u,sub=token%4u,y=block/(p.v1/2u)*2u+sub/2u,x=block%(p.v1/2u)*2u+sub%2u;float angle=float(j<18u?y:x)*exp(-log(10000.0)*float(2u*(j%18u))/36.0);uint off=hrow*72u+j;float aa=av(off),bb=av(off+36u);put(off,aa*cos(angle)-bb*sin(angle));put(off+36u,aa*sin(angle)+bb*cos(angle));return;}
+ if(p.op==19u){uint channel=id/p.v0,pixel=id%p.v0;put(id,float((a[pixel]>>(8u*channel))&255u)/127.5-1.0);return;}
+ if(p.op==20u){uint inner=p.v2*p.v3*p.v3,r=id/inner,f=id%inner,channel=f/(p.v3*p.v3),ky=f/p.v3%p.v3,kx=f%p.v3,sp=p.v4+r;int y=int(sp/p.v5*p.v6+ky)-int(p.v7),x=int(sp%p.v5*p.v6+kx)-int(p.v7);float value=0.0;if(y>=0&&x>=0&&y<int(p.v0)&&x<int(p.v1))value=av(channel*p.v0*p.v1+uint(y)*p.v1+uint(x));put(id,value);return;}
+ if(p.op==21u){uint r=id/p.v0,ch=id%p.v0;put(p.v3==2u?id:ch*p.v1+p.v2+r,av(id)+(p.v3!=0u?bv(ch):0.0));return;}
+ if(p.op==22u){uint ch=id/p.v0,pix=id%p.v0;put(id,av(pix*64u+ch)*cv(ch)+bv(ch));return;}
+ if(p.op==23u){uint pix=id/64u,ch=id%64u;put(id,(av(ch*p.v0+pix)-bv(ch))/cv(ch));return;}
+ if(p.op==24u){uint sp=p.v0*p.v1,os=4u*sp,ch=id/os,pix=id%os,y=pix/(p.v1*2u),x=pix%(p.v1*2u);put(id,av(ch*sp+y/2u*p.v1+x/2u));return;}
+ if(p.op==25u){uint sp=p.v0*p.v1,os=sp*4u,ch=id/os,pix=id%os,y=pix/(p.v1*2u),x=pix%(p.v1*2u),repeats=p.v3*p.v4*4u/p.v2;uint ic=(ch*p.v4*4u+(p.v4-1u)*4u+(y%2u)*2u+x%2u)/repeats;put(id,dv(id)+av(ic*sp+y/2u*p.v1+x/2u));return;}
+ if(p.op==26u){uint ow=p.v1/p.v4,oh=p.v0/p.v4,sp=p.v0*p.v1,os=ow*oh,ch=id/os,pix=id%os,y=pix/ow,x=pix%ow,group=p.v2*p.v5*p.v4*p.v4/p.v3;float value=0.0;
+  for(uint j=0u;j<group;++j){uint flatIndex=ch*group+j,ic=flatIndex/(p.v5*p.v4*p.v4),t=flatIndex/(p.v4*p.v4)%p.v5,dy=flatIndex/p.v4%p.v4,dx=flatIndex%p.v4;if(t==p.v5-1u)value+=av(ic*sp+(y*p.v4+dy)*p.v1+x*p.v4+dx);}put(id,dv(id)+value/float(group));return;
+ }
+ if(p.op==27u){uint pixel=id,packed=0u;for(uint ch=0u;ch<4u;++ch){float value=clamp(av(ch*p.v0+pixel),-1.0,1.0);packed|=uint(roundEven((value+1.0)*127.5))<<(ch*8u);}d[id]=packed;return;}
+ if(p.op==28u){uint row=id/p.v1,ch=id%p.v1;put(id,av((p.v2+ch)*p.v0+row));return;}
+ if(p.op==29u){uint ch=id/p.v0,row=id%p.v0;put(id,av(row*p.v1+ch));return;}
+
+ if(p.op==31u){uint j=id%p.v0,i=p.v4+id;float x=av(p.v5+id),s=bv(p.v2+j);
+  if(p.v1==0u)put(i,x*(1.0+s)+bv(p.v3+j));
+  else if(p.v1==1u)put(i,dv(i)+x*s);
+  else if(p.v1==2u)put(i,x*(1.0+s));
+  else if(p.v1==3u)put(i,dv(i)+x*tanh(s));
+  else put(i,x*s);return;
+ }
+ if(p.op==32u){uint halfDim=p.v0/2u,j=id%halfDim,hr=id/halfDim,r=hr/p.v1;
+  uint x=p.v3+hr*p.v0+(p.v2==0u?j:2u*j),y=x+(p.v2==0u?halfDim:1u);
+  uint ci=r*(p.v2==0u?halfDim:p.v0)+(p.v2==0u?j:2u*j);
+  float xx=av(x),yy=av(y),co=bv(ci),si=cv(ci);put(x,xx*co-yy*si);put(y,xx*si+yy*co);return;
+ }
+ if(p.op==33u){uint halfDim=p.n/2u,j=id%halfDim;
+  float angle=uintBitsToFloat(p.v0)*exp(-log(10000.0)*float(j)/float(halfDim));
+  put(id,id<halfDim?cos(angle):sin(angle));return;
+ }
+ // CHW <-> patchIndex rows (ph,pw,channel), and VAE channel-major packed patches.
+ if(p.op==34u){uint h=p.v0,w=p.v1,ch=p.v2,ps=p.v3,oh=h/ps,ow=w/ps;
+  uint c,y,x,patchIndex,dy,dx,source;
+  if(p.v4==0u){c=id%ch;uint q=id/ch;dx=q%ps;q/=ps;dy=q%ps;q/=ps;patchIndex=q;source=c*h*w+(patchIndex/ow*ps+dy)*w+patchIndex%ow*ps+dx;}
+  else if(p.v4==1u){c=id/(h*w);y=id/w%h;x=id%w;source=((((y/ps)*ow+x/ps)*ps+y%ps)*ps+x%ps)*ch+c;}
+  else if(p.v4==2u){patchIndex=id%(oh*ow);uint q=id/(oh*ow);dx=q%ps;q/=ps;dy=q%ps;c=q/ps;source=c*h*w+(patchIndex/ow*ps+dy)*w+patchIndex%ow*ps+dx;}
+  else{c=id/(h*w);y=id/w%h;x=id%w;source=((c*ps+y%ps)*ps+x%ps)*(oh*ow)+(y/ps)*ow+x/ps;}
+  put(id,av(source));return;
+ }
+ if(p.op==35u){uint ch=id/p.v0;float sd=sqrt(cv(ch)+uintBitsToFloat(p.v2));float x=av(id);
+  put(id,p.v1==0u?(x-bv(ch))/sd:x*sd+bv(ch));return;}
+ if(p.op==36u){uint oh=p.v0+1u,ow=p.v1+1u,ch=id/(oh*ow),y=id/ow%oh,x=id%ow;
+  put(id,y<p.v0&&x<p.v1?av(ch*p.v0*p.v1+y*p.v1+x):0.0);return;}
+ if(p.op==37u){uint pixel=id;uint packed=0xff000000u;for(uint ch=0u;ch<3u;++ch){float x=clamp(av(ch*p.v0+pixel),-1.0,1.0);packed|=uint(roundEven((x+1.0)*127.5))<<(8u*ch);}d[id]=packed;return;}
+ if(p.op==38u){uint r=id/p.v0,j=id%p.v0;put(p.v2+id,p.v3!=0u?av(min(r,p.v1-1u)*p.v0+j):(r<p.v1?av(id):bv(j)));return;}
+ if(p.op==39u){uint r=id/p.v0,j=id%p.v0;put(p.v2+r*p.v1+j,av(p.v3+id));return;}
+ if(p.op==40u){uint dim=p.v0,j=id%(dim/2u),hr=id/(dim/2u),r=hr/p.v1,ax,localj,ad,off;
+  if(2u*j<p.v2){ax=0u;localj=j;ad=p.v2;off=0u;}else if(2u*j<p.v2+p.v3){ax=1u;localj=j-p.v2/2u;ad=p.v3;off=p.v2;}else{ax=2u;localj=j-(p.v2+p.v3)/2u;ad=p.v4;off=p.v2+p.v3;}
+  float angle=float(b[r*3u+ax])*exp(-log(uintBitsToFloat(p.v5))*float(2u*localj)/float(ad));
+  uint i=hr*dim+off+2u*localj;float x=av(i),y=av(i+1u);put(i,x*cos(angle)-y*sin(angle));put(i+1u,x*sin(angle)+y*cos(angle));return;}
+ if(p.op==41u){uint r=id/3u,ax=id%3u;bool image=p.v4==0u||(p.v4==2u&&r<p.v1);uint pos=0u;
+  if(image){if(r<p.v0)pos=ax==0u?p.v2+1u:(ax==1u?r/p.v3:r%p.v3);}
+  else pos=ax==0u?1u+r-(p.v4==2u?p.v1:0u):0u;d[id]=pos;return;}
+ if(p.op==42u){uint dim=p.v1,ad=dim/4u,j=id%(dim/2u),hr=id/(dim/2u),r=hr/p.v0,axis=2u*j/ad,localj=j%(ad/2u);float pos;
+  if(p.v5!=0u)pos=axis==3u?float(r):0.0;
+  else pos=axis==0u?float(p.v4):(axis==1u?float(r/p.v2):(axis==2u?float(r%p.v2):0.0));
+  float angle=pos*exp(-log(uintBitsToFloat(p.v6))*float(2u*localj)/float(ad));
+  uint i=(p.v7*p.v0+hr)*dim+2u*j;float x=av(i),y=av(i+1u);put(i,x*cos(angle)-y*sin(angle));put(i+1u,x*sin(angle)+y*cos(angle));return;}
+ if(p.op==43u){put(id,av(id)*uintBitsToFloat(p.v0)+uintBitsToFloat(p.v1));return;}
+
+
+ // Append rows to the fixed-capacity packed KV cache (transposed K, head-major V).
+ if(p.op==44u){
+  uint width=p.v1*p.v2,r=id/width,h=(id%width)/p.v2,j=id%p.v2,t=p.v4+r;
+  d[(h*p.v2+j)*p.v3+t]=a[id];
+  d[p.v3*width+(h*p.v3+t)*p.v2+j]=b[id];return;
+ }
+ if(p.op==45u){
+  uint halfDim=p.v1/2u,j=id%halfDim,hr=id/halfDim,r=hr/p.v0;
+  float angle=float(p.v2+r)*exp(-log(uintBitsToFloat(p.v3))*float(2u*j)/float(p.v1));
+  // Reduce the angle with a split 2*pi constant before native GPU sin/cos.
+  // Direct large arguments lose precision on some Vulkan drivers.
+  float turns=round(angle*0.15915494309189535);
+  angle=fma(-turns,0.0019353071795864769,angle-turns*6.28125);
+  uint x=hr*p.v1+j,y=x+halfDim;float xx=av(x),yy=av(y);
+  put(x,xx*cos(angle)-yy*sin(angle));put(y,xx*sin(angle)+yy*cos(angle));return;
+ }
+ if(p.op==48u){uint token=a[id];if(token<p.v0)atomicOr(d[token],1u);return;}
+}

@@ -1,0 +1,72 @@
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <ProjectGuid>{41AC02AC-287A-4B48-9AA1-EC239A65DAE1}</ProjectGuid>
+    </PropertyGroup>
+    <ItemGroup>
+        <Projects Include="Examples\LLMChat\QuickNNChat.dproj">
+            <Dependencies/>
+        </Projects>
+        <Projects Include="Examples\ConsoleDemo\QuickNNDemo.dproj">
+            <Dependencies/>
+        </Projects>
+        <Projects Include="Examples\Delphi\QwenImage21.dproj">
+            <Dependencies/>
+        </Projects>
+        <Projects Include="Examples\LLMUIChat\LLMUIChat.dproj">
+            <Dependencies/>
+        </Projects>
+    </ItemGroup>
+    <ProjectExtensions>
+        <Borland.Personality>Default.Personality.12</Borland.Personality>
+        <Borland.ProjectType/>
+        <BorlandProject>
+            <Default.Personality/>
+        </BorlandProject>
+    </ProjectExtensions>
+    <Target Name="QuickNNChat">
+        <MSBuild Projects="Examples\LLMChat\QuickNNChat.dproj"/>
+    </Target>
+    <Target Name="QuickNNChat:Clean">
+        <MSBuild Projects="Examples\LLMChat\QuickNNChat.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="QuickNNChat:Make">
+        <MSBuild Projects="Examples\LLMChat\QuickNNChat.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="QuickNNDemo">
+        <MSBuild Projects="Examples\ConsoleDemo\QuickNNDemo.dproj"/>
+    </Target>
+    <Target Name="QuickNNDemo:Clean">
+        <MSBuild Projects="Examples\ConsoleDemo\QuickNNDemo.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="QuickNNDemo:Make">
+        <MSBuild Projects="Examples\ConsoleDemo\QuickNNDemo.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="QwenImage21">
+        <MSBuild Projects="Examples\Delphi\QwenImage21.dproj"/>
+    </Target>
+    <Target Name="QwenImage21:Clean">
+        <MSBuild Projects="Examples\Delphi\QwenImage21.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="QwenImage21:Make">
+        <MSBuild Projects="Examples\Delphi\QwenImage21.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="LLMUIChat">
+        <MSBuild Projects="Examples\LLMUIChat\LLMUIChat.dproj"/>
+    </Target>
+    <Target Name="LLMUIChat:Clean">
+        <MSBuild Projects="Examples\LLMUIChat\LLMUIChat.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="LLMUIChat:Make">
+        <MSBuild Projects="Examples\LLMUIChat\LLMUIChat.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="Build">
+        <CallTarget Targets="QuickNNChat;QuickNNDemo;QwenImage21;LLMUIChat"/>
+    </Target>
+    <Target Name="Clean">
+        <CallTarget Targets="QuickNNChat:Clean;QuickNNDemo:Clean;QwenImage21:Clean;LLMUIChat:Clean"/>
+    </Target>
+    <Target Name="Make">
+        <CallTarget Targets="QuickNNChat:Make;QuickNNDemo:Make;QwenImage21:Make;LLMUIChat:Make"/>
+    </Target>
+    <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
+</Project>
