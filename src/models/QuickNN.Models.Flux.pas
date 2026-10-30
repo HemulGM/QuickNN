@@ -9,14 +9,8 @@
 interface
 
 uses
-  System.SysUtils,
-  System.Math,
-  QuickNN.Common,
-  QuickNN.Models.Transformers,
-  QuickNN.Models.Qwen3,
-  QuickNN.Models.VAE,
-  QuickNN.SafeTensors,
-  Winapi.Windows;
+  System.SysUtils, System.Math, QuickNN.Common, QuickNN.Models.Transformers,
+  QuickNN.Models.Qwen3, QuickNN.Models.VAE, QuickNN.SafeTensors, Winapi.Windows;
 
 type
 
@@ -69,48 +63,21 @@ type
     constructor Load(const AModelDir: string; const OnStatus: TPhaseCallBack = nil);
     procedure LoadVAE(const VaeModelPath: string); overload;
     procedure LoadVAE(); overload;
-    function GenerateLatent(
-        const TextEmb: TMemoryBlock;
-        const TextSeq, Height, Width, NumSteps: LongInt;
-        const Seed: Int64;
-        const ProgressCallback: TProgressCallback
-    ): TMemoryBlock;
-    function Generate(
-        const Prompt: RawByteString;
-        var Params: TGenerateParams;
-        const ProgressCallback: TProgressCallback = nil
-    ): TQNNImage; overload;
-    function Generate(
-        const Prompt, NegPrompt: RawByteString;
-        var Params: TGenerateParams;
-        const ProgressCallback: TProgressCallback = nil
-    ): TQNNImage; overload;
-    function Generate(
-        const Prompt, NegPrompt: RawByteString;
-        var Params: TGenerateParams;
-        const Image: TQNNImage;
-        const ProgressCallback: TProgressCallback = nil
-    ): TQNNImage; overload;
-    function Generate(
-        const Prompt: RawByteString;
-        var Params: TGenerateParams;
-        const Image: TQNNImage;
-        const ProgressCallback: TProgressCallback = nil
-    ): TQNNImage; overload;
-    function Generate(
-        const Prompt, NegPrompt: RawByteString;
-        var Params: TGenerateParams;
-        const Images: TArray<TQNNImage>;
-        const ProgressCallback: TProgressCallback = nil
-    ): TQNNImage; overload;
+    function GenerateLatent(const TextEmb: TMemoryBlock; const TextSeq, Height, Width, NumSteps: LongInt; const Seed: Int64; const ProgressCallback: TProgressCallback): TMemoryBlock;
+    function Generate(const Prompt: RawByteString; var Params: TGenerateParams; const ProgressCallback: TProgressCallback = nil
+): TQNNImage; overload;
+    function Generate(const Prompt, NegPrompt: RawByteString; var Params: TGenerateParams; const ProgressCallback: TProgressCallback = nil
+): TQNNImage; overload;
+    function Generate(const Prompt, NegPrompt: RawByteString; var Params: TGenerateParams; const Image: TQNNImage; const ProgressCallback: TProgressCallback = nil
+): TQNNImage; overload;
+    function Generate(const Prompt: RawByteString; var Params: TGenerateParams; const Image: TQNNImage; const ProgressCallback: TProgressCallback = nil
+): TQNNImage; overload;
+    function Generate(const Prompt, NegPrompt: RawByteString; var Params: TGenerateParams; const Images: TArray<TQNNImage>; const ProgressCallback: TProgressCallback = nil
+): TQNNImage; overload;
     // function generate(const prompt: rawbytestring; const images:TArray<TQNNImage>;params: TGenerateParams): TQNNImage; overload;
     function EncodeText(const Prompt: RawByteString; var OutSeqLen: LongInt): TMemoryBlock;
-    function GenerateResident(
-        const Prompt, NegativePrompt: RawByteString;
-        var Params: TGenerateParams;
-        const Images: TArray<TQNNImage>;
-        const Progress: TProgressCallback = nil
-    ): TQNNImage;
+    function GenerateResident(const Prompt, NegativePrompt: RawByteString; var Params: TGenerateParams; const Images: TArray<TQNNImage>; const Progress: TProgressCallback = nil
+): TQNNImage;
     procedure PrepareLegacy;
     procedure Free();
   end;
@@ -118,13 +85,8 @@ type
 implementation
 
 uses
-  System.JSON,
-  System.IOUtils,
-  QuickNN.Sampling,
-  QuickNN.Kernels,
-  QuickNN.Vulkan,
-  QuickNN.Vulkan.Operations,
-  QuickNN.Models.Resident;
+  System.JSON, System.IOUtils, QuickNN.Sampling, QuickNN.Kernels, QuickNN.Vulkan,
+  QuickNN.Vulkan.Operations, QuickNN.Models.Resident;
 
 { TQNNFlux }
 
@@ -200,8 +162,8 @@ begin
   // transformer files will load later while inferencing
   if not FileExists(Format('%s/transformer/config.json', [ModelDir])) then
     Assert(
-        FileExists(Format('%s/transformer/diffusion_pytorch_model.safetensors', [ModelDir])),
-        'ERROR : Transformer model not found (missing config.json and safetensors)'
+      FileExists(Format('%s/transformer/diffusion_pytorch_model.safetensors', [ModelDir])),
+      'ERROR : Transformer model not found (missing config.json and safetensors)'
     );
   RngSeed(GetTickCount64());
 end;
@@ -268,12 +230,7 @@ begin
     PhaseCallback('Loading [' + ModelArc + ']', True);
 end;
 
-function TQNNFlux.GenerateLatent(
-    const TextEmb: TMemoryBlock;
-    const TextSeq, Height, Width, NumSteps: LongInt;
-    const Seed: Int64;
-    const ProgressCallback: TProgressCallback
-): TMemoryBlock;
+function TQNNFlux.GenerateLatent(const TextEmb: TMemoryBlock; const TextSeq, Height, Width, NumSteps: LongInt; const Seed: Int64; const ProgressCallback: TProgressCallback): TMemoryBlock;
 var
   LatentH, LatentW, Channels: LongInt;
   Z, Schedule: TMemoryBlock;
@@ -291,17 +248,13 @@ begin
 
   (* Sample (FLUX.2-klein is guidance-distilled, no CFG needed) *)
   Result :=
-      Transformer.SampleEuler(Z, 1, Channels, LatentH, LatentW, TextEmb, TextSeq, Schedule, NumSteps, ProgressCallback);
+    Transformer.SampleEuler(Z, 1, Channels, LatentH, LatentW, TextEmb, TextSeq, Schedule, NumSteps, ProgressCallback);
 
   Z.Free;
   Schedule.Free;
 end;
 
-function TQNNFlux.Generate(
-    const Prompt: RawByteString;
-    var Params: TGenerateParams;
-    const ProgressCallback: TProgressCallback
-): TQNNImage;
+function TQNNFlux.Generate(const Prompt: RawByteString; var Params: TGenerateParams; const ProgressCallback: TProgressCallback): TQNNImage;
 begin
   Result := Generate(Prompt, '', Params, ProgressCallback)
 end;
@@ -310,11 +263,7 @@ end;
 //    TFloatArray = array[0..MaxLongint div 32] of single;
 //    PFloatArray = ^TFloatArray;
 
-function TQNNFlux.Generate(
-    const Prompt, NegPrompt: RawByteString;
-    var Params: TGenerateParams;
-    const ProgressCallback: TProgressCallback
-): TQNNImage;
+function TQNNFlux.Generate(const Prompt, NegPrompt: RawByteString; var Params: TGenerateParams; const ProgressCallback: TProgressCallback): TQNNImage;
 var
   TextEmb, TextEmbUncond: TMemoryBlock;
   LatentH, LatentW, TextSeq, ImageSeqLen, TextSeqUncond: LongInt;
@@ -334,8 +283,8 @@ begin
   Params.Width := Max(16 * Params.Width div 16, 64);
   Params.Height := Max(16 * Params.Height div 16, 64);
   Assert(
-      (Params.Width <= QNN_VAE_MAX_DIM) and (Params.Height <= QNN_VAE_MAX_DIM),
-      'ERROR : Image maximum dimensions exceeded (1792x1792)!'
+    (Params.Width <= QNN_VAE_MAX_DIM) and (Params.Height <= QNN_VAE_MAX_DIM),
+    'ERROR : Image maximum dimensions exceeded (1792x1792)!'
   );
   TextEmb := EncodeText(Prompt, TextSeq);
 
@@ -370,35 +319,35 @@ begin
   end;
   if (Params.Guidance = 1.0) and IsDistilled then
     Latent :=
-        Transformer.SampleEuler(
-            Z,
-            1,
-            QNN_LATENT_CHANNELS,
-            LatentH,
-            LatentW,
-            TextEmb,
-            TextSeq,
-            Schedule,
-            Params.NumSteps,
-            ProgressCallback
-        )
+      Transformer.SampleEuler(
+      Z,
+      1,
+      QNN_LATENT_CHANNELS,
+      LatentH,
+      LatentW,
+      TextEmb,
+      TextSeq,
+      Schedule,
+      Params.NumSteps,
+      ProgressCallback
+    )
   else
     Latent :=
-        Transformer.SampleEuler(
-            Z,
-            1,
-            QNN_LATENT_CHANNELS,
-            LatentH,
-            LatentW,
-            TextEmb,
-            TextSeq,
-            TextEmbUncond,
-            TextSeqUncond,
-            Params.Guidance,
-            Schedule,
-            Params.NumSteps,
-            ProgressCallback
-        );
+      Transformer.SampleEuler(
+      Z,
+      1,
+      QNN_LATENT_CHANNELS,
+      LatentH,
+      LatentW,
+      TextEmb,
+      TextSeq,
+      TextEmbUncond,
+      TextSeqUncond,
+      Params.Guidance,
+      Schedule,
+      Params.NumSteps,
+      ProgressCallback
+    );
 
   Z.Free;
   Schedule.Free;
@@ -417,11 +366,7 @@ end;
 const
   ATTENTION_MAX_BYTES = Int64(4) shl 30;
 
-function AttentionBytes(
-    const NumHeads, OutH, OutW: LongInt;
-    const RefDims: PLongint;
-    const NumRefs, TxtSeq: LongInt
-): NativeUInt;
+function AttentionBytes(const NumHeads, OutH, OutW: LongInt; const RefDims: PLongint; const NumRefs, TxtSeq: LongInt): NativeUInt;
 var
   TotalSeq: NativeUInt;
   I: LongInt;
@@ -433,11 +378,7 @@ begin
   Result := NativeUInt(NumHeads) * TotalSeq * TotalSeq * SizeOf(QNNFloat)
 end;
 
-function FitRefsForAttention(
-    const NumHeads, OutH, OutW: LongInt;
-    const RefDims: PLongint;
-    const NumRefs, TxtSeq: LongInt
-): Boolean;
+function FitRefsForAttention(const NumHeads, OutH, OutW: LongInt; const RefDims: PLongint; const NumRefs, TxtSeq: LongInt): Boolean;
 var
   Best, I, H, W: LongInt;
   Tok, BestTok: NativeUInt;
@@ -476,12 +417,7 @@ begin
   end;
 end;
 
-function TQNNFlux.Generate(
-    const Prompt, NegPrompt: RawByteString;
-    var Params: TGenerateParams;
-    const Image: TQNNImage;
-    const ProgressCallback: TProgressCallback
-): TQNNImage;
+function TQNNFlux.Generate(const Prompt, NegPrompt: RawByteString; var Params: TGenerateParams; const Image: TQNNImage; const ProgressCallback: TProgressCallback): TQNNImage;
 var
   Resized, ImgToUse: TQNNImage;
   Scale: QNNFloat;
@@ -499,7 +435,7 @@ begin
   if (Params.Width > QNN_VAE_MAX_DIM) or (Params.Height > QNN_VAE_MAX_DIM) then
   begin
     Scale :=
-        Single(QNN_VAE_MAX_DIM) / (QuickNN.Common.Ifthen(Params.Width > Params.Height, Params.Width, Params.Height));
+      Single(QNN_VAE_MAX_DIM) / (QuickNN.Common.Ifthen(Params.Width > Params.Height, Params.Width, Params.Height));
     Params.Width := Trunc(Params.Width * Scale);
     Params.Height := Trunc(Params.Height * Scale)
   end;
@@ -580,43 +516,43 @@ begin
   // img_latent.printStat;
   if (Params.Guidance = 1.0) and IsDistilled then
     Latent :=
-        Transformer.SampleEuler(
-            Z,
-            1,
-            QNN_LATENT_CHANNELS,
-            OutLatH,
-            OutLatW,
-            ImgLatent,
-            LatentH,
-            LatentW,
-            TOffset,
-            TextEmb,
-            TextSeq,
-            Schedule,
-            NumSteps,
-            ProgressCallback
-        )
+      Transformer.SampleEuler(
+      Z,
+      1,
+      QNN_LATENT_CHANNELS,
+      OutLatH,
+      OutLatW,
+      ImgLatent,
+      LatentH,
+      LatentW,
+      TOffset,
+      TextEmb,
+      TextSeq,
+      Schedule,
+      NumSteps,
+      ProgressCallback
+    )
   else
     Latent :=
-        Transformer.SampleEuler(
-            Z,
-            1,
-            QNN_LATENT_CHANNELS,
-            OutLatH,
-            OutLatW,
-            ImgLatent,
-            LatentH,
-            LatentW,
-            TOffset,
-            TextEmb,
-            TextSeq,
-            TextEmbUncond,
-            TextSeqUncond,
-            Params.Guidance,
-            Schedule,
-            NumSteps,
-            ProgressCallback
-        );
+      Transformer.SampleEuler(
+      Z,
+      1,
+      QNN_LATENT_CHANNELS,
+      OutLatH,
+      OutLatW,
+      ImgLatent,
+      LatentH,
+      LatentW,
+      TOffset,
+      TextEmb,
+      TextSeq,
+      TextEmbUncond,
+      TextSeqUncond,
+      Params.Guidance,
+      Schedule,
+      NumSteps,
+      ProgressCallback
+    );
   Z.Free;
   ImgLatent.Free;
   Schedule.Free;
@@ -633,22 +569,12 @@ begin
   Latent.Free;
 end;
 
-function TQNNFlux.Generate(
-    const Prompt: RawByteString;
-    var Params: TGenerateParams;
-    const Image: TQNNImage;
-    const ProgressCallback: TProgressCallback
-): TQNNImage;
+function TQNNFlux.Generate(const Prompt: RawByteString; var Params: TGenerateParams; const Image: TQNNImage; const ProgressCallback: TProgressCallback): TQNNImage;
 begin
   Result := Generate(Prompt, '', Params, Image, ProgressCallback)
 end;
 
-function TQNNFlux.Generate(
-    const Prompt, NegPrompt: RawByteString;
-    var Params: TGenerateParams;
-    const Images: TArray<TQNNImage>;
-    const ProgressCallback: TProgressCallback
-): TQNNImage;
+function TQNNFlux.Generate(const Prompt, NegPrompt: RawByteString; var Params: TGenerateParams; const Images: TArray<TQNNImage>; const ProgressCallback: TProgressCallback): TQNNImage;
 var
   I, TextSeq, TextSeqUncond, Rh, Rw, RefW, RefH, LatH, LatW, LatentH, LatentW, ImageSeqLen: LongInt;
   Scale: Single;
@@ -785,39 +711,39 @@ begin
   if (Params.Guidance = 1.0) and IsDistilled then
   begin
     Latent :=
-        Transformer.SampleEuler(
-            Z,
-            1,
-            QNN_LATENT_CHANNELS,
-            LatentH,
-            LatentW,
-            RefLatents,
-            TextEmb,
-            TextSeq,
-            Schedule,
-            Params.NumSteps,
-            ProgressCallback
-        );
+      Transformer.SampleEuler(
+      Z,
+      1,
+      QNN_LATENT_CHANNELS,
+      LatentH,
+      LatentW,
+      RefLatents,
+      TextEmb,
+      TextSeq,
+      Schedule,
+      Params.NumSteps,
+      ProgressCallback
+    );
   end
   else
   begin
     Latent :=
-        Transformer.SampleEuler(
-            Z,
-            1,
-            QNN_LATENT_CHANNELS,
-            LatentH,
-            LatentW,
-            RefLatents,
-            TextEmb,
-            TextSeq,
-            TextEmbUncond,
-            TextSeqUncond,
-            Params.Guidance,
-            Schedule,
-            Params.NumSteps,
-            ProgressCallback
-        );
+      Transformer.SampleEuler(
+      Z,
+      1,
+      QNN_LATENT_CHANNELS,
+      LatentH,
+      LatentW,
+      RefLatents,
+      TextEmb,
+      TextSeq,
+      TextEmbUncond,
+      TextSeqUncond,
+      Params.Guidance,
+      Schedule,
+      Params.NumSteps,
+      ProgressCallback
+    );
   end;
 
   (* Cleanup *)
@@ -853,7 +779,8 @@ begin
     if Assigned(PhaseCallback) then
       PhaseCallback('Loading Qwen3 encoder', False);
     Qwen3Encoder.Load(ModelDir, UseMmap);
-    OutSeqLen := QWEN3_MAX_SEQ_LEN;;
+    OutSeqLen := QWEN3_MAX_SEQ_LEN;
+    ;
     if Assigned(PhaseCallback) then
       PhaseCallback('Loading Qwen3 encoder', True);
   end;
@@ -885,3 +812,4 @@ end;
 {$I QuickNN.Models.Flux.GPU.inc}
 
 end.
+

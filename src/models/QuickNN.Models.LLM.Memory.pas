@@ -3,9 +3,7 @@
 interface
 
 uses
-  System.SysUtils,
-  System.Generics.Collections,
-  QuickNN.Common,
+  System.SysUtils, System.Generics.Collections, QuickNN.Common,
   QuickNN.Models.LLM.Types;
 
 type
@@ -107,11 +105,11 @@ var
 begin
   Bytes := UInt64(Weight.Size) * UInt64(DATATYPE_BITS[Weight.DataType] div 8);
   Result :=
-      IntToHex(NativeUInt(Pointer(Weight.WeightIdentity)), SizeOf(Pointer) * 2)
-          + '/'
-          + IntToStr(Ord(Weight.DataType))
-          + '/'
-          + UIntToStr(Bytes);
+    IntToHex(NativeUInt(Pointer(Weight.WeightIdentity)), SizeOf(Pointer) * 2)
+    + '/'
+    + IntToStr(Ord(Weight.DataType))
+    + '/'
+    + UIntToStr(Bytes);
 end;
 
 function TLLMHostWeightCache.Get(const Weight: TMemoryBlock): TMemoryBlock;
@@ -130,9 +128,9 @@ var
 begin
   Memory := Default(TMemoryBlock);
   if (Weight.Offset <> 0)
-      or not Weight.IsAssigned
-      or (Weight.WeightIdentity = nil)
-      or not (Weight.DataType in [dtBF16, dtF32, dtU8]) then
+    or not Weight.IsAssigned
+    or (Weight.WeightIdentity = nil)
+    or not (Weight.DataType in [dtBF16, dtF32, dtU8]) then
   begin
     Inc(FMisses);
     Exit(False);
@@ -227,3 +225,4 @@ begin
 end;
 
 end.
+

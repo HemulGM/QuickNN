@@ -10,24 +10,20 @@ uses
 
 type
   TTensorPrintStyle = (
-      psValues,
-      psGray5 {5 ascii shades},
-      psGray24 {24 half char shades},
-      psGray {256 half char shades},
-      psColor8 {256 colors},
-      psColor24 {~16M colors},
-      psSIXELGray,
-      psSIXEL,
-      psSIXELDithered
-  );
+    psValues,
+    psGray5 {5 ascii shades},
+    psGray24 {24 half char shades},
+    psGray {256 half char shades},
+    psColor8 {256 colors},
+    psColor24 {~16M colors},
+    psSIXELGray,
+    psSIXEL,
+    psSIXELDithered
+    );
 
   // Import this unit explicitly to opt into tensor/image console rendering.
   TMemoryBlockConsoleHelper = record helper for TMemoryBlock
-    function Print(
-        const ConsolePixel: TTensorPrintStyle = psGray;
-        Tile: Integer = 1;
-        MinVal: Double = 0;
-        MaxVal: Double = 0
+    function Print(const ConsolePixel: TTensorPrintStyle = psGray; Tile: Integer = 1; MinVal: Double = 0; MaxVal: Double = 0
     ): TArray<NativeInt>;
   end;
 
@@ -38,10 +34,7 @@ type
 implementation
 
 uses
-  System.SysUtils,
-  System.Math,
-  QuickNN.CPU,
-  QuickNN.Console.Ansi,
+  System.SysUtils, System.Math, QuickNN.CPU, QuickNN.Console.Ansi,
   QuickNN.Console.Sixel;
 
 const
@@ -95,13 +88,8 @@ begin
   Result := string(Buffer)
 end;
 
-procedure PrintTensor(
-    const Data: System.PSingle;
-    const Shape: TArray<Int64>;
-    const Offset: Int64 = 0;
-    const Depth: Int64 = 0;
-    Strides: TArray<Int64> = nil
-);
+procedure PrintTensor(const Data: System.PSingle; const Shape: TArray<Int64>; const Offset: Int64 = 0; const Depth: Int64 = 0; Strides: TArray<Int64> = nil
+    );
 var
   I: Int64;
   Indent: string;
@@ -136,12 +124,7 @@ begin
   end;
 end;
 
-function TMemoryBlockConsoleHelper.Print(
-    const ConsolePixel: TTensorPrintStyle;
-    Tile: Integer;
-    MinVal: Double;
-    MaxVal: Double
-): TArray<NativeInt>;
+function TMemoryBlockConsoleHelper.Print(const ConsolePixel: TTensorPrintStyle; Tile: Integer; MinVal: Double; MaxVal: Double): TArray<NativeInt>;
 const
   CSI = #$1B'[';
   UP = #$1B'[A';
@@ -240,147 +223,148 @@ begin
           for K := 0 to LocalW - 1 do
           begin
             Index :=
-                I * LocalC * Tile * LocalArea + T * LocalC * LocalH * LocalW + J * (1 + Ord(IsHalfChar)) * LocalW + K;
+              I * LocalC * Tile * LocalArea + T * LocalC * LocalH * LocalW + J * (1 + Ord(IsHalfChar)) * LocalW + K;
             if Index < LocalSize then
             begin
               R := LocalData[Index];
               case ConsolePixel of
-                psGray5: S := S + SHADE[Round(4 * (R - MinVal) / Range)];
+                psGray5:
+                  S := S + SHADE[Round(4 * (R - MinVal) / Range)];
                 psGray24:
-                begin
-                  Inc(Index, LocalW);
-                  if Index < LocalSize then
-                    R2 := LocalData[Index]
-                  else
-                    R2 := MinVal;
-                  R := 232 + 23 * (R - MinVal) / Range;
-                  R2 := 232 + 23 * (R2 - MinVal) / Range;
-                  S := S + #$1B'[38;5;' + ToStr(Round(R)) + 'm' + #$1B'[48;5;' + ToStr(Round(R2)) + 'm' + HALF_CHAR;
-                end;
+                  begin
+                    Inc(Index, LocalW);
+                    if Index < LocalSize then
+                      R2 := LocalData[Index]
+                    else
+                      R2 := MinVal;
+                    R := 232 + 23 * (R - MinVal) / Range;
+                    R2 := 232 + 23 * (R2 - MinVal) / Range;
+                    S := S + #$1B'[38;5;' + ToStr(Round(R)) + 'm' + #$1B'[48;5;' + ToStr(Round(R2)) + 'm' + HALF_CHAR;
+                  end;
                 psGray:
-                begin
-                  Inc(Index, LocalW);
-                  if Index < LocalSize then
-                    R2 := LocalData[Index]
-                  else
-                    R2 := MinVal;
-                  R := $ff * (R - MinVal) / Range;
-                  R2 := $ff * (R2 - MinVal) / Range;
-                  S :=
+                  begin
+                    Inc(Index, LocalW);
+                    if Index < LocalSize then
+                      R2 := LocalData[Index]
+                    else
+                      R2 := MinVal;
+                    R := $ff * (R - MinVal) / Range;
+                    R2 := $ff * (R2 - MinVal) / Range;
+                    S :=
                       S
-                          + #$1B'[38;2;'
-                          + ToStr(Round(R))
-                          + ';'
-                          + ToStr(Round(R))
-                          + ';'
-                          + ToStr(Round(R))
-                          + 'm'
-                          + #$1B'[48;2;'
-                          + ToStr(Round(R2))
-                          + ';'
-                          + ToStr(Round(R2))
-                          + ';'
-                          + ToStr(Round(R2))
-                          + 'm'
-                          + HALF_CHAR;
-                end;
+                      + #$1B'[38;2;'
+                      + ToStr(Round(R))
+                      + ';'
+                      + ToStr(Round(R))
+                      + ';'
+                      + ToStr(Round(R))
+                      + 'm'
+                      + #$1B'[48;2;'
+                      + ToStr(Round(R2))
+                      + ';'
+                      + ToStr(Round(R2))
+                      + ';'
+                      + ToStr(Round(R2))
+                      + 'm'
+                      + HALF_CHAR;
+                  end;
                 psColor8:
-                begin
-                  G := LocalData[Index + LocalArea];
-                  B := LocalData[Index + LocalArea * 2];
+                  begin
+                    G := LocalData[Index + LocalArea];
+                    B := LocalData[Index + LocalArea * 2];
                   // next line
-                  Inc(Index, LocalW);
-                  if Index < LocalSize then
-                  begin
-                    R2 := LocalData[Index];
-                    G2 := LocalData[Index + LocalArea];
-                    B2 := LocalData[Index + LocalArea * 2]
-                  end
-                  else
-                  begin
-                    R2 := MinVal;
-                    G2 := MinVal;
-                    B2 := MinVal
-                  end;
+                    Inc(Index, LocalW);
+                    if Index < LocalSize then
+                    begin
+                      R2 := LocalData[Index];
+                      G2 := LocalData[Index + LocalArea];
+                      B2 := LocalData[Index + LocalArea * 2]
+                    end
+                    else
+                    begin
+                      R2 := MinVal;
+                      G2 := MinVal;
+                      B2 := MinVal
+                    end;
 
-                  R := 5 * (R - MinVal) / Range;
-                  G := 5 * (G - MinVal) / Range;
-                  B := 5 * (B - MinVal) / Range;
+                    R := 5 * (R - MinVal) / Range;
+                    G := 5 * (G - MinVal) / Range;
+                    B := 5 * (B - MinVal) / Range;
 
-                  R2 := 5 * (R2 - MinVal) / Range;
-                  G2 := 5 * (G2 - MinVal) / Range;
-                  B2 := 5 * (B2 - MinVal) / Range;
+                    R2 := 5 * (R2 - MinVal) / Range;
+                    G2 := 5 * (G2 - MinVal) / Range;
+                    B2 := 5 * (B2 - MinVal) / Range;
 
-                  S :=
+                    S :=
                       S
-                          + #$1B'[38;5;'
-                          + ToStr(16 + Round(B) + 6 * Round(G) + 36 * Round(R))
-                          + 'm'
-                          + #$1B'[48;5;'
-                          + ToStr(16 + Round(B2) + 6 * Round(G2) + 36 * Round(R2))
-                          + 'm'
-                          + HALF_CHAR;
-                end;
+                      + #$1B'[38;5;'
+                      + ToStr(16 + Round(B) + 6 * Round(G) + 36 * Round(R))
+                      + 'm'
+                      + #$1B'[48;5;'
+                      + ToStr(16 + Round(B2) + 6 * Round(G2) + 36 * Round(R2))
+                      + 'm'
+                      + HALF_CHAR;
+                  end;
                 psColor24:
-                begin
-                  G := LocalData[Index + LocalArea];
-                  B := LocalData[Index + LocalArea * 2];
+                  begin
+                    G := LocalData[Index + LocalArea];
+                    B := LocalData[Index + LocalArea * 2];
                   // nex line
-                  Inc(Index, LocalW);
-                  if Index < LocalSize then
-                  begin
-                    R2 := LocalData[Index];
-                    G2 := LocalData[Index + LocalArea];
-                    B2 := LocalData[Index + LocalArea * 2];
-                  end
-                  else
-                  begin
-                    R2 := MinVal;
-                    G2 := MinVal;
-                    B2 := MinVal
-                  end;
+                    Inc(Index, LocalW);
+                    if Index < LocalSize then
+                    begin
+                      R2 := LocalData[Index];
+                      G2 := LocalData[Index + LocalArea];
+                      B2 := LocalData[Index + LocalArea * 2];
+                    end
+                    else
+                    begin
+                      R2 := MinVal;
+                      G2 := MinVal;
+                      B2 := MinVal
+                    end;
 
-                  R := $ff * (R - MinVal) / Range;
-                  G := $ff * (G - MinVal) / Range;
-                  B := $ff * (B - MinVal) / Range;
+                    R := $ff * (R - MinVal) / Range;
+                    G := $ff * (G - MinVal) / Range;
+                    B := $ff * (B - MinVal) / Range;
 
-                  R2 := $ff * (R2 - MinVal) / Range;
-                  G2 := $ff * (G2 - MinVal) / Range;
-                  B2 := $ff * (B2 - MinVal) / Range;
+                    R2 := $ff * (R2 - MinVal) / Range;
+                    G2 := $ff * (G2 - MinVal) / Range;
+                    B2 := $ff * (B2 - MinVal) / Range;
 
-                  S :=
+                    S :=
                       S
-                          + #$1B'[38;2;'
-                          + ToStr(Round(R))
-                          + ';'
-                          + ToStr(Round(G))
-                          + ';'
-                          + ToStr(Round(B))
-                          + 'm'
-                          + #$1B'[48;2;'
-                          + ToStr(Round(R2))
-                          + ';'
-                          + ToStr(Round(G2))
-                          + ';'
-                          + ToStr(Round(B2))
-                          + 'm'
-                          + HALF_CHAR;
-                end;
+                      + #$1B'[38;2;'
+                      + ToStr(Round(R))
+                      + ';'
+                      + ToStr(Round(G))
+                      + ';'
+                      + ToStr(Round(B))
+                      + 'm'
+                      + #$1B'[48;2;'
+                      + ToStr(Round(R2))
+                      + ';'
+                      + ToStr(Round(G2))
+                      + ';'
+                      + ToStr(Round(B2))
+                      + 'm'
+                      + HALF_CHAR;
+                  end;
                 psSIXEL, psSIXELDithered:
-                begin
-                  G := LocalData[Index + LocalArea];
-                  B := LocalData[Index + LocalArea * 2];
+                  begin
+                    G := LocalData[Index + LocalArea];
+                    B := LocalData[Index + LocalArea * 2];
 
-                  R := $ff * (R - MinVal) / Range;
-                  G := $ff * (G - MinVal) / Range;
-                  B := $ff * (B - MinVal) / Range;
-                  Pixels := Pixels + AnsiChar(Round(R)) + AnsiChar(Round(G)) + AnsiChar(Round(B));
-                end;
+                    R := $ff * (R - MinVal) / Range;
+                    G := $ff * (G - MinVal) / Range;
+                    B := $ff * (B - MinVal) / Range;
+                    Pixels := Pixels + AnsiChar(Round(R)) + AnsiChar(Round(G)) + AnsiChar(Round(B));
+                  end;
                 psSIXELGray:
-                begin
-                  R := $ff * (R - MinVal) / Range;
-                  Pixels := Pixels + AnsiChar(Round(R));
-                end;
+                  begin
+                    R := $ff * (R - MinVal) / Range;
+                    Pixels := Pixels + AnsiChar(Round(R));
+                  end;
               end;
             end;
           end;
@@ -421,3 +405,4 @@ begin
 end;
 
 end.
+

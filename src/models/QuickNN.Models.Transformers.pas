@@ -8,61 +8,56 @@
 {.$define USE_MULTITHREADING}
 
 interface
+
 uses
-  System.SysUtils,
-  System.Math,
-  QuickNN.SafeTensors,
-  QuickNN.Common,
-  QuickNN.Models.VAE,
-  QuickNN.Models.Qwen3,
-  System.JSON
+  System.SysUtils, System.Math, QuickNN.SafeTensors, QuickNN.Common,
+  QuickNN.Models.VAE, QuickNN.Models.Qwen3, System.JSON
 {$IFDEF USE_MULTITHREADING}
-  ,
-  QuickNN.Threading
+    , QuickNN.Threading
 {$ENDIF}
-      ;
+;
 
 const
   FLUX2_LATENT_RGB_PROJ: TArray<TArray<Single>> =
-      [
-          [0.000736, -0.008385, -0.019710],
-          [-0.001352, -0.016392, 0.020693],
-          [-0.006376, 0.002428, 0.036736],
-          [0.039384, 0.074167, 0.119789],
-          [0.007464, -0.005705, -0.004734],
-          [-0.004086, 0.005287, -0.000409],
-          [-0.032835, 0.050802, -0.028120],
-          [-0.003158, -0.000835, 0.000406],
-          [-0.112840, -0.084337, -0.023083],
-          [0.001462, -0.006656, 0.000549],
-          [-0.009980, -0.007480, 0.009702],
-          [0.032540, 0.000214, -0.061388],
-          [0.011023, 0.000694, 0.007143],
-          [-0.001468, -0.006723, -0.001678],
-          [-0.005921, -0.010320, -0.003907],
-          [-0.028434, 0.027584, 0.018457],
-          [0.014349, 0.011523, 0.000441],
-          [0.009874, 0.003081, 0.001507],
-          [0.002218, 0.005712, 0.001563],
-          [0.053010, -0.019844, 0.008683],
-          [-0.002507, 0.005384, 0.000938],
-          [-0.002177, -0.011366, 0.003559],
-          [-0.000261, 0.015121, -0.003240],
-          [-0.003944, -0.002083, 0.005043],
-          [-0.009138, 0.011336, 0.003781],
-          [0.011429, 0.003985, -0.003855],
-          [0.010518, -0.005586, 0.010131],
-          [0.007883, 0.002912, -0.001473],
-          [-0.003318, -0.003160, 0.003684],
-          [-0.034560, -0.008740, 0.012996],
-          [0.000166, 0.001079, -0.012153],
-          [0.017772, 0.000937, -0.011953]
-      ];
-
+    [
+      [0.000736, -0.008385, -0.019710],
+      [-0.001352, -0.016392, 0.020693],
+      [-0.006376, 0.002428, 0.036736],
+      [0.039384, 0.074167, 0.119789],
+      [0.007464, -0.005705, -0.004734],
+      [-0.004086, 0.005287, -0.000409],
+      [-0.032835, 0.050802, -0.028120],
+      [-0.003158, -0.000835, 0.000406],
+      [-0.112840, -0.084337, -0.023083],
+      [0.001462, -0.006656, 0.000549],
+      [-0.009980, -0.007480, 0.009702],
+      [0.032540, 0.000214, -0.061388],
+      [0.011023, 0.000694, 0.007143],
+      [-0.001468, -0.006723, -0.001678],
+      [-0.005921, -0.010320, -0.003907],
+      [-0.028434, 0.027584, 0.018457],
+      [0.014349, 0.011523, 0.000441],
+      [0.009874, 0.003081, 0.001507],
+      [0.002218, 0.005712, 0.001563],
+      [0.053010, -0.019844, 0.008683],
+      [-0.002507, 0.005384, 0.000938],
+      [-0.002177, -0.011366, 0.003559],
+      [-0.000261, 0.015121, -0.003240],
+      [-0.003944, -0.002083, 0.005043],
+      [-0.009138, 0.011336, 0.003781],
+      [0.011429, 0.003985, -0.003855],
+      [0.010518, -0.005586, 0.010131],
+      [0.007883, 0.002912, -0.001473],
+      [-0.003318, -0.003160, 0.003684],
+      [-0.034560, -0.008740, 0.012996],
+      [0.000166, 0.001079, -0.012153],
+      [0.017772, 0.000937, -0.011953]
+    ];
   FLUX2_LATENT_RGB_BIAS: TArray<Single> = [-0.028738, -0.098463, -0.107619];
 
 type
   PSingles = ^TSingles;
+
   TSingles = TMemoryBlock;
 
   TBF16s = TMemoryBlock;
@@ -133,12 +128,7 @@ type
     TxtMlpDownWeightBF16: TBF16s;
     Ismmap: Boolean;
 
-    procedure Load(
-        const SafeTensorFiles: TSafeTensorFiles;
-        const Idx, H, Mlp: LongInt;
-        const UseBF16: Boolean = True;
-        const AUseMMAP: Boolean = True;
-        const Resident: Boolean = False
+    procedure Load(const SafeTensorFiles: TSafeTensorFiles; const Idx, H, Mlp: LongInt; const UseBF16: Boolean = True; const AUseMMAP: Boolean = True; const resident: Boolean = False
     );
     procedure Free;
   end;
@@ -162,12 +152,7 @@ type
     // [hidden, hidden + mlp_hidden]
     ProjMlpWeight: TSingles;
     ProjMlpWeightBF16: TBF16s;
-    procedure Load(
-        const SafeTensorFiles: TSafeTensorFiles;
-        const Idx, H, Mlp: LongInt;
-        const UseBF16: Boolean = True;
-        const AUseMMAP: Boolean = True;
-        const Resident: Boolean = False
+    procedure Load(const SafeTensorFiles: TSafeTensorFiles; const Idx, H, Mlp: LongInt; const UseBF16: Boolean = True; const AUseMMAP: Boolean = True; const resident: Boolean = False
     );
     procedure Free;
   end;
@@ -179,11 +164,12 @@ type
 
   { TTimeEmbed }
   PTimeEmbed = ^TTimeEmbed;
+
   TTimeEmbed = record
     Fc1Weight: TSingles; // [hidden, 256]
     Fc2Weight: TSingles; // [hidden, hidden]
     SincosDim: LongInt; // 256 for FLUX.2-klein
-    procedure Forward(const Dst, SinCos: TMemoryBlock; const Hidden: LongInt; const OutSilu: TMemoryBlock);
+    procedure forward(const Dst, SinCos: TMemoryBlock; const Hidden: LongInt; const OutSilu: TMemoryBlock);
     procedure Free();
   end;
 
@@ -317,7 +303,7 @@ type
     NumSfFiles: LongInt;
     Eps: Single;
     class function Parse(const ModelDir: string): TTransformerFlux; static;
-    constructor Load(const ModelDir: string; const AUseMMAP: Boolean = True; const Resident: Boolean = False);
+    constructor Load(const ModelDir: string; const AUseMMAP: Boolean = True; const resident: Boolean = False);
     function IsLoaded(): Boolean;
     procedure ReInitialize(const TotalSeq: LongInt);
     procedure Free();
@@ -325,145 +311,39 @@ type
     procedure GetCachedRefRoPE(const PatchH, PatchW, TOffset: LongInt; var CosOut: TSingles; var SinOut: TSingles);
     procedure GetCachedImgRoPE(const PatchH, PatchW: LongInt; var CosOut: TSingles; var SinOut: TSingles);
     procedure GetCachedTxtRoPE(const TxtSeq: LongInt; var CosOut: TSingles; var SinOut: TSingles);
-    procedure GetCachedCombinedRoPE(
-        const ImgH, ImgW, RefH, RefW, TOffset: LongInt;
-        var CosOut: TSingles;
-        var SinOut: TSingles
-    );
+    procedure GetCachedCombinedRoPE(const ImgH, ImgW, RefH, RefW, TOffset: LongInt; var CosOut: TSingles; var SinOut: TSingles);
     procedure MultiHeadForward(const Dst, Q, K, V: TMemoryBlock; const Seq {, heads, head_dim}: LongInt);
-    procedure JointAttentionForward(
-        const ImgOut, TxtOut, ImgQ, ImgK, ImgV, TxtQ, TxtK, TxtV: TMemoryBlock;
-        const ImgSeq, TxtSeq {, heads, head_dim}: LongInt
-    );
-    procedure FfnSwigluForward(
-        const Dst, X: TMemoryBlock;
-        const GateWeight, UpWeight, DownWeight: TSingles;
-        const GateWeightBF16, UpWeightBF16, DownWeightBF16: TBF16s;
-        const Seq, Hidden, MlpHidden: LongInt
-    );
+    procedure JointAttentionForward(const ImgOut, TxtOut, ImgQ, ImgK, ImgV, TxtQ, TxtK, TxtV: TMemoryBlock; const ImgSeq, TxtSeq {, heads, head_dim}: LongInt);
+    procedure FfnSwigluForward(const Dst, X: TMemoryBlock; const GateWeight, UpWeight, DownWeight: TSingles; const GateWeightBF16, UpWeightBF16, DownWeightBF16: TBF16s; const Seq, Hidden, MlpHidden: LongInt);
 
-    procedure DoubleBlockForward(
-        const ImgHidden, TxtHidden: TMemoryBlock;
-        const BlockIdx: LongInt;
-        const ImgMod, TxtMod, ImgRoPECos, ImgRoPESin, TxtRoPECos, TxtRoPESin: TMemoryBlock;
-        const ImgSeq, TxtSeq: LongInt
-    );
+    procedure DoubleBlockForward(const ImgHidden, TxtHidden: TMemoryBlock; const BlockIdx: LongInt; const ImgMod, TxtMod, ImgRoPECos, ImgRoPESin, TxtRoPECos, TxtRoPESin: TMemoryBlock; const ImgSeq, TxtSeq: LongInt);
 
-    procedure SingleBlockForward(
-        const Hidden: TMemoryBlock;
-        const BlockIdx: LongInt;
-        const TEmb, AdalnWeight, ImgRoPECos, ImgRoPESin, TxtRoPECos, TxtRoPESin: TMemoryBlock;
-        const Seq, ImgOffset: LongInt
-    );
+    procedure SingleBlockForward(const Hidden: TMemoryBlock; const BlockIdx: LongInt; const TEmb, AdalnWeight, ImgRoPECos, ImgRoPESin, TxtRoPECos, TxtRoPESin: TMemoryBlock; const Seq, ImgOffset: LongInt);
 
     // for text to image
-    function Forward(
-        const ImgLatent: TMemoryBlock;
-        const ImgH, ImgW: LongInt;
-        const TxtEmb: TMemoryBlock;
-        const TxtSeq: LongInt;
-        Timestep: QNNFloat
-    ): TMemoryBlock; overload;
+    function forward(const ImgLatent: TMemoryBlock; const ImgH, ImgW: LongInt; const TxtEmb: TMemoryBlock; const TxtSeq: LongInt; Timestep: QNNFloat): TMemoryBlock; overload;
     // for reference image with text to image?
-    function Forward(
-        const ImgLatent: TMemoryBlock;
-        const ImgH, ImgW: LongInt;
-        const RefLatent: TMemoryBlock;
-        const RefH, RefW, TOffset: LongInt;
-        const TxtEmb: TMemoryBlock;
-        const TxtSeq: LongInt;
-        Timestep: QNNFloat
-    ): TMemoryBlock; overload;
+    function forward(const ImgLatent: TMemoryBlock; const ImgH, ImgW: LongInt; const RefLatent: TMemoryBlock; const RefH, RefW, TOffset: LongInt; const TxtEmb: TMemoryBlock; const TxtSeq: LongInt; Timestep: QNNFloat): TMemoryBlock; overload;
     // for multi-reference images with text to image
-    function Forward(
-        const ImgLatent: TMemoryBlock;
-        const ImgH, ImgW: LongInt;
-        const Refs: TArray<TImageRef>;
-        const TxtEmb: TMemoryBlock;
-        const TxtSeq: LongInt;
-        const Timestep: Single
-    ): TMemoryBlock; overload;
+    function forward(const ImgLatent: TMemoryBlock; const ImgH, ImgW: LongInt; const Refs: TArray<TImageRef>; const TxtEmb: TMemoryBlock; const TxtSeq: LongInt; const Timestep: Single): TMemoryBlock; overload;
 
     // simplest for distilled
-    function SampleEuler(
-        const Z: TMemoryBlock;
-        const Batch, Channels, H, W: LongInt;
-        const TextEmb: TMemoryBlock;
-        const TextSeq: LongInt;
-        const Schedule: TMemoryBlock;
-        const NumSteps: LongInt;
-        const ProgressCallback: TProgressCallback
-    ): TMemoryBlock; overload;
+    function SampleEuler(const Z: TMemoryBlock; const Batch, Channels, H, W: LongInt; const TextEmb: TMemoryBlock; const TextSeq: LongInt; const Schedule: TMemoryBlock; const NumSteps: LongInt; const ProgressCallback: TProgressCallback): TMemoryBlock; overload;
 
     // simplist distilled with one latent image
-    function SampleEuler(
-        const Z: TMemoryBlock;
-        const Batch, Channels, H, W: LongInt;
-        const RefLatent: TMemoryBlock;
-        const RefH, RefW, TOffset: LongInt;
-        const TextEmb: TMemoryBlock;
-        const TextSeq: LongInt;
-        const Schedule: TMemoryBlock;
-        const NumSteps: LongInt;
-        const ProgressCallback: TProgressCallback
-    ): TMemoryBlock; overload;
+    function SampleEuler(const Z: TMemoryBlock; const Batch, Channels, H, W: LongInt; const RefLatent: TMemoryBlock; const RefH, RefW, TOffset: LongInt; const TextEmb: TMemoryBlock; const TextSeq: LongInt; const Schedule: TMemoryBlock; const NumSteps: LongInt; const ProgressCallback: TProgressCallback): TMemoryBlock; overload;
 
     // non distilled with uncoditioning and guidance
-    function SampleEuler(
-        const Z: TMemoryBlock;
-        const Batch, Channels, H, W: LongInt;
-        const TextEmbCond: TMemoryBlock;
-        const TextSeqCond: LongInt;
-        const TextEmbUncond: TMemoryBlock;
-        const TextSeqUncond: LongInt;
-        const GuidanceScale: QNNFloat;
-        const Schedule: TMemoryBlock;
-        const NumSteps: LongInt;
-        const ProgressCallback: TProgressCallback
-    ): TMemoryBlock; overload;
+    function SampleEuler(const Z: TMemoryBlock; const Batch, Channels, H, W: LongInt; const TextEmbCond: TMemoryBlock; const TextSeqCond: LongInt; const TextEmbUncond: TMemoryBlock; const TextSeqUncond: LongInt; const GuidanceScale: QNNFloat; const Schedule: TMemoryBlock; const NumSteps: LongInt; const ProgressCallback: TProgressCallback): TMemoryBlock; overload;
 
     // non distiled with unconditioning, guidance and one latent image
-    function SampleEuler(
-        const Z: TMemoryBlock;
-        const Batch, Channels, H, W: LongInt;
-        const RefLatent: TMemoryBlock;
-        const RefH, RefW, TOffset: LongInt;
-        const TextEmbCond: TMemoryBlock;
-        const TextSeqCond: LongInt;
-        const TextEmbUncond: TMemoryBlock;
-        const TextSeqUncond: LongInt;
-        const GuidanceScale: QNNFloat;
-        const Schedule: TMemoryBlock;
-        const NumSteps: LongInt;
-        const ProgressCallback: TProgressCallback
-    ): TMemoryBlock; overload;
+    function SampleEuler(const Z: TMemoryBlock; const Batch, Channels, H, W: LongInt; const RefLatent: TMemoryBlock; const RefH, RefW, TOffset: LongInt; const TextEmbCond: TMemoryBlock; const TextSeqCond: LongInt; const TextEmbUncond: TMemoryBlock; const TextSeqUncond: LongInt; const GuidanceScale: QNNFloat; const Schedule: TMemoryBlock; const NumSteps: LongInt; const ProgressCallback: TProgressCallback): TMemoryBlock; overload;
 
     // simplest disilled with multi images
-    function SampleEuler(
-        const Z: TMemoryBlock;
-        const Batch, Channels, H, W: LongInt;
-        const Refs: TArray<TImageRef>;
-        const TextEmb: TMemoryBlock;
-        const TextSeq: LongInt;
-        const Schedule: TMemoryBlock;
-        const NumSteps: LongInt;
-        const ProgressCallback: TProgressCallback
-    ): TMemoryBlock; overload;
+    function SampleEuler(const Z: TMemoryBlock; const Batch, Channels, H, W: LongInt; const Refs: TArray<TImageRef>; const TextEmb: TMemoryBlock; const TextSeq: LongInt; const Schedule: TMemoryBlock; const NumSteps: LongInt; const ProgressCallback: TProgressCallback): TMemoryBlock; overload;
 
     // non disilled with unconditioning, gudance and multi images
-    function SampleEuler(
-        const Z: TMemoryBlock;
-        const Batch, Channels, H, W: LongInt;
-        const Refs: TArray<TImageRef>;
-        const TextEmbCond: TMemoryBlock;
-        const TextSeqCond: LongInt;
-        const TextEmbUncond: TMemoryBlock;
-        const TextSeqUncond: LongInt;
-        const GuidanceScale: QNNFloat;
-        const Schedule: PQNNFloat;
-        NumSteps: LongInt;
-        const ProgressCallback: TProgressCallback
-    ): TMemoryBlock; overload;
+    function SampleEuler(const Z: TMemoryBlock; const Batch, Channels, H, W: LongInt; const Refs: TArray<TImageRef>; const TextEmbCond: TMemoryBlock; const TextSeqCond: LongInt; const TextEmbUncond: TMemoryBlock; const TextSeqUncond: LongInt; const GuidanceScale: QNNFloat; const Schedule: PQNNFloat; NumSteps: LongInt; const ProgressCallback: TProgressCallback): TMemoryBlock; overload;
   end;
 
 const
@@ -498,18 +378,14 @@ type
     (* AdaLN modulation (NULL for context_refiner blocks) *)
     AdalnWeight: TSingles; (* [4*dim, adaln_dim] *)
     AdalnBias: TSingles; (* [4*dim] *)
-    procedure Load(
-        const Files: TSafeTensorFiles;
-        const Prefix: string;
-        const HasModulation: Boolean;
-        const AUseMMAP: Boolean = True;
-        const Resident: Boolean = False
+    procedure Load(const Files: TSafeTensorFiles; const Prefix: string; const HasModulation: Boolean; const AUseMMAP: Boolean = True; const resident: Boolean = False
     );
     procedure Free();
   end;
 
   (* Final layer weights *)
   PFinalZI = ^TFinalZI;
+
   TFinalZI = record
     AdalnWeight: TSingles; (* [dim, adaln_dim] *)
     AdalnBias: TSingles; (* [dim] *)
@@ -580,110 +456,75 @@ type
     WorkFfn: TSingles; (* FFN intermediate *)
     WorkAlloc: NativeInt; (* Total allocated *)
     MaxSeq: LongInt; (* Max sequence length allocated for *)
-    procedure AttentionForward(
-        const Dst, Src: TMemoryBlock;
-        const Block: TBlockZI;
-        const PosIds: PLongint;
-        const Mask: PLongint;
-        const Seq: LongInt
-    );
+    procedure AttentionForward(const Dst, Src: TMemoryBlock; const Block: TBlockZI; const PosIds: PLongint; const Mask: PLongint; const Seq: LongInt);
     procedure FfnForward(const Dst, Src: TMemoryBlock; const Block: TBlockZI; const Seq: LongInt);
-    procedure BlockForward(
-        const Dst: TMemoryBlock;
-        const Block: TBlockZI;
-        const PosIds: PLongint;
-        const Mask: PLongint;
-        const TEmb: TMemoryBlock;
-        const Seq: LongInt
-    );
+    procedure BlockForward(const Dst: TMemoryBlock; const Block: TBlockZI; const PosIds: PLongint; const Mask: PLongint; const TEmb: TMemoryBlock; const Seq: LongInt);
     procedure PreComputeRope();
     procedure FinalComputeScale(const Scale, TEmb: TMemoryBlock);
     procedure FinalForward(const Dst, Src, TEmb: TMemoryBlock; const Seq: LongInt);
-    function Forward(
-        const Latent: TMemoryBlock;
-        const LatentH, LatentW: LongInt;
-        const Timestep: QNNFloat;
-        const CapFeats: TMemoryBlock;
-        const CapSeqLen: LongInt
-    ): TMemoryBlock;
+    function forward(const Latent: TMemoryBlock; const LatentH, LatentW: LongInt; const Timestep: QNNFloat; const CapFeats: TMemoryBlock; const CapSeqLen: LongInt): TMemoryBlock;
     procedure ApplyRope(const Dst: PQNNFloat; const PosIds: PLongint; const Seq, NHeads: LongInt);
     procedure TimeStepEmbed(const Dst: TMemoryBlock; const T: QNNFloat);
-    function SampleEuler(
-        const Z: TMemoryBlock;
-        const Batch {, channels}, H, W, PatchSize: LongInt;
-        const CapFeats: TMemoryBlock;
-        const CapSeq: LongInt;
-        const Schedule: PQNNFloat;
-        const NumSteps: LongInt;
-        const ProgressCallback: TStepCallback = nil
+    function SampleEuler(const Z: TMemoryBlock; const Batch {, channels}, H, W, PatchSize: LongInt; const CapFeats: TMemoryBlock; const CapSeq: LongInt; const Schedule: PQNNFloat; const NumSteps: LongInt; const ProgressCallback: TStepCallback = nil
     ): TMemoryBlock;
-    procedure Load(
-        const ModelDir: string;
-        const Adim, AnHeads, AnLayers, AnRefiner, AcapFeatDim, AinChannels, ApatchSize: LongInt;
-        const AropeTheta: QNNFloat;
-        const AAxesDims: PLongint;
-        const AUseMMAP: Boolean = True;
-        const Resident: Boolean = False
+    procedure Load(const ModelDir: string; const Adim, AnHeads, AnLayers, AnRefiner, AcapFeatDim, AinChannels, ApatchSize: LongInt; const AropeTheta: QNNFloat; const AAxesDims: PLongint; const AUseMMAP: Boolean = True; const resident: Boolean = False
     );
     function IsLoaded(): Boolean;
     procedure Free();
   end;
 
 procedure PatchifyZi(const Dst: PQNNFloat; const Src: PQNNFloat; const InCh, Height, Width, PatchSize: LongInt);
+
 procedure UnPatchifyZi(const Dst: PQNNFloat; const Src: PQNNFloat; const InCh, Height, Width, PatchSize: LongInt);
+
 function LoadShards(const ModelDir: string): TSafeTensorFiles;
 
 implementation
+
 uses
-  QuickNN.Kernels,
-  QuickNN.Vulkan,
-  System.IOUtils;
+  QuickNN.Kernels, QuickNN.Vulkan, System.IOUtils;
 
 function LoadShards(const ModelDir: string): TSafeTensorFiles;
 begin
   Result :=
-      LoadSafeTensorShards(
-          TPath.Combine(ModelDir, 'transformer'),
-          'diffusion_pytorch_model.safetensors.index.json',
-          'diffusion_pytorch_model.safetensors'
-      );
+    LoadSafeTensorShards(
+    TPath.Combine(ModelDir, 'transformer'),
+    'diffusion_pytorch_model.safetensors.index.json',
+    'diffusion_pytorch_model.safetensors'
+  );
 end;
 
 { TDoubleBlock }
 
-procedure TDoubleBlock.Load(
-    const SafeTensorFiles: TSafeTensorFiles;
-    const Idx, H, Mlp: LongInt;
-    const UseBF16: Boolean;
-    const AUseMMAP: Boolean;
-    const Resident: Boolean
-);
+procedure TDoubleBlock.Load(const SafeTensorFiles: TSafeTensorFiles; const Idx, H, Mlp: LongInt; const UseBF16: Boolean; const AUseMMAP: Boolean; const resident: Boolean);
 const
   TRANSFORMER_BLOCK: array[0..15] of string = (
-      'transformer_blocks.%d.attn.norm_q.weight',
-      'transformer_blocks.%d.attn.norm_k.weight',
-      'transformer_blocks.%d.attn.to_q.weight',
-      'transformer_blocks.%d.attn.to_k.weight',
-      'transformer_blocks.%d.attn.to_v.weight',
-      'transformer_blocks.%d.attn.to_out.0.weight',
-      'transformer_blocks.%d.ff.linear_in.weight',
-      'transformer_blocks.%d.ff.linear_out.weight',
-      'transformer_blocks.%d.attn.norm_added_q.weight',
-      'transformer_blocks.%d.attn.norm_added_k.weight',
-      'transformer_blocks.%d.attn.add_q_proj.weight',
-      'transformer_blocks.%d.attn.add_k_proj.weight',
-      'transformer_blocks.%d.attn.add_v_proj.weight',
-      'transformer_blocks.%d.attn.to_add_out.weight',
-      'transformer_blocks.%d.ff_context.linear_in.weight',
-      'transformer_blocks.%d.ff_context.linear_out.weight'
+    'transformer_blocks.%d.attn.norm_q.weight',
+    'transformer_blocks.%d.attn.norm_k.weight',
+    'transformer_blocks.%d.attn.to_q.weight',
+    'transformer_blocks.%d.attn.to_k.weight',
+    'transformer_blocks.%d.attn.to_v.weight',
+    'transformer_blocks.%d.attn.to_out.0.weight',
+    'transformer_blocks.%d.ff.linear_in.weight',
+    'transformer_blocks.%d.ff.linear_out.weight',
+    'transformer_blocks.%d.attn.norm_added_q.weight',
+    'transformer_blocks.%d.attn.norm_added_k.weight',
+    'transformer_blocks.%d.attn.add_q_proj.weight',
+    'transformer_blocks.%d.attn.add_k_proj.weight',
+    'transformer_blocks.%d.attn.add_v_proj.weight',
+    'transformer_blocks.%d.attn.to_add_out.weight',
+    'transformer_blocks.%d.ff_context.linear_in.weight',
+    'transformer_blocks.%d.ff_context.linear_out.weight'
   );
+
   function Projection(const Name: string; const Mapped: Boolean): TMemoryBlock;
   begin
-    if Resident then
+    if resident then
       Result := SafeTensorFiles.GetLinearWeight(Name, Mapped)
     else
       Result := SafeTensorFiles.GetTensorDataMemBlock(Name, Mapped);
   end;
+
 begin
   // as in forward order 1st do the norm q and k weights;
 
@@ -700,8 +541,8 @@ begin
     (* Image FFN - linear_in contains gate and up fused - skip f32 if bf16 available *)
     ImgMlpGateWeightBF16 := SafeTensorFiles.GetTensorDataMemBlockBF16(Format(TRANSFORMER_BLOCK[6], [Idx]), AUseMMAP);
     Assert(
-        AUseMMAP or (ImgMlpGateWeightBF16.Count >= Mlp * H * 2),
-        'ERROR : incorrect size of ' + Format(TRANSFORMER_BLOCK[6], [Idx])
+      AUseMMAP or (ImgMlpGateWeightBF16.Count >= Mlp * H * 2),
+      'ERROR : incorrect size of ' + Format(TRANSFORMER_BLOCK[6], [Idx])
     );
     ImgMlpUpWeightBF16 := ImgMlpGateWeightBF16 + Mlp * H;
     ImgMlpDownWeightBF16 := SafeTensorFiles.GetTensorDataMemBlockBF16(Format(TRANSFORMER_BLOCK[7], [Idx]), AUseMMAP);
@@ -717,8 +558,8 @@ begin
     TxtProjWeightBF16 := SafeTensorFiles.GetTensorDataMemBlockBF16(Format(TRANSFORMER_BLOCK[13], [Idx]), AUseMMAP);
     TxtMlpGateWeightBF16 := SafeTensorFiles.GetTensorDataMemBlockBF16(Format(TRANSFORMER_BLOCK[14], [Idx]), AUseMMAP);
     Assert(
-        AUseMMAP or (TxtMlpGateWeightBF16.Count >= Mlp * H * 2),
-        'ERROR : incorrect size of ' + Format(TRANSFORMER_BLOCK[14], [Idx])
+      AUseMMAP or (TxtMlpGateWeightBF16.Count >= Mlp * H * 2),
+      'ERROR : incorrect size of ' + Format(TRANSFORMER_BLOCK[14], [Idx])
     );
     TxtMlpUpWeightBF16 := TxtMlpGateWeightBF16 + Mlp * H;
     TxtMlpDownWeightBF16 := SafeTensorFiles.GetTensorDataMemBlockBF16(Format(TRANSFORMER_BLOCK[15], [Idx]), AUseMMAP)
@@ -733,8 +574,8 @@ begin
     (* Image FFN - linear_in contains gate and up fused - skip f32 if bf16 available *)
     ImgMlpGateWeight := Projection(Format(TRANSFORMER_BLOCK[6], [Idx]), AUseMMAP);
     Assert(
-        AUseMMAP or (ImgMlpGateWeight.Count >= Mlp * H * 2),
-        'ERROR : incorrect size of ' + Format(TRANSFORMER_BLOCK[6], [Idx])
+      AUseMMAP or (ImgMlpGateWeight.Count >= Mlp * H * 2),
+      'ERROR : incorrect size of ' + Format(TRANSFORMER_BLOCK[6], [Idx])
     );
     ImgMlpUpWeight := ImgMlpGateWeight + Mlp * H;
     ImgMlpDownWeight := Projection(Format(TRANSFORMER_BLOCK[7], [Idx]), AUseMMAP);
@@ -750,8 +591,8 @@ begin
     TxtProjWeight := Projection(Format(TRANSFORMER_BLOCK[13], [Idx]), AUseMMAP);
     TxtMlpGateWeight := Projection(Format(TRANSFORMER_BLOCK[14], [Idx]), AUseMMAP);
     Assert(
-        AUseMMAP or (TxtMlpGateWeight.Count >= Mlp * H * 2),
-        'ERROR : incorrect size of ' + Format(TRANSFORMER_BLOCK[14], [Idx])
+      AUseMMAP or (TxtMlpGateWeight.Count >= Mlp * H * 2),
+      'ERROR : incorrect size of ' + Format(TRANSFORMER_BLOCK[14], [Idx])
     );
     TxtMlpUpWeight := TxtMlpGateWeight + Mlp * H;
     TxtMlpDownWeight := Projection(Format(TRANSFORMER_BLOCK[15], [Idx]), AUseMMAP)
@@ -759,33 +600,28 @@ begin
 
   (* Text stream - QK norm weights (always f32) *)
   TxtNormQWeight :=
-      SafeTensorFiles.GetTensorDataMemBlock(Format(TRANSFORMER_BLOCK[8], [Idx]), False {use_mmap}); // always allocate
+    SafeTensorFiles.GetTensorDataMemBlock(Format(TRANSFORMER_BLOCK[8], [Idx]), False {use_mmap}); // always allocate
   TxtNormKWeight :=
-      SafeTensorFiles.GetTensorDataMemBlock(Format(TRANSFORMER_BLOCK[9], [Idx]), False {use_mmap}); // always allocate
-
+    SafeTensorFiles.GetTensorDataMemBlock(Format(TRANSFORMER_BLOCK[9], [Idx]), False {use_mmap}); // always allocate
 end;
 
-procedure TSingleBlock.Load(
-    const SafeTensorFiles: TSafeTensorFiles;
-    const Idx, H, Mlp: LongInt;
-    const UseBF16: Boolean;
-    const AUseMMAP: Boolean;
-    const Resident: Boolean
-);
+procedure TSingleBlock.Load(const SafeTensorFiles: TSafeTensorFiles; const Idx, H, Mlp: LongInt; const UseBF16: Boolean; const AUseMMAP: Boolean; const resident: Boolean);
 const
   TRANSFORMER_BLOCK: array[0..3] of string = (
-      'single_transformer_blocks.%d.attn.norm_q.weight',
-      'single_transformer_blocks.%d.attn.norm_k.weight',
-      'single_transformer_blocks.%d.attn.to_qkv_mlp_proj.weight',
-      'single_transformer_blocks.%d.attn.to_out.weight'
+    'single_transformer_blocks.%d.attn.norm_q.weight',
+    'single_transformer_blocks.%d.attn.norm_k.weight',
+    'single_transformer_blocks.%d.attn.to_qkv_mlp_proj.weight',
+    'single_transformer_blocks.%d.attn.to_out.weight'
   );
+
   function Projection(const Name: string; const Mapped: Boolean): TMemoryBlock;
   begin
-    if Resident then
+    if resident then
       Result := SafeTensorFiles.GetLinearWeight(Name, Mapped)
     else
       Result := SafeTensorFiles.GetTensorDataMemBlock(Name, Mapped);
   end;
+
 begin
 
   (* QK norm weights (always f32, small) *)
@@ -862,7 +698,7 @@ end;
 
 { TTimeEmbed }
 
-procedure TTimeEmbed.Forward(const Dst, SinCos: TMemoryBlock; const Hidden: LongInt; const OutSilu: TMemoryBlock);
+procedure TTimeEmbed.forward(const Dst, SinCos: TMemoryBlock; const Hidden: LongInt; const OutSilu: TMemoryBlock);
 begin
   // if length(workspace)< 1*hidden then
   //  setLength(workspace, hidden);
@@ -926,16 +762,18 @@ begin
   Result.SfFiles := LoadShards(ModelDir);
 end;
 
-constructor TTransformerFlux.Load(const ModelDir: string; const AUseMMAP: Boolean; const Resident: Boolean);
+constructor TTransformerFlux.Load(const ModelDir: string; const AUseMMAP: Boolean; const resident: Boolean);
 var
   Cfgfile: string;
+
   function Projection(const Name: string; const Mapped: Boolean): TMemoryBlock;
   begin
-    if Resident then
+    if resident then
       Result := SfFiles.GetLinearWeight(Name, Mapped)
     else
       Result := SfFiles.GetTensorDataMemBlock(Name, Mapped);
   end;
+
 begin
   Self := Default(TTransformerFlux);
   Cfgfile := ModelDir;
@@ -957,7 +795,7 @@ begin
   end;
   MaxSeqLen := 52000;
   UseMmap := AUseMMAP;
-  ResidentOnly := Resident;
+  ResidentOnly := resident;
   if Length(SfFiles) = 0 then
     SfFiles := LoadShards(ModelDir);
 
@@ -977,9 +815,9 @@ begin
   if UseBF16 then
   begin
     AdalnDoubleImgWeightBF16 :=
-        SfFiles.GetTensorDataMemBlockBF16('double_stream_modulation_img.linear.weight', UseMmap);
+      SfFiles.GetTensorDataMemBlockBF16('double_stream_modulation_img.linear.weight', UseMmap);
     AdalnDoubleTxtWeightBF16 :=
-        SfFiles.GetTensorDataMemBlockBF16('double_stream_modulation_txt.linear.weight', UseMmap);
+      SfFiles.GetTensorDataMemBlockBF16('double_stream_modulation_txt.linear.weight', UseMmap);
     AdalnSingleWeightBF16 := SfFiles.GetTensorDataMemBlockBF16('single_stream_modulation.linear.weight', UseMmap)
   end;
   SetLength(DoubleBlocks, NumDoubleLayers);
@@ -988,7 +826,7 @@ begin
   FinalProjWeight := Projection('proj_out.weight', UseMmap);
   if UseBF16 then
     FinalProjWeightBF16 := SfFiles.GetTensorDataMemBlockBF16('proj_out.weight', UseMmap);
-  if Resident then
+  if resident then
     Exit;
   RoPEFreqs := TSingles.Create([MaxSeqLen, HeadDim], 'FLUX_LOAD_ROPE_FREQS');
   if RoPEFreqs.IsAssigned() then
@@ -1079,7 +917,6 @@ begin
   DoubleImgAttnOut := TMemoryBlock.Create([TotalSeq, Hidden], 'FLUX_INIT_double_img_attn_out');
   DoubleTxtAttnOut := TMemoryBlock.Create([TotalSeq, Hidden], 'FLUX_INIT_double_txt_attn_out');
   WorkSeqAlloc := TotalSeq;
-
 end;
 
 procedure TTransformerFlux.Free();
@@ -1165,11 +1002,7 @@ begin
   end;
 end;
 
-procedure TTransformerFlux.GetCachedRefRoPE(
-    const PatchH, PatchW, TOffset: LongInt;
-    var CosOut: TSingles;
-    var SinOut: TSingles
-);
+procedure TTransformerFlux.GetCachedRefRoPE(const PatchH, PatchW, TOffset: LongInt; var CosOut: TSingles; var SinOut: TSingles);
 var
   Seq, LocalAxisDim: LongInt;
 // size: NativeInt;
@@ -1177,10 +1010,10 @@ begin
   Seq := PatchH * PatchW;
   LocalAxisDim := AxisDim;
   if (CachedRefH = PatchH)
-      and (CachedRefW = PatchW)
-      and (CachedRefTOffset = TOffset)
-      and CachedRefRoPECos.IsAssigned()
-      and CachedRefRoPESin.IsAssigned() then
+    and (CachedRefW = PatchW)
+    and (CachedRefTOffset = TOffset)
+    and CachedRefRoPECos.IsAssigned()
+    and CachedRefRoPESin.IsAssigned() then
   begin
     CosOut := CachedRefRoPECos;
     SinOut := CachedRefRoPESin;
@@ -1260,11 +1093,7 @@ begin
   SinOut := CachedTxtRoPESin
 end;
 
-procedure TTransformerFlux.GetCachedCombinedRoPE(
-    const ImgH, ImgW, RefH, RefW, TOffset: LongInt;
-    var CosOut: TSingles;
-    var SinOut: TSingles
-);
+procedure TTransformerFlux.GetCachedCombinedRoPE(const ImgH, ImgW, RefH, RefW, TOffset: LongInt; var CosOut: TSingles; var SinOut: TSingles);
 var
   ImgSeq, RefSeq, CombinedSeq, LocalAxisDim: LongInt;
   {combined_size,}
@@ -1279,12 +1108,12 @@ begin
   ImgSize := ImgSeq * LocalAxisDim * 4;
   RefSize := RefSeq * LocalAxisDim * 4;
   if (CachedCombinedImgH = ImgH)
-      and (CachedCombinedImgW = ImgW)
-      and (CachedCombinedRefH = RefH)
-      and (CachedCombinedRefW = RefW)
-      and (CachedCombinedTOffset = TOffset)
-      and CachedCombinedRoPECos.IsAssigned()
-      and CachedCombinedRoPESin.IsAssigned() then
+    and (CachedCombinedImgW = ImgW)
+    and (CachedCombinedRefH = RefH)
+    and (CachedCombinedRefW = RefW)
+    and (CachedCombinedTOffset = TOffset)
+    and CachedCombinedRoPECos.IsAssigned()
+    and CachedCombinedRoPESin.IsAssigned() then
   begin
     CosOut := CachedCombinedRoPECos;
     SinOut := CachedCombinedRoPESin;
@@ -1320,60 +1149,59 @@ var
   Hidden, LocalHeadDim: LongInt;
   Scale: QNNFloat;
   Scores: TMemoryBlock;
-
   Worker: TGroupProcNested;
 begin
   Worker :=
-      procedure(const Start, Finish: IntPtr; const Data: Pointer)
+    procedure(const Start, Finish: IntPtr; const Data: Pointer)
 
-      var
-        I: LongInt;
-        Qh, KH, Vh, Oh, Sh: TMemoryBlock;
+    var
+      I: LongInt;
+      Qh, KH, Vh, Oh, Sh: TMemoryBlock;
+    begin
+      for I := Start to Finish do
       begin
-        for I := Start to Finish do
-        begin
-          Qh := Q + I * LocalHeadDim;
-          KH := K + I * LocalHeadDim;
-          Vh := V + I * LocalHeadDim;
-          Oh := Dst + I * LocalHeadDim;
-          Sh := Scores + I * Seq * Seq;
+        Qh := Q + I * LocalHeadDim;
+        KH := K + I * LocalHeadDim;
+        Vh := V + I * LocalHeadDim;
+        Oh := Dst + I * LocalHeadDim;
+        Sh := Scores + I * Seq * Seq;
 
-          CblasGemm(
-              CblasRowMajor,
-              CblasNoTrans,
-              CblasTrans,
-              Seq,
-              Seq,
-              LocalHeadDim,
-              Scale,
-              Qh {Q      + i*headDim},
-              Hidden,
-              KH {K      + i*headDim},
-              Hidden,
-              0.0,
-              Sh {scores + i*seq*seq},
-              Seq
-          );
-          QNNSoftmaxRows(Sh {scores + i*seq*seq}, Seq, Seq);
+        CblasGemm(
+          CblasRowMajor,
+          CblasNoTrans,
+          CblasTrans,
+          Seq,
+          Seq,
+          LocalHeadDim,
+          Scale,
+          Qh {Q      + i*headDim},
+          Hidden,
+          KH {K      + i*headDim},
+          Hidden,
+          0.0,
+          Sh {scores + i*seq*seq},
+          Seq
+        );
+        QNNSoftmaxRows(Sh {scores + i*seq*seq}, Seq, Seq);
 
-          CblasGemm(
-              CblasRowMajor,
-              CblasNoTrans,
-              CblasNoTrans,
-              Seq,
-              LocalHeadDim,
-              Seq,
-              1.0,
-              Sh {scores + i*seq*seq},
-              Seq,
-              Vh {V      + i*headDim},
-              Hidden,
-              0.0,
-              Oh {dst    + i*headDim},
-              Hidden
-          );
-        end;
+        CblasGemm(
+          CblasRowMajor,
+          CblasNoTrans,
+          CblasNoTrans,
+          Seq,
+          LocalHeadDim,
+          Seq,
+          1.0,
+          Sh {scores + i*seq*seq},
+          Seq,
+          Vh {V      + i*headDim},
+          Hidden,
+          0.0,
+          Oh {dst    + i*headDim},
+          Hidden
+        );
       end;
+    end;
 
   LocalHeadDim := HeadDim;
   Hidden := NumHeads * HeadDim; // but we use self.hidden_size
@@ -1385,110 +1213,104 @@ begin
 {$IFDEF _USE_MULTITHREADING} // CAUTION : do not multithread
     Mp.&for(Worker, 0, NumHeads - 1);
 {$ELSE}
-    Worker(0, NumHeads - 1, nil);
+  Worker(0, NumHeads - 1, nil);
 {$ENDIF}
-
 end;
 
-procedure TTransformerFlux.JointAttentionForward(
-    const ImgOut, TxtOut, ImgQ, ImgK, ImgV, TxtQ, TxtK, TxtV: TMemoryBlock;
-    const ImgSeq, TxtSeq: LongInt
-);
+procedure TTransformerFlux.JointAttentionForward(const ImgOut, TxtOut, ImgQ, ImgK, ImgV, TxtQ, TxtK, TxtV: TMemoryBlock; const ImgSeq, TxtSeq: LongInt);
 var
   TotalSeq, Hidden, LocalHeadDim: LongInt;
   Scale: QNNFloat;
   CatK, CatV, Scores: TMemoryBlock;
-
   Worker: TGroupProcNested;
 begin
   Worker :=
-      procedure(const Start, Finish: IntPtr; const Data: Pointer)
+    procedure(const Start, Finish: IntPtr; const Data: Pointer)
 
-      var
-        I: LongInt;
-        ImgQh, ImgSh, ImgOh, TxtQh, TxtSh, TxtOh, KH, Vh: TMemoryBlock;
+    var
+      I: LongInt;
+      ImgQh, ImgSh, ImgOh, TxtQh, TxtSh, TxtOh, KH, Vh: TMemoryBlock;
+    begin
+      for I := Start to Finish do
       begin
-        for I := Start to Finish do
-        begin
-          ImgQh := ImgQ + I * LocalHeadDim;
-          TxtQh := TxtQ + I * LocalHeadDim;
-          KH := CatK + I * LocalHeadDim;
-          Vh := CatV + I * LocalHeadDim;
-          ImgOh := ImgOut + I * LocalHeadDim;
-          TxtOh := TxtOut + I * LocalHeadDim;
-          ImgSh := Scores + I * TotalSeq * TotalSeq;
-          TxtSh := ImgSh + ImgSeq * TotalSeq; // txt_sh is an offset from img_sh
+        ImgQh := ImgQ + I * LocalHeadDim;
+        TxtQh := TxtQ + I * LocalHeadDim;
+        KH := CatK + I * LocalHeadDim;
+        Vh := CatV + I * LocalHeadDim;
+        ImgOh := ImgOut + I * LocalHeadDim;
+        TxtOh := TxtOut + I * LocalHeadDim;
+        ImgSh := Scores + I * TotalSeq * TotalSeq;
+        TxtSh := ImgSh + ImgSeq * TotalSeq; // txt_sh is an offset from img_sh
 
-          CblasGemm(
-              CblasRowMajor,
-              CblasNoTrans,
-              CblasTrans,
-              ImgSeq,
-              TotalSeq,
-              LocalHeadDim,
-              Scale,
-              ImgQh,
-              Hidden,
-              KH,
-              Hidden,
-              0.0,
-              ImgSh,
-              TotalSeq
-          );
-          QNNSoftmaxRows(ImgSh, ImgSeq, TotalSeq);
-          CblasGemm(
-              CblasRowMajor,
-              CblasNoTrans,
-              CblasNoTrans,
-              ImgSeq,
-              LocalHeadDim,
-              TotalSeq,
-              1.0,
-              ImgSh,
-              TotalSeq,
-              Vh,
-              Hidden,
-              0.0,
-              ImgOh,
-              Hidden
-          );
+        CblasGemm(
+          CblasRowMajor,
+          CblasNoTrans,
+          CblasTrans,
+          ImgSeq,
+          TotalSeq,
+          LocalHeadDim,
+          Scale,
+          ImgQh,
+          Hidden,
+          KH,
+          Hidden,
+          0.0,
+          ImgSh,
+          TotalSeq
+        );
+        QNNSoftmaxRows(ImgSh, ImgSeq, TotalSeq);
+        CblasGemm(
+          CblasRowMajor,
+          CblasNoTrans,
+          CblasNoTrans,
+          ImgSeq,
+          LocalHeadDim,
+          TotalSeq,
+          1.0,
+          ImgSh,
+          TotalSeq,
+          Vh,
+          Hidden,
+          0.0,
+          ImgOh,
+          Hidden
+        );
 
-          CblasGemm(
-              CblasRowMajor,
-              CblasNoTrans,
-              CblasTrans,
-              TxtSeq,
-              TotalSeq,
-              LocalHeadDim,
-              Scale,
-              TxtQh,
-              Hidden,
-              KH,
-              Hidden,
-              0.0,
-              TxtSh,
-              TotalSeq
-          );
-          QNNSoftmaxRows(TxtSh, TxtSeq, TotalSeq);
-          CblasGemm(
-              CblasRowMajor,
-              CblasNoTrans,
-              CblasNoTrans,
-              TxtSeq,
-              LocalHeadDim,
-              TotalSeq,
-              1.0,
-              TxtSh,
-              TotalSeq,
-              Vh,
-              Hidden,
-              0.0,
-              TxtOh,
-              Hidden
-          );
-
-        end;
+        CblasGemm(
+          CblasRowMajor,
+          CblasNoTrans,
+          CblasTrans,
+          TxtSeq,
+          TotalSeq,
+          LocalHeadDim,
+          Scale,
+          TxtQh,
+          Hidden,
+          KH,
+          Hidden,
+          0.0,
+          TxtSh,
+          TotalSeq
+        );
+        QNNSoftmaxRows(TxtSh, TxtSeq, TotalSeq);
+        CblasGemm(
+          CblasRowMajor,
+          CblasNoTrans,
+          CblasNoTrans,
+          TxtSeq,
+          LocalHeadDim,
+          TotalSeq,
+          1.0,
+          TxtSh,
+          TotalSeq,
+          Vh,
+          Hidden,
+          0.0,
+          TxtOh,
+          Hidden
+        );
       end;
+    end;
 
   TotalSeq := ImgSeq + TxtSeq;
   LocalHeadDim := HeadDim;
@@ -1520,15 +1342,9 @@ begin
     Worker(0, NumHeads - 1, nil)
 {$ENDIF}
   end
-
 end;
 
-procedure TTransformerFlux.FfnSwigluForward(
-    const Dst, X: TMemoryBlock;
-    const GateWeight, UpWeight, DownWeight: TSingles;
-    const GateWeightBF16, UpWeightBF16, DownWeightBF16: TBF16s;
-    const Seq, Hidden, MlpHidden: LongInt
-);
+procedure TTransformerFlux.FfnSwigluForward(const Dst, X: TMemoryBlock; const GateWeight, UpWeight, DownWeight: TSingles; const GateWeightBF16, UpWeightBF16, DownWeightBF16: TBF16s; const Seq, Hidden, MlpHidden: LongInt);
 var
   Gate, Up, Down: TMemoryBlock;
 begin
@@ -1568,39 +1384,11 @@ end;
   gate2 (pre-FFN). The gating mechanism controls information flow from
   the attention and FFN residual paths. *)
 
-procedure TTransformerFlux.DoubleBlockForward(
-    const ImgHidden, TxtHidden: TMemoryBlock;
-    const BlockIdx: LongInt;
-    const ImgMod, TxtMod, ImgRoPECos, ImgRoPESin, TxtRoPECos, TxtRoPESin: TMemoryBlock;
-    const ImgSeq, TxtSeq: LongInt
-);
-
+procedure TTransformerFlux.DoubleBlockForward(const ImgHidden, TxtHidden: TMemoryBlock; const BlockIdx: LongInt; const ImgMod, TxtMod, ImgRoPECos, ImgRoPESin, TxtRoPECos, TxtRoPESin: TMemoryBlock; const ImgSeq, TxtSeq: LongInt);
 const
   AXISDIM = 32;
-
 var
-  ImgShift1,
-  ImgScale1,
-  ImgGate1,
-  ImgShift2,
-  ImgScale2,
-  ImgGate2,
-  TxtShift1,
-  TxtScale1,
-  TxtGate1,
-  TxtShift2,
-  TxtScale2,
-  TxtGate2,
-  ImgNorm,
-  ImgQ,
-  ImgK,
-  ImgV,
-  TxtNorm,
-  TxtQ,
-  TxtK,
-  TxtV,
-  ImgProj,
-  TxtProj: TMemoryBlock;
+  ImgShift1, ImgScale1, ImgGate1, ImgShift2, ImgScale2, ImgGate2, TxtShift1, TxtScale1, TxtGate1, TxtShift2, TxtScale2, TxtGate2, ImgNorm, ImgQ, ImgK, ImgV, TxtNorm, TxtQ, TxtK, TxtV, ImgProj, TxtProj: TMemoryBlock;
   Block: PDoubleBlock;
 begin
 
@@ -1661,38 +1449,38 @@ begin
   // printStat(txt_v, txt_seq * hidden_size);
 
   JointAttentionForward(
-      DoubleImgAttnOut,
-      DoubleTxtAttnOut,
-      ImgQ,
-      ImgK,
-      ImgV,
-      TxtQ,
-      TxtK,
-      TxtV,
-      ImgSeq,
-      TxtSeq {, num_heads, head_dim}
+    DoubleImgAttnOut,
+    DoubleTxtAttnOut,
+    ImgQ,
+    ImgK,
+    ImgV,
+    TxtQ,
+    TxtK,
+    TxtV,
+    ImgSeq,
+    TxtSeq {, num_heads, head_dim}
   );
 
   ImgProj := Work1;
   TxtProj := ImgProj + ImgSeq * HiddenSize;
 
   QNNLinearBF16OrF32(
-      ImgProj,
-      DoubleImgAttnOut,
-      Block.ImgProjWeight,
-      Block.ImgProjWeightBF16,
-      ImgSeq,
-      HiddenSize,
-      HiddenSize
+    ImgProj,
+    DoubleImgAttnOut,
+    Block.ImgProjWeight,
+    Block.ImgProjWeightBF16,
+    ImgSeq,
+    HiddenSize,
+    HiddenSize
   );
   QNNLinearBF16OrF32(
-      TxtProj,
-      DoubleTxtAttnOut,
-      Block.TxtProjWeight,
-      Block.TxtProjWeightBF16,
-      TxtSeq,
-      HiddenSize,
-      HiddenSize
+    TxtProj,
+    DoubleTxtAttnOut,
+    Block.TxtProjWeight,
+    Block.TxtProjWeightBF16,
+    TxtSeq,
+    HiddenSize,
+    HiddenSize
   );
 
   QNNGatedAdd(ImgHidden, ImgGate1, ImgProj, ImgSeq, HiddenSize);
@@ -1700,36 +1488,35 @@ begin
 
   QNNAdaLN(ImgNorm, ImgHidden, ImgShift2, ImgScale2, ImgSeq, HiddenSize);
   FfnSwigluForward(
-      ImgProj,
-      ImgNorm,
-      Block.ImgMlpGateWeight,
-      Block.ImgMlpUpWeight,
-      Block.ImgMlpDownWeight,
-      Block.ImgMlpGateWeightBF16,
-      Block.ImgMlpUpWeightBF16,
-      Block.ImgMlpDownWeightBF16,
-      ImgSeq,
-      HiddenSize,
-      MlpHidden
+    ImgProj,
+    ImgNorm,
+    Block.ImgMlpGateWeight,
+    Block.ImgMlpUpWeight,
+    Block.ImgMlpDownWeight,
+    Block.ImgMlpGateWeightBF16,
+    Block.ImgMlpUpWeightBF16,
+    Block.ImgMlpDownWeightBF16,
+    ImgSeq,
+    HiddenSize,
+    MlpHidden
   );
   QNNGatedAdd(ImgHidden, ImgGate2, ImgProj, ImgSeq, HiddenSize);
 
   QNNAdaLN(TxtNorm, TxtHidden, TxtShift2, TxtScale2, TxtSeq, HiddenSize);
   FfnSwigluForward(
-      TxtProj,
-      TxtNorm,
-      Block.TxtMlpGateWeight,
-      Block.TxtMlpUpWeight,
-      Block.TxtMlpDownWeight,
-      Block.TxtMlpGateWeightBF16,
-      Block.TxtMlpUpWeightBF16,
-      Block.TxtMlpDownWeightBF16,
-      TxtSeq,
-      HiddenSize,
-      MlpHidden
+    TxtProj,
+    TxtNorm,
+    Block.TxtMlpGateWeight,
+    Block.TxtMlpUpWeight,
+    Block.TxtMlpDownWeight,
+    Block.TxtMlpGateWeightBF16,
+    Block.TxtMlpUpWeightBF16,
+    Block.TxtMlpDownWeightBF16,
+    TxtSeq,
+    HiddenSize,
+    MlpHidden
   );
   QNNGatedAdd(TxtHidden, TxtGate2, TxtProj, TxtSeq, HiddenSize);
-
 end;
 
 (* ========================================================================
@@ -1743,13 +1530,7 @@ end;
    MLP output is concatenated with the attention output before the output
    projection -- this parallel attention+MLP design saves a serial step.*)
 
-procedure TTransformerFlux.SingleBlockForward(
-    const Hidden: TMemoryBlock;
-    const BlockIdx: LongInt;
-    const TEmb, AdalnWeight, ImgRoPECos, ImgRoPESin, TxtRoPECos, TxtRoPESin: TMemoryBlock;
-    const Seq, ImgOffset: LongInt
-);
-
+procedure TTransformerFlux.SingleBlockForward(const Hidden: TMemoryBlock; const BlockIdx: LongInt; const TEmb, AdalnWeight, ImgRoPECos, ImgRoPESin, TxtRoPECos, TxtRoPESin: TMemoryBlock; const Seq, ImgOffset: LongInt);
 const
   AXIS_DIM = 32;
 var
@@ -1805,25 +1586,18 @@ begin
   end;
   ProjOut := Work1;
   QNNLinearBF16OrF32(
-      ProjOut,
-      SingleConcat,
-      Block.ProjMlpWeight,
-      Block.ProjMlpWeightBF16,
-      Seq,
-      HiddenSize + MlpHidden,
-      HiddenSize
+    ProjOut,
+    SingleConcat,
+    Block.ProjMlpWeight,
+    Block.ProjMlpWeightBF16,
+    Seq,
+    HiddenSize + MlpHidden,
+    HiddenSize
   );
   QNNGatedAdd(Hidden, Gate, ProjOut, Seq, HiddenSize)
 end;
 
-function TTransformerFlux.Forward(
-    const ImgLatent: TMemoryBlock;
-    const ImgH, ImgW: LongInt;
-    const TxtEmb: TMemoryBlock;
-    const TxtSeq: LongInt;
-    Timestep: QNNFloat
-): TMemoryBlock;
-
+function TTransformerFlux.forward(const ImgLatent: TMemoryBlock; const ImgH, ImgW: LongInt; const TxtEmb: TMemoryBlock; const TxtSeq: LongInt; Timestep: QNNFloat): TMemoryBlock;
 var
   ImgSeq, TotalSeq, DoubleModSize, I: LongInt;
   // x: single;
@@ -1838,7 +1612,7 @@ begin
   TEmb := TMemoryBlock.Create([HiddenSize], 'FLUX_FW_TIME_EMB');
   TSincos := QNNTimeStepEmbedding(Timestep * 1000.0, TimeEmbed.SincosDim, 10000.0);
 
-  TimeEmbed.Forward(TEmb, TSincos, HiddenSize, TEmbSilu);
+  TimeEmbed.forward(TEmb, TSincos, HiddenSize, TEmbSilu);
   TSincos.Free;
 
   GetCachedImgRoPE(ImgH, ImgW, ImgRoPECos, ImgRoPESin);
@@ -1875,17 +1649,17 @@ begin
       DoubleBlocks[I].Load(SfFiles, I, HiddenSize, MlpHidden, UseBF16);
     // todo TTransformerFlux.forward : {} nest to a param means it's redundant, it is a record member var, remove/refactor
     DoubleBlockForward(
-        ImgHidden,
-        TxtHidden {},
-        I,
-        DoubleModImg {},
-        DoubleModTxt {},
-        ImgRoPECos,
-        ImgRoPESin,
-        TxtRoPECos,
-        TxtRoPESin,
-        ImgSeq,
-        TxtSeq
+      ImgHidden,
+      TxtHidden {},
+      I,
+      DoubleModImg {},
+      DoubleModTxt {},
+      ImgRoPECos,
+      ImgRoPESin,
+      TxtRoPECos,
+      TxtRoPESin,
+      ImgSeq,
+      TxtSeq
     );
 
     if UseMmap then
@@ -1903,16 +1677,16 @@ begin
     if UseMmap and not (Boolean(SingleBlocks[I].QKVMlpWeight) or Boolean(SingleBlocks[I].QKVMlpWeightBF16)) then
       SingleBlocks[I].Load(SfFiles, I, HiddenSize, MlpHidden, UseBF16);
     SingleBlockForward(
-        ConcatHidden,
-        I,
-        TEmb,
-        AdalnSingleWeight,
-        ImgRoPECos,
-        ImgRoPESin,
-        TxtRoPECos,
-        TxtRoPESin,
-        TotalSeq,
-        TxtSeq
+      ConcatHidden,
+      I,
+      TEmb,
+      AdalnSingleWeight,
+      ImgRoPECos,
+      ImgRoPESin,
+      TxtRoPECos,
+      TxtRoPESin,
+      TotalSeq,
+      TxtSeq
     );
     if UseMmap then
       SingleBlocks[I].Free;
@@ -1949,37 +1723,17 @@ begin
     SubstepCallback(SUBSTEP_FINAL_LAYER, 0, 1);
 end;
 
-function TTransformerFlux.Forward(
-    const ImgLatent: TMemoryBlock;
-    const ImgH, ImgW: LongInt;
-    const RefLatent: TMemoryBlock;
-    const RefH, RefW, TOffset: LongInt;
-    const TxtEmb: TMemoryBlock;
-    const TxtSeq: LongInt;
-    Timestep: QNNFloat
-): TMemoryBlock;
+function TTransformerFlux.forward(const ImgLatent: TMemoryBlock; const ImgH, ImgW: LongInt; const RefLatent: TMemoryBlock; const RefH, RefW, TOffset: LongInt; const TxtEmb: TMemoryBlock; const TxtSeq: LongInt; Timestep: QNNFloat): TMemoryBlock;
 var
   ImgSeq, RefSeq, CombinedImgSeq, TotalSeq, I, DoubleModSize: LongInt;
   TSincos: TMemoryBlock; // array[0..255] of QNNFloat;
 
   // output_nlc_ptr, result_ptr, combined_transposed_ptr, img_latent_ptr, ref_latent_ptr: PQNNFloat;
 
-  FinalMod,
-  FinalScale,
-  FinalShift,
-  FinalNorm,
-  TEmb,
-  CombinedTransposed,
-  CombinedHidden,
-  TxtRoPECos,
-  TxtRoPESin,
-  CombinedRoPECos,
-  CombinedRoPESin,
-  ConcatHidden,
-  OutputNlc: TMemoryBlock;
+  FinalMod, FinalScale, FinalShift, FinalNorm, TEmb, CombinedTransposed, CombinedHidden, TxtRoPECos, TxtRoPESin, CombinedRoPECos, CombinedRoPESin, ConcatHidden, OutputNlc: TMemoryBlock;
 begin
   if not RefLatent.IsAssigned() then
-    Exit(Forward(ImgLatent, ImgH, ImgW, TxtEmb, TxtSeq, Timestep));
+    Exit(forward(ImgLatent, ImgH, ImgW, TxtEmb, TxtSeq, Timestep));
   ImgSeq := ImgH * ImgW;
   RefSeq := RefH * RefW;
   CombinedImgSeq := ImgSeq + RefSeq;
@@ -1987,7 +1741,7 @@ begin
   ReInitialize(TotalSeq);
   TEmb := TMemoryBlock.Create([HiddenSize], 'FLUX_FW_TIME_EMBED');
   TSincos := QNNTimeStepEmbedding(Timestep * 1000.0, TimeEmbed.SincosDim, 10000.0);
-  TimeEmbed.Forward(TEmb, TSincos, HiddenSize, TEmbSilu);
+  TimeEmbed.forward(TEmb, TSincos, HiddenSize, TEmbSilu);
   TSincos.Free;
   GetCachedCombinedRoPE(ImgH, ImgW, RefH, RefW, TOffset, CombinedRoPECos, CombinedRoPESin);
 
@@ -2009,13 +1763,13 @@ begin
 
   CombinedHidden := TMemoryBlock.Create([CombinedImgSeq, HiddenSize], 'FLUX_FW_COMBINED_HIDDEN');
   QNNLinearBF16OrF32(
-      CombinedHidden,
-      CombinedTransposed,
-      ImgInWeight,
-      ImgInWeightBF16,
-      CombinedImgSeq,
-      LatentChannels,
-      HiddenSize
+    CombinedHidden,
+    CombinedTransposed,
+    ImgInWeight,
+    ImgInWeightBF16,
+    CombinedImgSeq,
+    LatentChannels,
+    HiddenSize
   );
   CombinedTransposed.Free;
   QNNLinearBF16OrF32(TxtHidden, TxtEmb, TxtInWeight, TxtInWeightBF16, TxtSeq, TextDim, HiddenSize);
@@ -2034,17 +1788,17 @@ begin
     if UseMmap then
       DoubleBlocks[I].Load(SfFiles, I, HiddenSize, MlpHidden, UseBF16);
     DoubleBlockForward(
-        CombinedHidden,
-        TxtHidden,
-        I,
-        DoubleModImg,
-        DoubleModTxt,
-        CombinedRoPECos,
-        CombinedRoPESin,
-        TxtRoPECos,
-        TxtRoPESin,
-        CombinedImgSeq,
-        TxtSeq
+      CombinedHidden,
+      TxtHidden,
+      I,
+      DoubleModImg,
+      DoubleModTxt,
+      CombinedRoPECos,
+      CombinedRoPESin,
+      TxtRoPECos,
+      TxtRoPESin,
+      CombinedImgSeq,
+      TxtSeq
     );
     if UseMmap then
       DoubleBlocks[I].Free;
@@ -2059,16 +1813,16 @@ begin
     if UseMmap then
       SingleBlocks[I].Load(SfFiles, I, HiddenSize, MlpHidden, UseBF16);
     SingleBlockForward(
-        ConcatHidden,
-        I,
-        TEmb,
-        AdalnSingleWeight,
-        CombinedRoPECos,
-        CombinedRoPESin,
-        TxtRoPECos,
-        TxtRoPESin,
-        TotalSeq,
-        TxtSeq
+      ConcatHidden,
+      I,
+      TEmb,
+      AdalnSingleWeight,
+      CombinedRoPECos,
+      CombinedRoPESin,
+      TxtRoPECos,
+      TxtRoPESin,
+      TotalSeq,
+      TxtSeq
     );
     if UseMmap then
       SingleBlocks[I].Free;
@@ -2106,50 +1860,20 @@ begin
     SubstepCallback(SUBSTEP_FINAL_LAYER, 0, 1);
 end;
 
-function TTransformerFlux.Forward(
-    const ImgLatent: TMemoryBlock;
-    const ImgH, ImgW: LongInt;
-    const Refs: TArray<TImageRef>;
-    const TxtEmb: TMemoryBlock;
-    const TxtSeq: LongInt;
-    const Timestep: Single
-): TMemoryBlock;
+function TTransformerFlux.forward(const ImgLatent: TMemoryBlock; const ImgH, ImgW: LongInt; const Refs: TArray<TImageRef>; const TxtEmb: TMemoryBlock; const TxtSeq: LongInt; const Timestep: Single): TMemoryBlock;
 var
-  ImgSeq,
-  AxisDim,
-  TotalRefSeq,
-  R,
-  CombinedImgSeq,
-  TotalSeq,
-  RoPEOffset,
-  TransposeOffset,
+  ImgSeq, AxisDim, TotalRefSeq, R, CombinedImgSeq, TotalSeq, RoPEOffset, TransposeOffset,
   {ref_seq, trans_offset,}
-  I,
-  DoubleModSize: LongInt;
-
-  TEmb,
-  CombinedRoPECos,
-  CombinedRoPESin,
-  TxtRoPECos,
-  TxtRoPESin,
-  OutputNlc,
-  CombinedTransposed,
-  CombinedHidden,
-  ConcatHidden,
-  ImgHidden,
-  TSincos,
-  FinalMod,
-  FinalScale,
-  FinalShift,
-  FinalNorm: TMemoryBlock;
+I, DoubleModSize: LongInt;
+  TEmb, CombinedRoPECos, CombinedRoPESin, TxtRoPECos, TxtRoPESin, OutputNlc, CombinedTransposed, CombinedHidden, ConcatHidden, ImgHidden, TSincos, FinalMod, FinalScale, FinalShift, FinalNorm: TMemoryBlock;
 // result_ptr, output_nlc_ptr, combined_transposed_ptr, ref_latent_ptr, img_latent_ptr : PQNNFloat;
 // t_sincos : array[0..255] of QNNFloat;
 begin
   if not Assigned(Refs) then
-    Exit(Forward(ImgLatent, ImgH, ImgW, TxtEmb, TxtSeq, Timestep));
+    Exit(forward(ImgLatent, ImgH, ImgW, TxtEmb, TxtSeq, Timestep));
   if (Length(Refs) = 1) then
     Exit(
-        Forward(ImgLatent, ImgH, ImgW, Refs[0].Latent, Refs[0].H, Refs[0].W, Refs[0].TOffset, TxtEmb, TxtSeq, Timestep)
+      forward(ImgLatent, ImgH, ImgW, Refs[0].Latent, Refs[0].H, Refs[0].W, Refs[0].TOffset, TxtEmb, TxtSeq, Timestep)
     );
 
   ImgSeq := ImgH * ImgW;
@@ -2163,7 +1887,7 @@ begin
   TEmb := TMemoryBlock.Create([HiddenSize], 'FLUX_FW_TIME_EMB');
 
   TSincos := QNNTimeStepEmbedding(Timestep * 1000.0, TimeEmbed.SincosDim, 10000.0);
-  TimeEmbed.Forward(TEmb, TSincos, HiddenSize, TEmbSilu);
+  TimeEmbed.forward(TEmb, TSincos, HiddenSize, TEmbSilu);
   TSincos.Free;
   CombinedRoPECos := TMemoryBlock.Create([CombinedImgSeq, AxisDim, 4], 'FLUX_FW_COMBINED_ROPE_COS');
   CombinedRoPESin := TMemoryBlock.Create([CombinedImgSeq, AxisDim, 4], 'FLUX_FW_COMBINED_ROPE_SIN');
@@ -2172,13 +1896,13 @@ begin
   for R := 0 to High(Refs) do
   begin
     QNNComputeRoPE2DOffset(
-        CombinedRoPECos + RoPEOffset,
-        CombinedRoPESin + RoPEOffset,
-        Refs[R].H,
-        Refs[R].W,
-        AxisDim,
-        RoPETheta,
-        Refs[R].TOffset
+      CombinedRoPECos + RoPEOffset,
+      CombinedRoPESin + RoPEOffset,
+      Refs[R].H,
+      Refs[R].W,
+      AxisDim,
+      RoPETheta,
+      Refs[R].TOffset
     );
     Inc(RoPEOffset, Refs[R].H * Refs[R].W * AxisDim * 4)
   end;
@@ -2200,22 +1924,22 @@ begin
     //    for c := 0 to latent_channels -1 do
     //        combined_transposed_ptr[(trans_offset + pos)*latent_channels + c] := ref_latent_ptr[c*ref_seq + pos];
     QNNMatTranspose(
-        CombinedTransposed + TransposeOffset * LatentChannels,
-        Refs[R].Latent,
-        LatentChannels,
-        Refs[R].H * Refs[R].W
+      CombinedTransposed + TransposeOffset * LatentChannels,
+      Refs[R].Latent,
+      LatentChannels,
+      Refs[R].H * Refs[R].W
     );
     Inc(TransposeOffset, Refs[R].H * Refs[R].W);
   end;
   CombinedHidden := TMemoryBlock.Create([CombinedImgSeq, HiddenSize], 'FLUX_FW_COMBINED_HIDDEN');
   QNNLinearBF16OrF32(
-      CombinedHidden,
-      CombinedTransposed,
-      ImgInWeight,
-      ImgInWeightBF16,
-      CombinedImgSeq,
-      LatentChannels,
-      HiddenSize
+    CombinedHidden,
+    CombinedTransposed,
+    ImgInWeight,
+    ImgInWeightBF16,
+    CombinedImgSeq,
+    LatentChannels,
+    HiddenSize
   );
   CombinedTransposed.Free;
   QNNLinearBF16OrF32(TxtHidden, TxtEmb, TxtInWeight, TxtInWeightBF16, TxtSeq, TextDim, HiddenSize);
@@ -2233,17 +1957,17 @@ begin
     if UseMmap then
       DoubleBlocks[I].Load(SfFiles, I, HiddenSize, MlpHidden, UseBF16);
     DoubleBlockForward(
-        CombinedHidden,
-        TxtHidden,
-        I,
-        DoubleModImg,
-        DoubleModTxt,
-        CombinedRoPECos,
-        CombinedRoPESin,
-        TxtRoPECos,
-        TxtRoPESin,
-        CombinedImgSeq,
-        TxtSeq
+      CombinedHidden,
+      TxtHidden,
+      I,
+      DoubleModImg,
+      DoubleModTxt,
+      CombinedRoPECos,
+      CombinedRoPESin,
+      TxtRoPECos,
+      TxtRoPESin,
+      CombinedImgSeq,
+      TxtSeq
     );
     if UseMmap then
       DoubleBlocks[I].Free();
@@ -2259,16 +1983,16 @@ begin
     if UseMmap then
       SingleBlocks[I].Load(SfFiles, I, HiddenSize, MlpHidden, UseBF16);
     SingleBlockForward(
-        ConcatHidden,
-        I,
-        TEmb,
-        AdalnSingleWeight,
-        CombinedRoPECos,
-        CombinedRoPESin,
-        TxtRoPECos,
-        TxtRoPESin,
-        TotalSeq,
-        TxtSeq
+      ConcatHidden,
+      I,
+      TEmb,
+      AdalnSingleWeight,
+      CombinedRoPECos,
+      CombinedRoPESin,
+      TxtRoPECos,
+      TxtRoPESin,
+      TotalSeq,
+      TxtSeq
     );
     if UseMmap then
       SingleBlocks[I].Free();
@@ -2308,15 +2032,7 @@ begin
     SubstepCallback(SUBSTEP_FINAL_LAYER, 0, 1);
 end;
 
-function TTransformerFlux.SampleEuler(
-    const Z: TMemoryBlock;
-    const Batch, Channels, H, W: LongInt;
-    const TextEmb: TMemoryBlock;
-    const TextSeq: LongInt;
-    const Schedule: TMemoryBlock;
-    const NumSteps: LongInt;
-    const ProgressCallback: TProgressCallback
-): TMemoryBlock;
+function TTransformerFlux.SampleEuler(const Z: TMemoryBlock; const Batch, Channels, H, W: LongInt; const TextEmb: TMemoryBlock; const TextSeq: LongInt; const Schedule: TMemoryBlock; const NumSteps: LongInt; const ProgressCallback: TProgressCallback): TMemoryBlock;
 var
   LatentSize, Step: LongInt;
   VCond: TMemoryBlock;
@@ -2336,7 +2052,7 @@ begin
     Dt := TNext - TCurr;
     if Assigned(StepCallback) then
       StepCallback(Step, NumSteps);
-    VCond := Forward(Result, H, W, TextEmb, TextSeq, TCurr);
+    VCond := forward(Result, H, W, TextEmb, TextSeq, TCurr);
     QNNFusedScaleAdd(Result, VCond, Result, Dt, LatentSize);
     VCond.Free();
     if Assigned(ProgressCallback) then
@@ -2354,17 +2070,7 @@ begin
   FreeMMapCache();
 end;
 
-function TTransformerFlux.SampleEuler(
-    const Z: TMemoryBlock;
-    const Batch, Channels, H, W: LongInt;
-    const RefLatent: TMemoryBlock;
-    const RefH, RefW, TOffset: LongInt;
-    const TextEmb: TMemoryBlock;
-    const TextSeq: LongInt;
-    const Schedule: TMemoryBlock;
-    const NumSteps: LongInt;
-    const ProgressCallback: TProgressCallback
-): TMemoryBlock;
+function TTransformerFlux.SampleEuler(const Z: TMemoryBlock; const Batch, Channels, H, W: LongInt; const RefLatent: TMemoryBlock; const RefH, RefW, TOffset: LongInt; const TextEmb: TMemoryBlock; const TextSeq: LongInt; const Schedule: TMemoryBlock; const NumSteps: LongInt; const ProgressCallback: TProgressCallback): TMemoryBlock;
 var
   LatentSize, Step: LongInt;
   TCurr, TNext, Dt: QNNFloat;
@@ -2390,7 +2096,7 @@ begin
     if Assigned(StepCallback) then
       StepCallback(Step, NumSteps);
     (* Predict velocity with reference image conditioning *)
-    V := Forward(Result, H, W, RefLatent, RefH, RefW, TOffset, TextEmb, TextSeq, TCurr);
+    V := forward(Result, H, W, RefLatent, RefH, RefW, TOffset, TextEmb, TextSeq, TCurr);
     (* Euler step: z_next = result + dt * v *)
     QNNFusedScaleAdd(Result, V, Result, Dt, LatentSize);
 
@@ -2411,18 +2117,7 @@ begin
   FreeMMapCache();
 end;
 
-function TTransformerFlux.SampleEuler(
-    const Z: TMemoryBlock;
-    const Batch, Channels, H, W: LongInt;
-    const TextEmbCond: TMemoryBlock;
-    const TextSeqCond: LongInt;
-    const TextEmbUncond: TMemoryBlock;
-    const TextSeqUncond: LongInt;
-    const GuidanceScale: QNNFloat;
-    const Schedule: TMemoryBlock;
-    const NumSteps: LongInt;
-    const ProgressCallback: TProgressCallback
-): TMemoryBlock;
+function TTransformerFlux.SampleEuler(const Z: TMemoryBlock; const Batch, Channels, H, W: LongInt; const TextEmbCond: TMemoryBlock; const TextSeqCond: LongInt; const TextEmbUncond: TMemoryBlock; const TextSeqUncond: LongInt; const GuidanceScale: QNNFloat; const Schedule: TMemoryBlock; const NumSteps: LongInt; const ProgressCallback: TProgressCallback): TMemoryBlock;
 var
   LatentSize, Step, I: LongInt;
   TCurr, TNext, Dt, V: QNNFloat;
@@ -2442,9 +2137,9 @@ begin
     Dt := TNext - TCurr;
     if Assigned(StepCallback) then
       StepCallback(Step, NumSteps);
-    VUncond := Forward(Result, H, W, TextEmbUncond, TextSeqUncond, TCurr);
+    VUncond := forward(Result, H, W, TextEmbUncond, TextSeqUncond, TCurr);
     VUncondPtr := VUncond;
-    VCond := Forward(Result, H, W, TextEmbCond, TextSeqCond, TCurr);
+    VCond := forward(Result, H, W, TextEmbCond, TextSeqCond, TCurr);
     VCondPtr := VCond;
     // todo sampleEuuler refactor as fused axpy
     for I := 0 to LatentSize - 1 do
@@ -2467,23 +2162,9 @@ begin
     end
   end;
   FreeMMapCache();
-
 end;
 
-function TTransformerFlux.SampleEuler(
-    const Z: TMemoryBlock;
-    const Batch, Channels, H, W: LongInt;
-    const RefLatent: TMemoryBlock;
-    const RefH, RefW, TOffset: LongInt;
-    const TextEmbCond: TMemoryBlock;
-    const TextSeqCond: LongInt;
-    const TextEmbUncond: TMemoryBlock;
-    const TextSeqUncond: LongInt;
-    const GuidanceScale: QNNFloat;
-    const Schedule: TMemoryBlock;
-    const NumSteps: LongInt;
-    const ProgressCallback: TProgressCallback
-): TMemoryBlock;
+function TTransformerFlux.SampleEuler(const Z: TMemoryBlock; const Batch, Channels, H, W: LongInt; const RefLatent: TMemoryBlock; const RefH, RefW, TOffset: LongInt; const TextEmbCond: TMemoryBlock; const TextSeqCond: LongInt; const TextEmbUncond: TMemoryBlock; const TextSeqUncond: LongInt; const GuidanceScale: QNNFloat; const Schedule: TMemoryBlock; const NumSteps: LongInt; const ProgressCallback: TProgressCallback): TMemoryBlock;
 var
   LatentSize, Step, I: LongInt;
   TCurr, TNext, Dt, V: QNNFloat;
@@ -2503,8 +2184,8 @@ begin
     Dt := TNext - TCurr;
     if Assigned(StepCallback) then
       StepCallback(Step, NumSteps);
-    VUncond := Forward(Result, H, W, RefLatent, RefH, RefW, TOffset, TextEmbUncond, TextSeqUncond, TCurr);
-    VCond := Forward(Result, H, W, RefLatent, RefH, RefW, TOffset, TextEmbCond, TextSeqCond, TCurr);
+    VUncond := forward(Result, H, W, RefLatent, RefH, RefW, TOffset, TextEmbUncond, TextSeqUncond, TCurr);
+    VCond := forward(Result, H, W, RefLatent, RefH, RefW, TOffset, TextEmbCond, TextSeqCond, TCurr);
     VCondPtr := VCond;
     VUncondPtr := VUncond;
 
@@ -2530,16 +2211,7 @@ begin
   FreeMMapCache()
 end;
 
-function TTransformerFlux.SampleEuler(
-    const Z: TMemoryBlock;
-    const Batch, Channels, H, W: LongInt;
-    const Refs: TArray<TImageRef>;
-    const TextEmb: TMemoryBlock;
-    const TextSeq: LongInt;
-    const Schedule: TMemoryBlock;
-    const NumSteps: LongInt;
-    const ProgressCallback: TProgressCallback
-): TMemoryBlock;
+function TTransformerFlux.SampleEuler(const Z: TMemoryBlock; const Batch, Channels, H, W: LongInt; const Refs: TArray<TImageRef>; const TextEmb: TMemoryBlock; const TextSeq: LongInt; const Schedule: TMemoryBlock; const NumSteps: LongInt; const ProgressCallback: TProgressCallback): TMemoryBlock;
 var
   Step, LatentSize: LongInt;
   TCurr, TNext, Dt: QNNFloat;
@@ -2562,7 +2234,7 @@ begin
       StepCallback(Step, NumSteps);
 
     (* Predict velocity with multiple reference images *)
-    V := Forward(Result, H, W, Refs, TextEmb, TextSeq, TCurr);
+    V := forward(Result, H, W, Refs, TextEmb, TextSeq, TCurr);
 
     (* Euler step *)
     QNNFusedScaleAdd(Result, V, Result, Dt, LatentSize);
@@ -2580,22 +2252,9 @@ begin
   end;
 
   FreeMMapCache();
-
 end;
 
-function TTransformerFlux.SampleEuler(
-    const Z: TMemoryBlock;
-    const Batch, Channels, H, W: LongInt;
-    const Refs: TArray<TImageRef>;
-    const TextEmbCond: TMemoryBlock;
-    const TextSeqCond: LongInt;
-    const TextEmbUncond: TMemoryBlock;
-    const TextSeqUncond: LongInt;
-    const GuidanceScale: QNNFloat;
-    const Schedule: PQNNFloat;
-    NumSteps: LongInt;
-    const ProgressCallback: TProgressCallback
-): TMemoryBlock;
+function TTransformerFlux.SampleEuler(const Z: TMemoryBlock; const Batch, Channels, H, W: LongInt; const Refs: TArray<TImageRef>; const TextEmbCond: TMemoryBlock; const TextSeqCond: LongInt; const TextEmbUncond: TMemoryBlock; const TextSeqUncond: LongInt; const GuidanceScale: QNNFloat; const Schedule: PQNNFloat; NumSteps: LongInt; const ProgressCallback: TProgressCallback): TMemoryBlock;
 var
   Prediction, Unconditional: TMemoryBlock;
   Img: TQNNImage;
@@ -2614,16 +2273,16 @@ begin
     begin
       if Assigned(StepCallback) then
         StepCallback(Step, NumSteps);
-      Unconditional := Forward(Result, H, W, Refs, TextEmbUncond, TextSeqUncond, Schedule[Step]);
+      Unconditional := forward(Result, H, W, Refs, TextEmbUncond, TextSeqUncond, Schedule[Step]);
       try
-        Prediction := Forward(Result, H, W, Refs, TextEmbCond, TextSeqCond, Schedule[Step]);
+        Prediction := forward(Result, H, W, Refs, TextEmbCond, TextSeqCond, Schedule[Step]);
         try
           PredictionPtr := Prediction;
           UnconditionalPtr := Unconditional;
           Dt := Schedule[Step + 1] - Schedule[Step];
           for var I := 0 to Count - 1 do
             ResultPtr[I] :=
-                ResultPtr[I] + Dt * (UnconditionalPtr[I] + GuidanceScale * (PredictionPtr[I] - UnconditionalPtr[I]));
+              ResultPtr[I] + Dt * (UnconditionalPtr[I] + GuidanceScale * (PredictionPtr[I] - UnconditionalPtr[I]));
         finally
           Prediction.Free;
         end;
@@ -2651,20 +2310,16 @@ end;
 
 { TBlockZi }
 
-procedure TBlockZI.Load(
-    const Files: TSafeTensorFiles;
-    const Prefix: string;
-    const HasModulation: Boolean;
-    const AUseMMAP: Boolean;
-    const Resident: Boolean
-);
+procedure TBlockZI.Load(const Files: TSafeTensorFiles; const Prefix: string; const HasModulation: Boolean; const AUseMMAP: Boolean; const resident: Boolean);
+
   function Projection(const Name: string; const Mapped: Boolean): TMemoryBlock;
   begin
-    if Resident then
+    if resident then
       Result := Files.GetLinearWeight(Name, Mapped)
     else
       Result := Files.GetTensorDataMemBlock(Name, Mapped);
   end;
+
 begin
 
   (* Attention weights *)
@@ -2701,7 +2356,6 @@ begin
     //      adaln_weight := nil;
     //      adaln_bias := nil;
   end
-
 end;
 
 procedure TBlockZI.Free();
@@ -2751,18 +2405,9 @@ begin
   end
 end;
 
-procedure TTransformerZI.AttentionForward(
-    const Dst, Src: TMemoryBlock;
-    const Block: TBlockZI;
-    const PosIds: PLongint;
-    const Mask: PLongint;
-    const Seq: LongInt
-);
+procedure TTransformerZI.AttentionForward(const Dst, Src: TMemoryBlock; const Block: TBlockZI; const PosIds: PLongint; const Mask: PLongint; const Seq: LongInt);
 var
-  Q,
-  K,
-  V,
-  AttnOut
+  Q, K, V, AttnOut
       {, qi, kj, oi, vj}: TMemoryBlock;
   Scores: TMemoryBlock;
   Scale: QNNFloat;
@@ -2805,20 +2450,20 @@ begin
     //    end
     // end;
     CblasGemm(
-        CblasRowMajor,
-        CblasNoTrans,
-        CblasTrans,
-        Seq,
-        Seq,
-        HeadDim,
-        Scale,
-        Q + H * HeadDim,
-        Dim,
-        K + H * HeadDim,
-        Dim,
-        0,
-        Scores,
-        Seq
+      CblasRowMajor,
+      CblasNoTrans,
+      CblasTrans,
+      Seq,
+      Seq,
+      HeadDim,
+      Scale,
+      Q + H * HeadDim,
+      Dim,
+      K + H * HeadDim,
+      Dim,
+      0,
+      Scores,
+      Seq
     );
 
     (* Apply mask: set padding positions to -inf *)
@@ -2844,20 +2489,20 @@ begin
     //    end;
     // end;
     CblasGemm(
-        CblasRowMajor,
-        CblasNoTrans,
-        CblasNoTrans,
-        Seq,
-        HeadDim,
-        Seq,
-        1.0,
-        Scores,
-        Seq,
-        V + H * HeadDim,
-        Dim,
-        0,
-        AttnOut + H * HeadDim,
-        Dim
+      CblasRowMajor,
+      CblasNoTrans,
+      CblasNoTrans,
+      Seq,
+      HeadDim,
+      Seq,
+      1.0,
+      Scores,
+      Seq,
+      V + H * HeadDim,
+      Dim,
+      0,
+      AttnOut + H * HeadDim,
+      Dim
     )
   end;
   QNNMatMulNT(Dst, AttnOut, Block.AttnOutWeight, Seq, Dim, Dim);
@@ -2889,14 +2534,7 @@ begin
   QNNMatMulNT(Dst, Gate, Block.FfnW2, Seq, FfnDim, Dim);
 end;
 
-procedure TTransformerZI.BlockForward(
-    const Dst: TMemoryBlock;
-    const Block: TBlockZI;
-    const PosIds: PLongint;
-    const Mask: PLongint;
-    const TEmb: TMemoryBlock;
-    const Seq: LongInt
-);
+procedure TTransformerZI.BlockForward(const Dst: TMemoryBlock; const Block: TBlockZI; const PosIds: PLongint; const Mask: PLongint; const TEmb: TMemoryBlock; const Seq: LongInt);
 var
   LocalMod: array[0..4 * {dim} 3840 - 1] of QNNFloat;
   ModMem: TMemoryBlock;
@@ -2973,7 +2611,6 @@ begin
     // for i := 0 to N -1 do
     //    dst[i] := dst[i] + norm_out[i]
     QNNAddInplace(Dst, NormOut, N);
-
   end
 end;
 
@@ -3068,16 +2705,9 @@ end;
  * token sequence the transformer operates on. *)
 procedure PatchifyZi(const Dst: PQNNFloat; const Src: PQNNFloat; const InCh, Height, Width, PatchSize: LongInt);
 var
-  HTokens,
-  WTokens,
+  HTokens, WTokens,
   // patch_feat, patch_idx, di, sx, sy
-  H,
-  W,
-  C,
-  Ph,
-  Pw,
-  InIdx,
-  OutIdx: LongInt;
+H, W, C, Ph, Pw, InIdx, OutIdx: LongInt;
 begin
   HTokens := Height div PatchSize;
   WTokens := Width div PatchSize;
@@ -3096,18 +2726,18 @@ begin
           for C := 0 to InCh - 1 do
           begin
             InIdx :=
-                C * HTokens * PatchSize * WTokens * PatchSize
-                    + H * PatchSize * WTokens * PatchSize
-                    + Ph * WTokens * PatchSize
-                    + W * PatchSize
-                    + Pw;
+              C * HTokens * PatchSize * WTokens * PatchSize
+              + H * PatchSize * WTokens * PatchSize
+              + Ph * WTokens * PatchSize
+              + W * PatchSize
+              + Pw;
             //  [in_ch, H_Tokens, patch_size, W_tokens, patch_size]
             OutIdx :=
-                H * WTokens * PatchSize * PatchSize * InCh
-                    + W * PatchSize * PatchSize * InCh
-                    + Ph * PatchSize * InCh
-                    + Pw * InCh
-                    + C;
+              H * WTokens * PatchSize * PatchSize * InCh
+              + W * PatchSize * PatchSize * InCh
+              + Ph * PatchSize * InCh
+              + Pw * InCh
+              + C;
             //  [H_Tokens, W_tokens, patch_size, patch_size, in_ch]
             // transpose -> [1, 3, 2, 4, 0]
             Dst[OutIdx] := Src[InIdx];
@@ -3137,18 +2767,18 @@ begin
           for C := 0 to InCh - 1 do
           begin
             InIdx :=
-                H * WTokens * PatchSize * PatchSize * InCh
-                    + W * PatchSize * PatchSize * InCh
-                    + Ph * PatchSize * InCh
-                    + Pw * InCh
-                    + C;
+              H * WTokens * PatchSize * PatchSize * InCh
+              + W * PatchSize * PatchSize * InCh
+              + Ph * PatchSize * InCh
+              + Pw * InCh
+              + C;
             // [H_tokens, W_tokens, patch_size, patch_size, in_ch]
             OutIdx :=
-                C * HTokens * PatchSize * WTokens * PatchSize
-                    + H * PatchSize * WTokens * PatchSize
-                    + Ph * WTokens * PatchSize
-                    + W * PatchSize
-                    + Pw;
+              C * HTokens * PatchSize * WTokens * PatchSize
+              + H * PatchSize * WTokens * PatchSize
+              + Ph * WTokens * PatchSize
+              + W * PatchSize
+              + Pw;
             // [in_ch, H_tokens, patch_size, W_tokens, patch_size]
             // transpose -> [4, 0, 2, 1, 3]
             Dst[OutIdx] := Src[InIdx];
@@ -3157,30 +2787,9 @@ begin
     end
 end;
 
-function TTransformerZI.Forward(
-    const Latent: TMemoryBlock;
-    const LatentH, LatentW: LongInt;
-    const Timestep: QNNFloat;
-    const CapFeats: TMemoryBlock;
-    const CapSeqLen: LongInt
-): TMemoryBlock;
+function TTransformerZI.forward(const Latent: TMemoryBlock; const LatentH, LatentW: LongInt; const Timestep: QNNFloat; const CapFeats: TMemoryBlock; const CapSeqLen: LongInt): TMemoryBlock;
 var
-  PatchFeat,
-  HTokens,
-  WTokens,
-  ImgSeq,
-  RefinerTotal,
-  ImgPad,
-  CapPad,
-  ImgPadded,
-  CapPadded,
-  UnifiedSeq,
-  Needed,
-  I,
-  S,
-  H,
-  W,
-  OutCh: LongInt;
+  PatchFeat, HTokens, WTokens, ImgSeq, RefinerTotal, ImgPad, CapPad, ImgPadded, CapPadded, UnifiedSeq, Needed, I, S, H, W, OutCh: LongInt;
   TEmb: array[0..255] of QNNFloat;
   ImgPatches, ImgEmb, CapEmb, CapNormed, CapPaddedFeats, ImgOut, FinalOut, TEmbMem: TMemoryBlock;
   CapPos, ImgPos, UnifiedPos: TArray<LongInt>;
@@ -3203,10 +2812,10 @@ begin
 
   (* Ensure working memory is sufficient *)
   Needed :=
-      UnifiedSeq * Dim * 4
-          + UnifiedSeq * Dim * 3
-          + (* QKV *) UnifiedSeq * UnifiedSeq
-          + (* attention scores *) UnifiedSeq * FfnDim * 2;
+    UnifiedSeq * Dim * 4
+    + UnifiedSeq * Dim * 3
+    + (* QKV *) UnifiedSeq * UnifiedSeq
+    + (* attention scores *) UnifiedSeq * FfnDim * 2;
   if Needed > WorkAlloc then
   begin
     WorkX.Free;
@@ -3416,7 +3025,6 @@ begin
     end;
     Inc(Offset, D);
   end
-
 end;
 
 (* Converts scalar timestep to a 256-dim vector using log-spaced frequencies,
@@ -3452,15 +3060,7 @@ begin
   Hidden.Free();
 end;
 
-function TTransformerZI.SampleEuler(
-    const Z: TMemoryBlock;
-    const Batch, H, W, PatchSize: LongInt;
-    const CapFeats: TMemoryBlock;
-    const CapSeq: LongInt;
-    const Schedule: PQNNFloat;
-    const NumSteps: LongInt;
-    const ProgressCallback: TStepCallback
-): TMemoryBlock;
+function TTransformerZI.SampleEuler(const Z: TMemoryBlock; const Batch, H, W, PatchSize: LongInt; const CapFeats: TMemoryBlock; const CapSeq: LongInt; const Schedule: PQNNFloat; const NumSteps: LongInt; const ProgressCallback: TStepCallback): TMemoryBlock;
 var
   LatentSize, StepH, StepW, StepCh {, step_latent_size}, Step, DecodeH, DecodeW: LongInt;
   Sigma, SigmaNext, Dt, Timestep: QNNFloat;
@@ -3492,7 +3092,7 @@ begin
     Timestep := 1.0 - Sigma;
     if Assigned(StepCallback) then
       StepCallback(Step, NumSteps);
-    ModelOut := Forward(Result, H, W, Timestep, CapFeats, CapSeq);
+    ModelOut := forward(Result, H, W, Timestep, CapFeats, CapSeq);
 
     // for i := 0 to latent_size -1 do
     //    result[i] := result[i] + (dt * (-model_out[i]));
@@ -3522,26 +3122,21 @@ begin
   StepLatent.Free;
 end;
 
-procedure TTransformerZI.Load(
-    const ModelDir: string;
-    const Adim, AnHeads, AnLayers, AnRefiner, AcapFeatDim, AinChannels, ApatchSize: LongInt;
-    const AropeTheta: QNNFloat;
-    const AAxesDims: PLongint;
-    const AUseMMAP: Boolean;
-    const Resident: Boolean
-);
+procedure TTransformerZI.Load(const ModelDir: string; const Adim, AnHeads, AnLayers, AnRefiner, AcapFeatDim, AinChannels, ApatchSize: LongInt; const AropeTheta: QNNFloat; const AAxesDims: PLongint; const AUseMMAP: Boolean; const resident: Boolean);
 var
   I: LongInt;
   Sf: PSafeTensor;
+
   function Projection(const Name: string; const Mapped: Boolean): TMemoryBlock;
   begin
-    if Resident then
+    if resident then
       Result := SfFiles.GetLinearWeight(Name, Mapped)
     else
       Result := SfFiles.GetTensorDataMemBlock(Name, Mapped);
   end;
+
 begin
-  ResidentOnly := Resident;
+  ResidentOnly := resident;
   (* Set config *)
   Dim := Adim;
   NHeads := AnHeads;
@@ -3607,31 +3202,31 @@ begin
   SetLength(NoiseRefiner, NRefiner);
 
   for I := 0 to High(NoiseRefiner) do
-    NoiseRefiner[I].Load(SfFiles, Format('noise_refiner.%d', [I]), True, AUseMMAP, Resident);
+    NoiseRefiner[I].Load(SfFiles, Format('noise_refiner.%d', [I]), True, AUseMMAP, resident);
 
   (* Load context refiner blocks (no modulation) *)
   SetLength(ContextRefiner, NRefiner);
 
   for I := 0 to NRefiner - 1 do
-    ContextRefiner[I].Load(SfFiles, Format('context_refiner.%d', [I]), False, AUseMMAP, Resident);
+    ContextRefiner[I].Load(SfFiles, Format('context_refiner.%d', [I]), False, AUseMMAP, resident);
 
   (* Load main transformer blocks *)
   SetLength(Layers, NLayers);
 
   for I := 0 to NLayers - 1 do
-    Layers[I].Load(SfFiles, Format('layers.%d', [I]), True, AUseMMAP, Resident);
+    Layers[I].Load(SfFiles, Format('layers.%d', [I]), True, AUseMMAP, resident);
 
   (* Load final layer *)
   FinalLayer.AdalnWeight := Projection(Format('all_final_layer.%d-1.adaLN_modulation.1.weight', [PatchSize]), AUseMMAP);
   FinalLayer.AdalnBias :=
-      SfFiles.GetTensorDataMemBlock(Format('all_final_layer.%d-1.adaLN_modulation.1.bias', [PatchSize]), AUseMMAP);
+    SfFiles.GetTensorDataMemBlock(Format('all_final_layer.%d-1.adaLN_modulation.1.bias', [PatchSize]), AUseMMAP);
   // final_layer.norm_weight := sf_files.getTensorDataMemBlock(format('all_final_layer.%d-1.norm_final.weight', [patch_size]), useMMAP);
   FinalLayer.LinearWeight := Projection(Format('all_final_layer.%d-1.linear.weight', [PatchSize]), AUseMMAP);
   FinalLayer.LinearBias :=
-      SfFiles.GetTensorDataMemBlock(Format('all_final_layer.%d-1.linear.bias', [PatchSize]), AUseMMAP);
+    SfFiles.GetTensorDataMemBlock(Format('all_final_layer.%d-1.linear.bias', [PatchSize]), AUseMMAP);
 
   (* Precompute RoPE tables *)
-  if not Resident then
+  if not resident then
     PreComputeRope();
 
   (* Allocate initial working memory (will be resized as needed) *)
@@ -3642,7 +3237,6 @@ begin
   // work_attn := nil;
   // work_ffn := nil;
   MaxSeq := 0;
-
 end;
 
 function TTransformerZI.IsLoaded(): Boolean;
@@ -3712,3 +3306,4 @@ begin
 end;
 
 end.
+

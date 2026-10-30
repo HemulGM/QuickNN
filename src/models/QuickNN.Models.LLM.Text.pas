@@ -3,8 +3,7 @@
 interface
 
 uses
-  QuickNN.Models.Qwen3,
-  QuickNN.Models.LLM.Types;
+  QuickNN.Models.Qwen3, QuickNN.Models.LLM.Types;
 
 type
   // Token boundaries can bisect a UTF-8 code point. Keep its bytes until complete.
@@ -19,26 +18,22 @@ type
   end;
 
 function LLMEncodePlain(var Tokenizer: TQNNTokenizer; const Text: string): TArray<LongInt>;
-function LLMChatTokens(
-    var Tokenizer: TQNNTokenizer;
-    const Messages: TLLMMessages;
-    const EnableThinking: Boolean;
-    const PlainTemplate: Boolean = False
+
+function LLMChatTokens(var Tokenizer: TQNNTokenizer; const Messages: TLLMMessages; const EnableThinking: Boolean; const PlainTemplate: Boolean = False
 ): TArray<LongInt>;
+
 function LLMTokenBytes(var Tokenizer: TQNNTokenizer; const Token: Integer): RawByteString;
 
 implementation
 
 uses
-  System.SysUtils,
-  System.RegularExpressions,
-  System.Generics.Collections;
+  System.SysUtils, System.RegularExpressions, System.Generics.Collections;
 
 const
   // Qwen3 tokenizer.json Split.Regex; UCP gives \s the Unicode semantics of the source tokenizer.
   QWEN3_SPLIT_PATTERN =
-      '(*UCP)(?i:''s|''t|''re|''ve|''m|''ll|''d)|[^\r\n\p{L}\p{N}]?\p{L}+'
-          + '|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+';
+ '(*UCP)(?i:''s|''t|''re|''ve|''m|''ll|''d)|[^\r\n\p{L}\p{N}]?\p{L}+'
+    + '|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+';
 
 var
   ByteToCharacter: array[Byte] of Char;
@@ -104,12 +99,7 @@ begin
   end;
 end;
 
-function LLMChatTokens(
-    var Tokenizer: TQNNTokenizer;
-    const Messages: TLLMMessages;
-    const EnableThinking: Boolean;
-    const PlainTemplate: Boolean
-): TArray<LongInt>;
+function LLMChatTokens(var Tokenizer: TQNNTokenizer; const Messages: TLLMMessages; const EnableThinking: Boolean; const PlainTemplate: Boolean): TArray<LongInt>;
 const
   ROLE_NAMES: array[TLLMRole] of string = ('system', 'user', 'assistant');
 var
@@ -235,9 +225,9 @@ begin
     begin
       Next := Byte(Input[I + 1]);
       if ((B = $E0) and (Next < $A0))
-          or ((B = $ED) and (Next > $9F))
-          or ((B = $F0) and (Next < $90))
-          or ((B = $F4) and (Next > $8F)) then
+        or ((B = $ED) and (Next > $9F))
+        or ((B = $F0) and (Next < $90))
+        or ((B = $F4) and (Next > $8F)) then
         Valid := False;
     end;
     if Valid and (Length(Input) - I + 1 < Need) then
@@ -277,3 +267,4 @@ initialization
   InitializeByteMap;
 
 end.
+

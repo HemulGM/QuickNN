@@ -3,15 +3,13 @@
   Qwen / Hugging Face / ComfyUI reference implementations (Apache-2.0).
   See LICENSE.QwenImage21.txt. }
 {$POINTERMATH ON}
+
 interface
+
 uses
-  System.SysUtils,
-  QuickNN.Common,
-  QuickNN.Quantization,
-  QuickNN.SafeTensors,
-  QuickNN.Vulkan,
-  QuickNN.Models.Qwen21.Math,
-  QuickNN.Models.Qwen21.Conditioning;
+  System.SysUtils, QuickNN.Common, QuickNN.Quantization, QuickNN.SafeTensors,
+  QuickNN.Vulkan, QuickNN.Models.Qwen21.Math, QuickNN.Models.Qwen21.Conditioning;
+
 type
   TQwen21VisionBlock = record
     Norm1, Norm1Bias, Norm2, Norm2Bias: TMemoryBlock;
@@ -19,15 +17,17 @@ type
     procedure Load(const Files: TSafeTensorFiles; const Index: Integer);
     procedure Free;
   end;
+
   TQwen21VisionMerger = record
     Norm, NormBias: TMemoryBlock;
     FC1, FC2: TQNNLinearWeight;
     PostShuffle: Boolean;
     procedure Load(const Files: TSafeTensorFiles; const Prefix: string; const Post: Boolean);
-    function Forward(const Src: TMemoryBlock; const Rows: Integer): TMemoryBlock;
+    function forward(const Src: TMemoryBlock; const Rows: Integer): TMemoryBlock;
     function ForwardGPU(const Ctx: TQNNGPUContext; const Src: TQNNGPUTensor; const Rows: Integer): TQNNGPUTensor;
     procedure Free;
   end;
+
   TQwen21Vision = class
   private
     FFiles: TSafeTensorFiles;
@@ -40,19 +40,19 @@ type
   public
     constructor Create(const Checkpoint: string; const Status: TQwen21Status = nil);
     destructor Destroy; override;
-    procedure EncodeGPU(
-        const Ctx: TQNNGPUContext;
-        var Image: TQwen21ImageCondition;
-        var Resident: TQwen21GPUImageCondition
-    );
+    procedure EncodeGPU(const Ctx: TQNNGPUContext; var Image: TQwen21ImageCondition; var resident: TQwen21GPUImageCondition);
     procedure Encode(var Image: TQwen21ImageCondition);
   end;
+
 procedure Q21AffineNorm(const Dst, Src, Gamma, Beta: TMemoryBlock; const Rows, Dim: Integer);
+
 procedure Q21VisionRoPE(const Data: TMemoryBlock; const Height, Width: Integer);
+
 implementation
+
 uses
-  System.Math,
-  QuickNN.Kernels;
+  System.Math, QuickNN.Kernels;
+
 const
   HIDDEN = 1152;
   HEADS = 16;
@@ -78,7 +78,7 @@ begin
     Inv := 1 / Sqrt(Variance / Dim + 1E-6);
     for var J := 0 to Dim - 1 do
       System.PSingle(Dst)[Offset + J] :=
-          (System.PSingle(Src)[Offset + J] - Mean) * Inv * System.PSingle(Gamma)[J] + System.PSingle(Beta)[J];
+        (System.PSingle(Src)[Offset + J] - Mean) * Inv * System.PSingle(Gamma)[J] + System.PSingle(Beta)[J];
   end;
 end;
 
@@ -137,10 +137,10 @@ begin
     A := Abs(X) / Sqrt(2);
     T := 1 / (1 + 0.3275911 * A);
     ErfValue :=
-        1
-            - (((((1.061405429 * T - 1.453152027) * T) + 1.421413741) * T - 0.284496736) * T + 0.254829592)
-                * T
-                * Exp(-A * A);
+      1
+      - (((((1.061405429 * T - 1.453152027) * T) + 1.421413741) * T - 0.284496736) * T + 0.254829592)
+      * T
+      * Exp(-A * A);
     if X < 0 then
       ErfValue := -ErfValue;
     System.PSingle(Data)[I] := 0.5 * X * (1 + ErfValue);
@@ -161,15 +161,16 @@ begin
   FC1.Load(Files, P + 'mlp.linear_fc1');
   FC2.Load(Files, P + 'mlp.linear_fc2');
   if (Qkv.InputDim <> HIDDEN)
-      or (Qkv.OutputDim <> 3 * HIDDEN)
-      or (Proj.InputDim <> HIDDEN)
-      or (Proj.OutputDim <> HIDDEN)
-      or (FC1.InputDim <> HIDDEN)
-      or (FC1.OutputDim <> 4304)
-      or (FC2.InputDim <> 4304)
-      or (FC2.OutputDim <> HIDDEN) then
+    or (Qkv.OutputDim <> 3 * HIDDEN)
+    or (Proj.InputDim <> HIDDEN)
+    or (Proj.OutputDim <> HIDDEN)
+    or (FC1.InputDim <> HIDDEN)
+    or (FC1.OutputDim <> 4304)
+    or (FC2.InputDim <> 4304)
+    or (FC2.OutputDim <> HIDDEN) then
     raise ESafeTensorError.Create('Unexpected Qwen3-VL visual block shape: ' + P);
 end;
+
 procedure TQwen21VisionBlock.Free;
 begin
   Norm1.Free;
@@ -192,7 +193,8 @@ begin
   if (FC1.InputDim <> 4608) or (FC1.OutputDim <> 4608) or (FC2.InputDim <> 4608) or (FC2.OutputDim <> 4096) then
     raise ESafeTensorError.Create('Unexpected visual merger: ' + Prefix);
 end;
-function TQwen21VisionMerger.Forward(const Src: TMemoryBlock; const Rows: Integer): TMemoryBlock;
+
+function TQwen21VisionMerger.forward(const Src: TMemoryBlock; const Rows: Integer): TMemoryBlock;
 var
   NormData, Projected: TMemoryBlock;
 begin
@@ -205,16 +207,17 @@ begin
       Q21AffineNorm(NormData, Src, Self.Norm, Self.NormBias, Rows div 4, 4608)
     else
       Q21AffineNorm(NormData, Src, Self.Norm, Self.NormBias, Rows, HIDDEN);
-    FC1.Forward(Projected, NormData, Rows div 4);
+    FC1.forward(Projected, NormData, Rows div 4);
     GeluExact(Projected, Projected.Count);
     Result := TMemoryBlock.Create([Rows div 4, 4096], 'vision-merged-features');
-    FC2.Forward(Result, Projected, Rows div 4);
+    FC2.forward(Result, Projected, Rows div 4);
     QNNCheckFinite(Result, Result.Count, 'Vision merger');
   finally
     NormData.Free;
     Projected.Free
   end;
 end;
+
 procedure TQwen21VisionMerger.Free;
 begin
   Norm.Free;
@@ -233,11 +236,11 @@ begin
   FFiles[0] := TSafeTensorFile.Open(Checkpoint);
   Tensor := QNNRequiredTensor(FFiles, 'model.visual.patch_embed.proj.weight');
   if (Tensor.Ndim <> 5)
-      or (Tensor.Shape[0] <> HIDDEN)
-      or (Tensor.Shape[1] <> 3)
-      or (Tensor.Shape[2] <> 2)
-      or (Tensor.Shape[3] <> 16)
-      or (Tensor.Shape[4] <> 16) then
+    or (Tensor.Shape[0] <> HIDDEN)
+    or (Tensor.Shape[1] <> 3)
+    or (Tensor.Shape[2] <> 2)
+    or (Tensor.Shape[3] <> 16)
+    or (Tensor.Shape[4] <> 16) then
     raise ESafeTensorError.Create('Unexpected visual patch embedding');
   FPatch.InputDim := 1536;
   FPatch.OutputDim := HIDDEN;
@@ -252,6 +255,7 @@ begin
   for var I := 0 to 2 do
     FDeep[I].Load(FFiles, Format('model.visual.deepstack_merger_list.%d', [I]), True);
 end;
+
 destructor TQwen21Vision.Destroy;
 begin
   QNNGPUClearWeightCache;
@@ -300,13 +304,13 @@ begin
                   for var Xx := 0 to 15 do
                   begin
                     System.PSingle(Patches)[Index] :=
-                        Image.Pixels.Data[((Py + Yy) * Image.Pixels.Width + Px + Xx) * 4 + C] / 127.5 - 1;
+                      Image.Pixels.Data[((Py + Yy) * Image.Pixels.Width + Px + Xx) * 4 + C] / 127.5 - 1;
                     Inc(Index);
                   end;
             Inc(Row);
           end;
     X := TMemoryBlock.Create([Rows, HIDDEN], 'vision-hidden');
-    FPatch.Forward(X, Patches, Rows);
+    FPatch.forward(X, Patches, Rows);
     Patches.Free;
     Row := 0;
     for var By := 0 to Gh div 2 - 1 do
@@ -325,14 +329,14 @@ begin
             for var J := 0 to HIDDEN - 1 do
             begin
               Position :=
-                  (1 - Fy)
-                          * ((1 - Fx) * QNNWeightValue(FPosition, (Y0 * 48 + X0) * HIDDEN + J)
-                              + Fx * QNNWeightValue(FPosition, (Y0 * 48 + X1) * HIDDEN + J))
-                      + Fy
-                          * ((1 - Fx) * QNNWeightValue(FPosition, (Y1 * 48 + X0) * HIDDEN + J)
-                              + Fx * QNNWeightValue(FPosition, (Y1 * 48 + X1) * HIDDEN + J));
+                (1 - Fy)
+                * ((1 - Fx) * QNNWeightValue(FPosition, (Y0 * 48 + X0) * HIDDEN + J)
+                + Fx * QNNWeightValue(FPosition, (Y0 * 48 + X1) * HIDDEN + J))
+                + Fy
+                * ((1 - Fx) * QNNWeightValue(FPosition, (Y1 * 48 + X0) * HIDDEN + J)
+                + Fx * QNNWeightValue(FPosition, (Y1 * 48 + X1) * HIDDEN + J));
               System.PSingle(X)[NativeInt(Row) * HIDDEN + J] :=
-                  System.PSingle(X)[NativeInt(Row) * HIDDEN + J] + Position;
+                System.PSingle(X)[NativeInt(Row) * HIDDEN + J] + Position;
             end;
             Inc(Row);
           end;
@@ -348,45 +352,48 @@ begin
     begin
       Block := @FBlocks[I];
       Q21AffineNorm(N, X, Block.Norm1, Block.Norm1Bias, Rows, HIDDEN);
-      Block.Qkv.Forward(Qkv, N, Rows);
+      Block.Qkv.forward(Qkv, N, Rows);
       for var Token := 0 to Rows - 1 do
       begin
         Move(
-            System.PSingle(Qkv)[NativeInt(Token) * 3 * HIDDEN],
-            System.PSingle(Q)[NativeInt(Token) * HIDDEN],
-            HIDDEN * 4
+          System.PSingle(Qkv)[NativeInt(Token) * 3 * HIDDEN],
+          System.PSingle(Q)[NativeInt(Token) * HIDDEN],
+          HIDDEN * 4
         );
         Move(
-            System.PSingle(Qkv)[NativeInt(Token) * 3 * HIDDEN + HIDDEN],
-            System.PSingle(K)[NativeInt(Token) * HIDDEN],
-            HIDDEN * 4
+          System.PSingle(Qkv)[NativeInt(Token) * 3 * HIDDEN + HIDDEN],
+          System.PSingle(K)[NativeInt(Token) * HIDDEN],
+          HIDDEN * 4
         );
         Move(
-            System.PSingle(Qkv)[NativeInt(Token) * 3 * HIDDEN + 2 * HIDDEN],
-            System.PSingle(V)[NativeInt(Token) * HIDDEN],
-            HIDDEN * 4
+          System.PSingle(Qkv)[NativeInt(Token) * 3 * HIDDEN + 2 * HIDDEN],
+          System.PSingle(V)[NativeInt(Token) * HIDDEN],
+          HIDDEN * 4
         );
       end;
       Q21VisionRoPE(Q, Gh, Gw);
       Q21VisionRoPE(K, Gh, Gw);
       Q21Attention(A, Q, K, V, Rows, HEADS, HEADS, HEAD_DIM, 0);
-      Block.Proj.Forward(Y, A, Rows);
+      Block.Proj.forward(Y, A, Rows);
       QNNAddInplace(X, Y, Rows * HIDDEN);
       Q21AffineNorm(N, X, Block.Norm2, Block.Norm2Bias, Rows, HIDDEN);
-      Block.FC1.Forward(Mlp, N, Rows);
+      Block.FC1.forward(Mlp, N, Rows);
       Q21Gelu(Mlp, Mlp.Count);
-      Block.FC2.Forward(Y, Mlp, Rows);
+      Block.FC2.forward(Y, Mlp, Rows);
       QNNAddInplace(X, Y, Rows * HIDDEN);
       QNNCheckFinite(X, X.Count, 'Vision block ' + IntToStr(I));
       case I of
-        8: Image.DeepStack[0] := FDeep[0].Forward(X, Rows);
-        16: Image.DeepStack[1] := FDeep[1].Forward(X, Rows);
-        24: Image.DeepStack[2] := FDeep[2].Forward(X, Rows)
+        8:
+          Image.DeepStack[0] := FDeep[0].forward(X, Rows);
+        16:
+          Image.DeepStack[1] := FDeep[1].forward(X, Rows);
+        24:
+          Image.DeepStack[2] := FDeep[2].forward(X, Rows)
       end;
       if Assigned(FStatus) and ((I + 1) mod 9 = 0) then
         FStatus(Format('Vision encoder %d/27', [I + 1]));
     end;
-    Image.Visual := FMerger.Forward(X, Rows);
+    Image.Visual := FMerger.forward(X, Rows);
   finally
     Patches.Free;
     X.Free;
@@ -401,4 +408,6 @@ begin
   end;
 end;
 {$I QuickNN.Models.Qwen21.Vision.GPU.inc}
+
 end.
+

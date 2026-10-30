@@ -5,25 +5,21 @@
 interface
 
 uses
-  System.SysUtils,
-  System.JSON,
-  System.Generics.Collections,
-  QuickNN.Common,
-  QuickNN.SafeTensors,
-  QuickNN.Vulkan,
-  QuickNN.Vulkan.Operations,
-  QuickNN.Models.LLM.Types,
-  QuickNN.Models.LLM.Memory,
+  System.SysUtils, System.JSON, System.Generics.Collections, QuickNN.Common,
+  QuickNN.SafeTensors, QuickNN.Vulkan, QuickNN.Vulkan.Operations,
+  QuickNN.Models.LLM.Types, QuickNN.Models.LLM.Memory,
   QuickNN.Models.LLM.Quantization;
 
 type
   ELLMMoECancelled = class(EAbort);
+
   TLLMMoE = class
   private
     type
       TExpert = record
         Gate, Up, Down: TMemoryBlock;
       end;
+
       TLayer = record
         Router: TMemoryBlock;
         Experts: TArray<TExpert>;
@@ -38,33 +34,16 @@ type
     FBatchBytes: UInt64;
     FCancelCheck: TFunc<Boolean>;
     FRouterReads, FRouterBytes, FDispatchBytes, FMaxExpertBytes: UInt64;
-    function WeightFor(
-        const Ctx: TQNNGPUContext;
-        const Weight: TMemoryBlock;
-        const InputDim, OutputDim: Integer
-    ): TMemoryBlock;
+    function WeightFor(const Ctx: TQNNGPUContext; const Weight: TMemoryBlock; const InputDim, OutputDim: Integer): TMemoryBlock;
   public
-    constructor Create(
-        const Files: TSafeTensorFiles;
-        const Config: TJSONValue;
-        const Layers, Hidden: Integer;
-        const RAMLimit: UInt64;
-        const BatchBytes: UInt64 = 128 * 1024 * 1024;
-        const Quantization: TLLMExpertQuantization = eqNative;
-        const CacheDirectory: string = '';
-        const Progress: TProc<Integer, Integer> = nil
-    );
+    constructor Create(const Files: TSafeTensorFiles; const Config: TJSONValue; const Layers, Hidden: Integer; const RAMLimit: UInt64; const BatchBytes: UInt64 = 128 * 1024 * 1024; const Quantization: TLLMExpertQuantization = eqNative; const CacheDirectory: string = ''; const Progress: TProc<Integer, Integer> = nil
+);
     destructor Destroy; override;
     function IsSparse(const Layer: Integer): Boolean;
     procedure RetainRouters(const Ctx: TQNNGPUContext);
     function RouterBytes: UInt64;
     function ExpertBytes: UInt64;
-    function Forward(
-        const Ctx: TQNNGPUContext;
-        const Work: TGPUWorkspace;
-        const Src: TQNNGPUTensor;
-        const Layer, Rows: Integer
-    ): TQNNGPUTensor;
+    function forward(const Ctx: TQNNGPUContext; const Work: TGPUWorkspace; const Src: TQNNGPUTensor; const Layer, Rows: Integer): TQNNGPUTensor;
     procedure Status(var Value: TLLMMemoryStatus);
     property CancelCheck: TFunc<Boolean> read FCancelCheck write FCancelCheck;
   end;
@@ -72,18 +51,9 @@ type
 implementation
 
 uses
-  System.Math,
-  QuickNN.Quantization.Int4;
+  System.Math, QuickNN.Quantization.Int4;
 
-constructor TLLMMoE.Create(
-    const Files: TSafeTensorFiles;
-    const Config: TJSONValue;
-    const Layers, Hidden: Integer;
-    const RAMLimit, BatchBytes: UInt64;
-    const Quantization: TLLMExpertQuantization;
-    const CacheDirectory: string;
-    const Progress: TProc<Integer, Integer>
-);
+constructor TLLMMoE.Create(const Files: TSafeTensorFiles; const Config: TJSONValue; const Layers, Hidden: Integer; const RAMLimit, BatchBytes: UInt64; const Quantization: TLLMExpertQuantization; const CacheDirectory: string; const Progress: TProc<Integer, Integer>);
 var
   Step: Integer;
   OnlyLayers: TArray<Boolean>;
@@ -95,10 +65,10 @@ var
   begin
     Tensor := Files.GetTensor(Name);
     if (Tensor = nil)
-        or (Tensor.Ndim <> 2)
-        or (Tensor.Shape[0] <> R)
-        or (Tensor.Shape[1] <> C)
-        or not (Tensor.DType in [StBF16, StF32]) then
+      or (Tensor.Ndim <> 2)
+      or (Tensor.Shape[0] <> R)
+      or (Tensor.Shape[1] <> C)
+      or not (Tensor.DType in [StBF16, StF32]) then
       raise EArgumentException.Create('Missing or invalid native MoE matrix: ' + Name);
     if Expert and (FQuantized <> nil) then
       Result := FQuantized.Weight(Name, R, C)
@@ -116,12 +86,12 @@ begin
   Step := Config.GetValue<Integer>('decoder_sparse_step', 1);
   FNormalize := Config.GetValue<Boolean>('norm_topk_prob', False);
   if (FExperts < 1)
-      or (FExperts > 256)
-      or (FTopK < 1)
-      or (FTopK > Min(FExperts, 64))
-      or (FHidden < 1)
-      or (FIntermediate < 1)
-      or (Step < 1) then
+    or (FExperts > 256)
+    or (FTopK < 1)
+    or (FTopK > Min(FExperts, 64))
+    or (FHidden < 1)
+    or (FIntermediate < 1)
+    or (Step < 1) then
     raise EArgumentException.Create('Invalid Qwen3 MoE geometry (experts <=256, top-k <=64)');
   SetLength(OnlyLayers, Layers);
   List := Config.FindValue('mlp_only_layers');
@@ -156,10 +126,10 @@ begin
         FNative.Add(FLayers[L].Experts[E].Up.WeightIdentity, FLayers[L].Experts[E].Up);
         FNative.Add(FLayers[L].Experts[E].Down.WeightIdentity, FLayers[L].Experts[E].Down);
         var ExpertSize :=
-            UInt64(FLayers[L].Experts[E].Gate.Size) * UInt64(DATATYPE_BITS[FLayers[L].Experts[E].Gate.DataType] div 8)
-                + UInt64(FLayers[L].Experts[E].Up.Size) * UInt64(DATATYPE_BITS[FLayers[L].Experts[E].Up.DataType] div 8)
-                + UInt64(FLayers[L].Experts[E].Down.Size)
-                    * UInt64(DATATYPE_BITS[FLayers[L].Experts[E].Down.DataType] div 8);
+          UInt64(FLayers[L].Experts[E].Gate.Size) * UInt64(DATATYPE_BITS[FLayers[L].Experts[E].Gate.DataType] div 8)
+          + UInt64(FLayers[L].Experts[E].Up.Size) * UInt64(DATATYPE_BITS[FLayers[L].Experts[E].Up.DataType] div 8)
+          + UInt64(FLayers[L].Experts[E].Down.Size)
+          * UInt64(DATATYPE_BITS[FLayers[L].Experts[E].Down.DataType] div 8);
         FMaxExpertBytes := Max(FMaxExpertBytes, ExpertSize);
       end;
     end;
@@ -194,13 +164,13 @@ begin
     if IsSparse(L) then
       Ctx.RetainWeight(FLayers[L].Router, FExperts, FHidden);
   Ctx.OnWeightEvicted :=
-      procedure(Identity: IInterface)
-      var
-        Native: TMemoryBlock;
-      begin
-        if FNative.TryGetValue(Identity, Native) then
-          FCache.Store(Native);
-      end;
+    procedure(Identity: IInterface)
+    var
+      Native: TMemoryBlock;
+    begin
+      if FNative.TryGetValue(Identity, Native) then
+        FCache.Store(Native);
+    end;
 end;
 
 function TLLMMoE.RouterBytes: UInt64;
@@ -216,11 +186,7 @@ begin
   Result := FMaxExpertBytes;
 end;
 
-function TLLMMoE.WeightFor(
-    const Ctx: TQNNGPUContext;
-    const Weight: TMemoryBlock;
-    const InputDim, OutputDim: Integer
-): TMemoryBlock;
+function TLLMMoE.WeightFor(const Ctx: TQNNGPUContext; const Weight: TMemoryBlock; const InputDim, OutputDim: Integer): TMemoryBlock;
 begin
   var Width := InputDim;
   if Weight.DataType = dtU8 then
@@ -231,12 +197,7 @@ begin
     Result := Weight;
 end;
 
-function TLLMMoE.Forward(
-    const Ctx: TQNNGPUContext;
-    const Work: TGPUWorkspace;
-    const Src: TQNNGPUTensor;
-    const Layer, Rows: Integer
-): TQNNGPUTensor;
+function TLLMMoE.forward(const Ctx: TQNNGPUContext; const Work: TGPUWorkspace; const Src: TQNNGPUTensor; const Layer, Rows: Integer): TQNNGPUTensor;
 var
   Logits, Routes, Indices, Gathered, G, U, Y: TQNNGPUTensor;
   HostRoutes, Order: TArray<UInt32>;
@@ -307,13 +268,13 @@ var
       Ctx.Kernel(GO_SWIGLU, ExpertRows * FIntermediate, G, G, U, nil, [FIntermediate, 0]);
       Y := Project(G, FLayers[Layer].Experts[E].Down, FIntermediate, FHidden);
       Ctx.Kernel(
-          GO_MOE_SCATTER,
-          Y.Count,
-          Output,
-          Y,
-          Indices,
-          Routes,
-          [FHidden, FTopK, Offsets[E], RouteIndex, Ord(Rows = 1), Rows * FTopK]
+        GO_MOE_SCATTER,
+        Y.Count,
+        Output,
+        Y,
+        Indices,
+        Routes,
+        [FHidden, FTopK, Offsets[E], RouteIndex, Ord(Rows = 1), Rows * FTopK]
       );
     finally
       ExpertWork.Free;
@@ -350,14 +311,14 @@ begin
     Ctx.VectorLinear(Logits, Src, FLayers[Layer].Router, FHidden, FExperts)
   else
     Ctx.Linear(
-        Logits,
-        Src,
-        FLayers[Layer].Router,
-        Default(TMemoryBlock),
-        Default(TMemoryBlock),
-        Rows,
-        FHidden,
-        FExperts
+      Logits,
+      Src,
+      FLayers[Layer].Router,
+      Default(TMemoryBlock),
+      Default(TMemoryBlock),
+      Rows,
+      FHidden,
+      FExperts
     );
   Ctx.CheckFinite(Logits);
   Routes := Work.New(Rows * FTopK * 2);
@@ -408,9 +369,9 @@ begin
         Continue
       end;
       Bytes :=
-          PaddedBytes(FLayers[Layer].Experts[Cursor].Gate)
-              + PaddedBytes(FLayers[Layer].Experts[Cursor].Up)
-              + PaddedBytes(FLayers[Layer].Experts[Cursor].Down);
+        PaddedBytes(FLayers[Layer].Experts[Cursor].Gate)
+        + PaddedBytes(FLayers[Layer].Experts[Cursor].Up)
+        + PaddedBytes(FLayers[Layer].Experts[Cursor].Down);
       if Bytes > Budget then
       begin
         if GroupCount <> 0 then
@@ -453,3 +414,4 @@ begin
 end;
 
 end.
+

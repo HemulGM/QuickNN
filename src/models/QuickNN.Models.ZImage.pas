@@ -9,11 +9,8 @@
 interface
 
 uses
-  QuickNN.Common,
-  QuickNN.SafeTensors,
-  QuickNN.Models.Transformers,
-  QuickNN.Models.Qwen3,
-  QuickNN.Models.VAE;
+  QuickNN.Common, QuickNN.SafeTensors, QuickNN.Models.Transformers,
+  QuickNN.Models.Qwen3, QuickNN.Models.VAE;
 
 type
 
@@ -62,18 +59,9 @@ type
     constructor Load(const AModelDir: string; const OnStatus: TPhaseCallBack = nil);
     procedure LoadVAE();
     function Generate(const Prompt: RawByteString; Params: TGenerateParams): TQNNImage;
-    function GenerateFromEmbeddings(
-        const TextEmb: TMemoryBlock;
-        const TextSeq: LongInt;
-        Params: TGenerateParams
-    ): TQNNImage;
+    function GenerateFromEmbeddings(const TextEmb: TMemoryBlock; const TextSeq: LongInt; Params: TGenerateParams): TQNNImage;
     function EncodeText(const Prompt: RawByteString; var OutSeqLen: LongInt): TMemoryBlock;
-    function GenerateResident(
-        const Prompt: RawByteString;
-        const Embeddings: TMemoryBlock;
-        const EmbeddingRows: LongInt;
-        Params: TGenerateParams
-    ): TQNNImage;
+    function GenerateResident(const Prompt: RawByteString; const Embeddings: TMemoryBlock; const EmbeddingRows: LongInt; Params: TGenerateParams): TQNNImage;
     procedure PrepareLegacy;
     procedure Free();
   end;
@@ -81,21 +69,13 @@ type
 implementation
 
 uses
-  System.SysUtils,
-  System.Math,
-  System.JSON,
-  System.Generics.Collections,
-  System.IOUtils,
-  QuickNN.Kernels,
-  QuickNN.Sampling,
-  QuickNN.Vulkan,
-  QuickNN.Vulkan.Operations,
-  QuickNN.Models.Resident
+  System.SysUtils, System.Math, System.JSON, System.Generics.Collections,
+  System.IOUtils, QuickNN.Kernels, QuickNN.Sampling, QuickNN.Vulkan,
+  QuickNN.Vulkan.Operations, QuickNN.Models.Resident
 {$IFDEF MSWINDOWS}
-  ,
-  Winapi.Windows
+    , Winapi.Windows
 {$ENDIF}
-      ;
+;
 
 { TQNNZImage }
 
@@ -125,8 +105,8 @@ begin
     JSON := TJSONValue.ParseJSONValue(TFile.ReadAllText(ModelArc));
     ModelArc := JSON.GetValue('_class_name', '');
     Assert(
-        (Pos('ZImagePipeline', ModelArc) = 1) or (Pos('Z-Image', ModelArc) = 1),
-        'ERROR : Model is not a Z-Image pipeline'
+      (Pos('ZImagePipeline', ModelArc) = 1) or (Pos('Z-Image', ModelArc) = 1),
+      'ERROR : Model is not a Z-Image pipeline'
     );
     // is_zimage := (modelArc='ZImagePipeline') or (modelArc='Z-Image');
     IsDistilled := JSON.GetValue('is_distilled', False);
@@ -202,8 +182,8 @@ begin
   // transformer files will load later while inferencing
   if not FileExists(Format('%s/transformer/config.json', [ModelDir])) then
     Assert(
-        FileExists(Format('%s/transformer/diffusion_pytorch_model.safetensors', [ModelDir])),
-        'ERROR : Transformer model not found (missing config.json and safetensors)'
+      FileExists(Format('%s/transformer/diffusion_pytorch_model.safetensors', [ModelDir])),
+      'ERROR : Transformer model not found (missing config.json and safetensors)'
     );
   RngSeed(GetTickCount64());
 end;
@@ -258,11 +238,7 @@ begin
 
 end;
 
-function TQNNZImage.GenerateFromEmbeddings(
-    const TextEmb: TMemoryBlock;
-    const TextSeq: LongInt;
-    Params: TGenerateParams
-): TQNNImage;
+function TQNNZImage.GenerateFromEmbeddings(const TextEmb: TMemoryBlock; const TextSeq: LongInt; Params: TGenerateParams): TQNNImage;
 var
   PreH, PreW, PostH, PostW, ImageSeqLen: LongInt;
   Z, Schedule, Denoised, Latent: TMemoryBlock;
@@ -287,25 +263,25 @@ begin
   if Params.Height < 64 then
     Params.Height := 64;
   Assert(
-      (Params.Width <= QNN_VAE_MAX_DIM) and (Params.Height <= QNN_VAE_MAX_DIM),
-      'Image size must be maximum of 1792 X 1792'
+    (Params.Width <= QNN_VAE_MAX_DIM) and (Params.Height <= QNN_VAE_MAX_DIM),
+    'Image size must be maximum of 1792 X 1792'
   );
 
   (* Load Z-Image transformer on-demand (persistent across generations). *)
   if Assigned(PhaseCallback) then
     PhaseCallback('Loading Z-Image transformer', False);
   Transformer.Load(
-      ModelDir,
-      ZiDim,
-      ZiDim div 128,
-      ZiNLayers,
-      ZiNRefiner,
-      ZiCapFeatDim,
-      ZiInChannels,
-      ZiPatchSize,
-      ZiRoPETheta,
-      @ZiAxesDims[0],
-      UseMmap
+    ModelDir,
+    ZiDim,
+    ZiDim div 128,
+    ZiNLayers,
+    ZiNRefiner,
+    ZiCapFeatDim,
+    ZiInChannels,
+    ZiPatchSize,
+    ZiRoPETheta,
+    @ZiAxesDims[0],
+    UseMmap
   );
   if Assigned(PhaseCallback) then
     PhaseCallback('Loading Z-Image transformer', True);
@@ -335,8 +311,8 @@ begin
   (* Sample using Z-Image Euler method.
    * The transformer takes [in_channels, pre_h, pre_w] and returns same shape. *)
   Denoised :=
-      Transformer
-          .SampleEuler(Z, 1, {in_channels,} PreH, PreW, ZiPatchSize, TextEmb, TextSeq, Schedule, Params.NumSteps);
+    Transformer
+    .SampleEuler(Z, 1, {in_channels,} PreH, PreW, ZiPatchSize, TextEmb, TextSeq, Schedule, Params.NumSteps);
   // denoised.printCompare(readTensor());
   Transformer.Free;
   Z.Free;
@@ -381,7 +357,8 @@ begin
     if Assigned(PhaseCallback) then
       PhaseCallback('Loading Qwen3 encoder', False);
     Qwen3Encoder.Load(ModelDir, UseMmap);
-    OutSeqLen := QWEN3_MAX_SEQ_LEN;;
+    OutSeqLen := QWEN3_MAX_SEQ_LEN;
+    ;
     if Assigned(PhaseCallback) then
       PhaseCallback('Loading Qwen3 encoder', True);
   end;
@@ -417,3 +394,4 @@ end;
 {$I QuickNN.Models.ZImage.GPU.inc}
 
 end.
+

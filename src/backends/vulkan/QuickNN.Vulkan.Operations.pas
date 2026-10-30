@@ -3,10 +3,7 @@
 interface
 
 uses
-  System.SysUtils,
-  System.Generics.Collections,
-  QuickNN.Common,
-  QuickNN.Vulkan;
+  System.SysUtils, System.Generics.Collections, QuickNN.Common, QuickNN.Vulkan;
 
 type
   // A lexical workspace returns temporary activations to the context's VRAM pool.
@@ -23,67 +20,32 @@ type
     function Keep(const Tensor: TQNNGPUTensor): TQNNGPUTensor;
     procedure Release(var Tensor: TQNNGPUTensor);
     function Copy(const Src: TQNNGPUTensor; const Count: Integer; const Offset: Integer = 0): TQNNGPUTensor;
-    function Linear(
-        const Src: TQNNGPUTensor;
-        const Weight: TMemoryBlock;
-        const Rows, InputDim, OutputDim: Integer;
-        const Bias: TMemoryBlock
-    ): TQNNGPUTensor; overload;
-    function Linear(
-        const Src: TQNNGPUTensor;
-        const Weight: TMemoryBlock;
-        const Rows, InputDim, OutputDim: Integer
-    ): TQNNGPUTensor; overload;
-    function Norm(
-        const Src: TQNNGPUTensor;
-        const Weight, Bias: TMemoryBlock;
-        const Rows, Dim: Integer;
-        const Center: Boolean = False;
-        const Epsilon: Single = 1E-6
-    ): TQNNGPUTensor;
+    function Linear(const Src: TQNNGPUTensor; const Weight: TMemoryBlock; const Rows, InputDim, OutputDim: Integer; const Bias: TMemoryBlock): TQNNGPUTensor; overload;
+    function Linear(const Src: TQNNGPUTensor; const Weight: TMemoryBlock; const Rows, InputDim, OutputDim: Integer): TQNNGPUTensor; overload;
+    function Norm(const Src: TQNNGPUTensor; const Weight, Bias: TMemoryBlock; const Rows, Dim: Integer; const Center: Boolean = False; const Epsilon: Single = 1E-6
+): TQNNGPUTensor;
     function Unary(const Src: TQNNGPUTensor; const Count: Integer; const Kind: Integer = 0): TQNNGPUTensor;
     function Slice(const Src: TQNNGPUTensor; const Rows, Width, Stride, Offset: Integer): TQNNGPUTensor;
     function Join(const A, B: TQNNGPUTensor; const Rows, WidthA, WidthB: Integer): TQNNGPUTensor;
     function Concat(const A, B: TQNNGPUTensor; const CountA, CountB: Integer): TQNNGPUTensor;
     function CHWToRows(const Src: TQNNGPUTensor; const Spatial, Channels: Integer): TQNNGPUTensor;
     function RowsToCHW(const Src: TQNNGPUTensor; const Spatial, Channels: Integer): TQNNGPUTensor;
-    function Modulate(
-        const Src, Modulation: TQNNGPUTensor;
-        const Rows, Dim, Kind, ScaleOffset: Integer;
-        const ShiftOffset: Integer = 0;
-        const Dst: TQNNGPUTensor = nil
-    ): TQNNGPUTensor;
+    function Modulate(const Src, Modulation: TQNNGPUTensor; const Rows, Dim, Kind, ScaleOffset: Integer; const ShiftOffset: Integer = 0; const Dst: TQNNGPUTensor = nil
+): TQNNGPUTensor;
     procedure Add(const Dst, Src: TQNNGPUTensor; const Count: Integer; const Scale: Single = 1);
-    function SwiGLU(
-        const Src: TQNNGPUTensor;
-        const Gate, Up, Down: TMemoryBlock;
-        const Rows, Hidden, Intermediate: Integer
-    ): TQNNGPUTensor;
-    function Conv(
-        const Src: TQNNGPUTensor;
-        const Weight, Bias: TMemoryBlock;
-        const H, W, InCh, OutCh, Kernel: Integer;
-        const Stride: Integer = 1;
-        const Padding: Integer = 1;
-        const PadEnd: Boolean = False
-    ): TQNNGPUTensor;
-    function GroupNorm(
-        const Src: TQNNGPUTensor;
-        const Weight, Bias: TMemoryBlock;
-        const Channels, Spatial, Groups: Integer;
-        const Epsilon: Single = 1E-6
-    ): TQNNGPUTensor;
+    function SwiGLU(const Src: TQNNGPUTensor; const Gate, Up, Down: TMemoryBlock; const Rows, Hidden, Intermediate: Integer): TQNNGPUTensor;
+    function Conv(const Src: TQNNGPUTensor; const Weight, Bias: TMemoryBlock; const H, W, InCh, OutCh, Kernel: Integer; const Stride: Integer = 1; const Padding: Integer = 1; const PadEnd: Boolean = False
+): TQNNGPUTensor;
+    function GroupNorm(const Src: TQNNGPUTensor; const Weight, Bias: TMemoryBlock; const Channels, Spatial, Groups: Integer; const Epsilon: Single = 1E-6
+): TQNNGPUTensor;
     function Patch(const Src: TQNNGPUTensor; const H, W, Channels, PatchSize, Mode: Integer): TQNNGPUTensor;
-    function PadRows(
-        const Src: TQNNGPUTensor;
-        const Token: TMemoryBlock;
-        const Rows, PaddedRows, Dim: Integer;
-        const RepeatLast: Boolean = False
-    ): TQNNGPUTensor;
+    function PadRows(const Src: TQNNGPUTensor; const Token: TMemoryBlock; const Rows, PaddedRows, Dim: Integer; const RepeatLast: Boolean = False
+): TQNNGPUTensor;
     function Sinusoidal(const Time: Single; const Dim: Integer): TQNNGPUTensor;
   end;
 
 function GPUWeight(const F32, BF16: TMemoryBlock): TMemoryBlock;
+
 function GPUDownloadRGB(const Ctx: TQNNGPUContext; const CHW: TQNNGPUTensor; const Height, Width: Integer): TQNNImage;
 
 implementation
@@ -147,51 +109,36 @@ begin
   Ctx.Copy(Result, Src, Count, 0, Offset);
 end;
 
-function TGPUWorkspace.Linear(
-    const Src: TQNNGPUTensor;
-    const Weight: TMemoryBlock;
-    const Rows, InputDim, OutputDim: Integer;
-    const Bias: TMemoryBlock
-): TQNNGPUTensor;
+function TGPUWorkspace.Linear(const Src: TQNNGPUTensor; const Weight: TMemoryBlock; const Rows, InputDim, OutputDim: Integer; const Bias: TMemoryBlock): TQNNGPUTensor;
 begin
   Result := New(Int64(Rows) * OutputDim);
   Ctx.Linear(Result, Src, Weight, Default(TMemoryBlock), Bias, Rows, InputDim, OutputDim);
 end;
 
-function TGPUWorkspace.Linear(
-    const Src: TQNNGPUTensor;
-    const Weight: TMemoryBlock;
-    const Rows, InputDim, OutputDim: Integer
-): TQNNGPUTensor;
+function TGPUWorkspace.Linear(const Src: TQNNGPUTensor; const Weight: TMemoryBlock; const Rows, InputDim, OutputDim: Integer): TQNNGPUTensor;
 begin
   Result := Linear(Src, Weight, Rows, InputDim, OutputDim, Default(TMemoryBlock));
 end;
 
-function TGPUWorkspace.Norm(
-    const Src: TQNNGPUTensor;
-    const Weight, Bias: TMemoryBlock;
-    const Rows, Dim: Integer;
-    const Center: Boolean;
-    const Epsilon: Single
-): TQNNGPUTensor;
+function TGPUWorkspace.Norm(const Src: TQNNGPUTensor; const Weight, Bias: TMemoryBlock; const Rows, Dim: Integer; const Center: Boolean; const Epsilon: Single): TQNNGPUTensor;
 var
   Flags: Integer;
 begin
   Result := New(Int64(Rows) * Dim);
   if (Src.Count < Result.Count)
-      or (Weight.IsAssigned and (Weight.Count < Dim))
-      or (Bias.IsAssigned and (Bias.Count < Dim))
-      or (Epsilon <= 0) then
+    or (Weight.IsAssigned and (Weight.Count < Dim))
+    or (Bias.IsAssigned and (Bias.Count < Dim))
+    or (Epsilon <= 0) then
     raise EArgumentException.Create('Invalid resident normalization');
   Flags := Ord(Center) or (Ord(not Bias.IsAssigned) * 8);
   Ctx.KernelWeights(
-      GO_NORM,
-      Result.Count,
-      Result,
-      Src,
-      Weight,
-      Bias,
-      [Rows, Dim, Flags, 0, 0, 0, Ord(not Weight.IsAssigned), QNNGPUFloatBits(Epsilon)]
+    GO_NORM,
+    Result.Count,
+    Result,
+    Src,
+    Weight,
+    Bias,
+    [Rows, Dim, Flags, 0, 0, 0, Ord(not Weight.IsAssigned), QNNGPUFloatBits(Epsilon)]
   );
 end;
 
@@ -235,11 +182,7 @@ begin
   Ctx.Kernel(GO_ROWS_TO_CHW, Result.Count, Result, Src, nil, nil, [Spatial, Channels]);
 end;
 
-function TGPUWorkspace.Modulate(
-    const Src, Modulation: TQNNGPUTensor;
-    const Rows, Dim, Kind, ScaleOffset, ShiftOffset: Integer;
-    const Dst: TQNNGPUTensor
-): TQNNGPUTensor;
+function TGPUWorkspace.Modulate(const Src, Modulation: TQNNGPUTensor; const Rows, Dim, Kind, ScaleOffset, ShiftOffset: Integer; const Dst: TQNNGPUTensor): TQNNGPUTensor;
 begin
   Result := Dst;
   if Result = nil then
@@ -252,11 +195,7 @@ begin
   Ctx.Kernel(GO_ADD, Count, Dst, Src, nil, nil, [1, 1, QNNGPUFloatBits(Scale), 0, 0]);
 end;
 
-function TGPUWorkspace.SwiGLU(
-    const Src: TQNNGPUTensor;
-    const Gate, Up, Down: TMemoryBlock;
-    const Rows, Hidden, Intermediate: Integer
-): TQNNGPUTensor;
+function TGPUWorkspace.SwiGLU(const Src: TQNNGPUTensor; const Gate, Up, Down: TMemoryBlock; const Rows, Hidden, Intermediate: Integer): TQNNGPUTensor;
 var
   Work: TGPUWorkspace;
   G, U: TQNNGPUTensor;
@@ -272,12 +211,7 @@ begin
   end;
 end;
 
-function TGPUWorkspace.Conv(
-    const Src: TQNNGPUTensor;
-    const Weight, Bias: TMemoryBlock;
-    const H, W, InCh, OutCh, Kernel, Stride, Padding: Integer;
-    const PadEnd: Boolean
-): TQNNGPUTensor;
+function TGPUWorkspace.Conv(const Src: TQNNGPUTensor; const Weight, Bias: TMemoryBlock; const H, W, InCh, OutCh, Kernel, Stride, Padding: Integer; const PadEnd: Boolean): TQNNGPUTensor;
 const
   TILE = 1024;
 var
@@ -311,13 +245,13 @@ begin
       Ctx.Kernel(GO_IM2COL, Count * Inner, Col, Input, nil, nil, [IH, IW, InCh, Kernel, Start, OW, Stride, Padding]);
       Ctx.Linear(Projected, Col, Weight, Default(TMemoryBlock), Default(TMemoryBlock), Count, Inner, OutCh);
       Ctx.KernelWeights(
-          GO_CONV_OUTPUT,
-          Count * OutCh,
-          Result,
-          Projected,
-          Bias,
-          Default(TMemoryBlock),
-          [OutCh, Spatial, Start, Ord(Bias.IsAssigned)]
+        GO_CONV_OUTPUT,
+        Count * OutCh,
+        Result,
+        Projected,
+        Bias,
+        Default(TMemoryBlock),
+        [OutCh, Spatial, Start, Ord(Bias.IsAssigned)]
       );
       Inc(Start, Count);
     end;
@@ -326,24 +260,19 @@ begin
   end;
 end;
 
-function TGPUWorkspace.GroupNorm(
-    const Src: TQNNGPUTensor;
-    const Weight, Bias: TMemoryBlock;
-    const Channels, Spatial, Groups: Integer;
-    const Epsilon: Single
-): TQNNGPUTensor;
+function TGPUWorkspace.GroupNorm(const Src: TQNNGPUTensor; const Weight, Bias: TMemoryBlock; const Channels, Spatial, Groups: Integer; const Epsilon: Single): TQNNGPUTensor;
 begin
   if (Groups < 1) or (Channels mod Groups <> 0) then
     raise EArgumentException.Create('Invalid resident GroupNorm');
   Result := New(Int64(Channels) * Spatial);
   Ctx.KernelWeights(
-      GO_GROUP_NORM,
-      Result.Count,
-      Result,
-      Src,
-      Weight,
-      Bias,
-      [Groups, Channels, Spatial, QNNGPUFloatBits(Epsilon)]
+    GO_GROUP_NORM,
+    Result.Count,
+    Result,
+    Src,
+    Weight,
+    Bias,
+    [Groups, Channels, Spatial, QNNGPUFloatBits(Epsilon)]
   );
 end;
 
@@ -355,22 +284,17 @@ begin
   Ctx.Kernel(GO_PATCH, Result.Count, Result, Src, nil, nil, [H, W, Channels, PatchSize, Mode]);
 end;
 
-function TGPUWorkspace.PadRows(
-    const Src: TQNNGPUTensor;
-    const Token: TMemoryBlock;
-    const Rows, PaddedRows, Dim: Integer;
-    const RepeatLast: Boolean
-): TQNNGPUTensor;
+function TGPUWorkspace.PadRows(const Src: TQNNGPUTensor; const Token: TMemoryBlock; const Rows, PaddedRows, Dim: Integer; const RepeatLast: Boolean): TQNNGPUTensor;
 begin
   Result := New(Int64(PaddedRows) * Dim);
   Ctx.KernelWeights(
-      GO_PAD_WEIGHT,
-      Result.Count,
-      Result,
-      Src,
-      Token,
-      Default(TMemoryBlock),
-      [Dim, Rows, 0, Ord(RepeatLast)]
+    GO_PAD_WEIGHT,
+    Result.Count,
+    Result,
+    Src,
+    Token,
+    Default(TMemoryBlock),
+    [Dim, Rows, 0, Ord(RepeatLast)]
   );
 end;
 
@@ -415,3 +339,4 @@ begin
 end;
 
 end.
+

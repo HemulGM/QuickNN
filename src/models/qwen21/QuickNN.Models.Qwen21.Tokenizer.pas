@@ -14,9 +14,7 @@
 interface
 
 uses
-  System.SysUtils,
-  System.Generics.Collections,
-  System.RegularExpressions;
+  System.SysUtils, System.Generics.Collections, System.RegularExpressions;
 
 type
   TQwen21Tokenizer = class
@@ -36,8 +34,7 @@ type
 implementation
 
 uses
-  System.JSON,
-  System.IOUtils;
+  System.JSON, System.IOUtils;
 
 constructor TQwen21Tokenizer.Create(const FileName: string);
 var
@@ -110,7 +107,7 @@ begin
     // Match Qwen3-VL's Split/ByteLevel pre-tokenizer. Keep Unicode properties
     // and each digit separate; conversion to UTF-8 bytes happens after splitting.
     Pattern :=
-        '(?i:''s|''t|''re|''ve|''m|''ll|''d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+';
+      '(?i:''s|''t|''re|''ve|''m|''ll|''d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+';
     FPattern := TRegEx.Create(Pattern);
   finally
     Root.Free
@@ -223,3 +220,4 @@ begin
 end;
 
 end.
+

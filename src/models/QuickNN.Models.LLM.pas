@@ -5,13 +5,8 @@
 interface
 
 uses
-  System.SysUtils,
-  QuickNN.Common,
-  QuickNN.Vulkan,
-  QuickNN.Models.Qwen3,
-  QuickNN.Models.LLM.Types,
-  QuickNN.Models.LLM.Text,
-  QuickNN.Models.LLM.MoE;
+  System.SysUtils, QuickNN.Common, QuickNN.Vulkan, QuickNN.Models.Qwen3,
+  QuickNN.Models.LLM.Types, QuickNN.Models.LLM.Text, QuickNN.Models.LLM.MoE;
 
 type
   // A model/session is bound to its creating thread, like the resident context.
@@ -49,43 +44,20 @@ type
     function GetContinuation: TLLMContinuationState;
     function ChatSignature(const Messages: TLLMMessages; const EnableThinking: Boolean): string;
     function SameContinuation(const State: TLLMContinuationState): Boolean;
-    function Prefill(
-        const Tokens: TArray<LongInt>;
-        const OnToken: TLLMTokenCallback;
-        var Response: TLLMGenerationResult
-    ): Boolean;
-    procedure Decode(
-        const Options: TLLMGenerationOptions;
-        const OnToken: TLLMTokenCallback;
-        const StartedAt: Int64;
-        var Response: TLLMGenerationResult
-    );
+    function Prefill(const Tokens: TArray<LongInt>; const OnToken: TLLMTokenCallback; var Response: TLLMGenerationResult): Boolean;
+    procedure Decode(const Options: TLLMGenerationOptions; const OnToken: TLLMTokenCallback; const StartedAt: Int64; var Response: TLLMGenerationResult);
   public
     constructor Create(const ModelDirectory, TokenizerDirectory: string; const MaxContext: Integer = 2048); overload;
-    constructor Create(
-        const ModelDirectory, TokenizerDirectory: string;
-        const MaxContext: Integer;
-        const Memory: TLLMMemoryOptions
-    ); overload;
+    constructor Create(const ModelDirectory, TokenizerDirectory: string; const MaxContext: Integer; const Memory: TLLMMemoryOptions); overload;
     destructor Destroy; override;
     procedure ResetContext;
-    function Generate(
-        const Messages: TLLMMessages;
-        const Options: TLLMGenerationOptions;
-        const OnToken: TLLMTokenCallback = nil
-    ): TLLMGenerationResult;
-    function ContinueGeneration(
-        const State: TLLMContinuationState;
-        const Options: TLLMGenerationOptions;
-        const OnToken: TLLMTokenCallback = nil
-    ): TLLMGenerationResult;
+    function Generate(const Messages: TLLMMessages; const Options: TLLMGenerationOptions; const OnToken: TLLMTokenCallback = nil
+): TLLMGenerationResult;
+    function ContinueGeneration(const State: TLLMContinuationState; const Options: TLLMGenerationOptions; const OnToken: TLLMTokenCallback = nil
+): TLLMGenerationResult;
     // Host token planning only; these methods do not alter resident GPU state.
     function EncodeChat(const Messages: TLLMMessages; const EnableThinking: Boolean): TArray<LongInt>;
-    function RebaseContinuation(
-        const State: TLLMContinuationState;
-        const Messages: TLLMMessages;
-        const EnableThinking: Boolean
-    ): TLLMContinuationState;
+    function RebaseContinuation(const State: TLLMContinuationState; const Messages: TLLMMessages; const EnableThinking: Boolean): TLLMContinuationState;
     property Continuation: TLLMContinuationState read GetContinuation;
     property AutomaticContinuations: Integer read FAutomaticContinuations;
     // Allocation identity for diagnostics; no GPU memory readback.
@@ -102,14 +74,8 @@ type
 implementation
 
 uses
-  System.JSON,
-  System.Classes,
-  System.Hash,
-  System.Diagnostics,
-  System.IOUtils,
-  System.Math,
-  QuickNN.Vulkan.Operations,
-  QuickNN.SafeTensors;
+  System.JSON, System.Classes, System.Hash, System.Diagnostics, System.IOUtils,
+  System.Math, QuickNN.Vulkan.Operations, QuickNN.SafeTensors;
 
 const
   PREFILL_ROWS = 128;
@@ -120,11 +86,7 @@ begin
   Create(ModelDirectory, TokenizerDirectory, MaxContext, TLLMMemoryOptions.Defaults);
 end;
 
-constructor TQNNLLM.Create(
-    const ModelDirectory, TokenizerDirectory: string;
-    const MaxContext: Integer;
-    const Memory: TLLMMemoryOptions
-);
+constructor TQNNLLM.Create(const ModelDirectory, TokenizerDirectory: string; const MaxContext: Integer; const Memory: TLLMMemoryOptions);
 var
   Config, Generation: TJSONValue;
   Value, StopValue: TJSONValue;
@@ -170,8 +132,8 @@ begin
       raise ENotSupportedException.Create('INT4 expert storage requires a MoE model');
     FPlainTemplate := ModelType = 'qwen3_moe';
     if Config.GetValue<Boolean>('attention_bias', False)
-        or Config.GetValue<Boolean>('use_sliding_window', False)
-        or (Config.GetValue<string>('hidden_act', 'silu') <> 'silu') then
+      or Config.GetValue<Boolean>('use_sliding_window', False)
+      or (Config.GetValue<string>('hidden_act', 'silu') <> 'silu') then
       raise ENotSupportedException.Create('Unsupported Qwen3 attention/activation configuration');
     for var Name in TArray<string>.Create('rope_scaling', 'quantization_config') do
     begin
@@ -194,18 +156,18 @@ begin
     Tied := Config.GetValue<Boolean>('tie_word_embeddings', False);
     FModel.Load(ModelDirectory, True, True);
     if (Length(FModel.Layers) < 1)
-        or (FModel.HiddenSize < 1)
-        or (FModel.IntermediateSize < 1)
-        or (FModel.VocabSize < 1)
-        or (FModel.NumHeads < 1)
-        or (FModel.NumKvHeads < 1)
-        or (FModel.NumHeads mod FModel.NumKvHeads <> 0)
-        or (FModel.HeadDim < 2)
-        or (FModel.HeadDim mod 2 <> 0)
-        or (FModel.HeadDim > 1152) then
+      or (FModel.HiddenSize < 1)
+      or (FModel.IntermediateSize < 1)
+      or (FModel.VocabSize < 1)
+      or (FModel.NumHeads < 1)
+      or (FModel.NumKvHeads < 1)
+      or (FModel.NumHeads mod FModel.NumKvHeads <> 0)
+      or (FModel.HeadDim < 2)
+      or (FModel.HeadDim mod 2 <> 0)
+      or (FModel.HeadDim > 1152) then
       raise EArgumentException.Create('Invalid Qwen3 model geometry');
     FKVCacheBytes :=
-        UInt64(Length(FModel.Layers)) * 2 * UInt64(FCapacity) * UInt64(FModel.NumKvHeads) * UInt64(FModel.HeadDim) * 4;
+      UInt64(Length(FModel.Layers)) * 2 * UInt64(FCapacity) * UInt64(FModel.NumKvHeads) * UInt64(FModel.HeadDim) * 4;
     if FKVCacheBytes > MAX_KV_BYTES then
       raise EArgumentOutOfRangeException.Create('KV cache exceeds resident budget; reduce MaxContext');
     Weight := FModel.SfFiles.GetTensor('lm_head.weight');
@@ -216,30 +178,30 @@ begin
     else
       raise EArgumentException.Create('Missing untied lm_head.weight');
     if (FOutputWeight.Count <> Int64(FModel.VocabSize) * FModel.HiddenSize)
-        or not (FOutputWeight.DataType in [dtF32, dtBF16]) then
+      or not (FOutputWeight.DataType in [dtF32, dtBF16]) then
       raise EArgumentException.Create('Invalid LLM output projection');
     CacheDirectory := Memory.ExpertCacheDirectory;
     if CacheDirectory = '' then
       CacheDirectory := TPath.Combine(ModelDirectory, '.quicknn-cache');
     if ModelType = 'qwen3_moe' then
       FMoE :=
-          TLLMMoE.Create(
-              FModel.SfFiles,
-              Config,
-              Length(FModel.Layers),
-              FModel.HiddenSize,
-              Memory.RAMCacheLimitBytes,
-              Memory.ExpertBatchBytes,
-              Memory.ExpertQuantization,
-              CacheDirectory,
-              Memory.OnExpertCacheProgress
-          );
+        TLLMMoE.Create(
+        FModel.SfFiles,
+        Config,
+        Length(FModel.Layers),
+        FModel.HiddenSize,
+        Memory.RAMCacheLimitBytes,
+        Memory.ExpertBatchBytes,
+        Memory.ExpertQuantization,
+        CacheDirectory,
+        Memory.OnExpertCacheProgress
+      );
     StopValue := Config.FindValue('eos_token_id');
     AddStop(StopValue);
     if TFile.Exists(TPath.Combine(ModelDirectory, 'generation_config.json')) then
     begin
       Generation :=
-          TJSONValue.ParseJSONValue(TFile.ReadAllText(TPath.Combine(ModelDirectory, 'generation_config.json')));
+        TJSONValue.ParseJSONValue(TFile.ReadAllText(TPath.Combine(ModelDirectory, 'generation_config.json')));
       try
         if Generation = nil then
           raise EArgumentException.Create('Invalid generation_config.json');
@@ -407,11 +369,7 @@ var
   Layer: ^TQwen3Layer;
   Rows, QDim, KvDim: Integer;
 
-  function Project(
-      const Src: TQNNGPUTensor;
-      const Weight: TMemoryBlock;
-      const InputDim, OutputDim: Integer
-  ): TQNNGPUTensor;
+  function Project(const Src: TQNNGPUTensor; const Weight: TMemoryBlock; const InputDim, OutputDim: Integer): TQNNGPUTensor;
   begin
     if Rows = 1 then
     begin
@@ -448,84 +406,84 @@ begin
       LayerWork := TGPUWorkspace.Create(FCtx);
       try
         N :=
-            LayerWork
-                .Norm(X, Layer.InputLayernormWeight, Default(TMemoryBlock), Rows, FModel.HiddenSize, False, FEpsilon);
+          LayerWork
+          .Norm(X, Layer.InputLayernormWeight, Default(TMemoryBlock), Rows, FModel.HiddenSize, False, FEpsilon);
         Q := Project(N, Layer.Attn.QProjWeight, FModel.HiddenSize, QDim);
         K := Project(N, Layer.Attn.KProjWeight, FModel.HiddenSize, KvDim);
         V := Project(N, Layer.Attn.VProjWeight, FModel.HiddenSize, KvDim);
         Q :=
-            LayerWork.Norm(
-                Q,
-                Layer.Attn.QNormWeight,
-                Default(TMemoryBlock),
-                Rows * FModel.NumHeads,
-                FModel.HeadDim,
-                False,
-                FEpsilon
-            );
+          LayerWork.Norm(
+          Q,
+          Layer.Attn.QNormWeight,
+          Default(TMemoryBlock),
+          Rows * FModel.NumHeads,
+          FModel.HeadDim,
+          False,
+          FEpsilon
+        );
         K :=
-            LayerWork.Norm(
-                K,
-                Layer.Attn.KNormWeight,
-                Default(TMemoryBlock),
-                Rows * FModel.NumKvHeads,
-                FModel.HeadDim,
-                False,
-                FEpsilon
-            );
-        FCtx.Kernel(
-            GO_LLM_ROPE,
-            Rows * QDim div 2,
-            Q,
-            Q,
-            nil,
-            nil,
-            [FModel.NumHeads, FModel.HeadDim, FPosition, QNNGPUFloatBits(FModel.RoPETheta)]
+          LayerWork.Norm(
+          K,
+          Layer.Attn.KNormWeight,
+          Default(TMemoryBlock),
+          Rows * FModel.NumKvHeads,
+          FModel.HeadDim,
+          False,
+          FEpsilon
         );
         FCtx.Kernel(
-            GO_LLM_ROPE,
-            Rows * KvDim div 2,
-            K,
-            K,
-            nil,
-            nil,
-            [FModel.NumKvHeads, FModel.HeadDim, FPosition, QNNGPUFloatBits(FModel.RoPETheta)]
+          GO_LLM_ROPE,
+          Rows * QDim div 2,
+          Q,
+          Q,
+          nil,
+          nil,
+          [FModel.NumHeads, FModel.HeadDim, FPosition, QNNGPUFloatBits(FModel.RoPETheta)]
         );
         FCtx.Kernel(
-            GO_LLM_CACHE_WRITE,
-            Rows * KvDim,
-            FCaches[I],
-            K,
-            V,
-            nil,
-            [Rows, FModel.NumKvHeads, FModel.HeadDim, FCapacity, FPosition]
+          GO_LLM_ROPE,
+          Rows * KvDim div 2,
+          K,
+          K,
+          nil,
+          nil,
+          [FModel.NumKvHeads, FModel.HeadDim, FPosition, QNNGPUFloatBits(FModel.RoPETheta)]
+        );
+        FCtx.Kernel(
+          GO_LLM_CACHE_WRITE,
+          Rows * KvDim,
+          FCaches[I],
+          K,
+          V,
+          nil,
+          [Rows, FModel.NumKvHeads, FModel.HeadDim, FCapacity, FPosition]
         );
         A := LayerWork.New(Int64(Rows) * QDim);
         FCtx.CachedAttention(
-            A,
-            Q,
-            FCaches[I],
-            Rows,
-            FCapacity,
-            FModel.NumHeads,
-            FModel.NumKvHeads,
-            FModel.HeadDim,
-            FPosition
+          A,
+          Q,
+          FCaches[I],
+          Rows,
+          FCapacity,
+          FModel.NumHeads,
+          FModel.NumKvHeads,
+          FModel.HeadDim,
+          FPosition
         );
         Y := Project(A, Layer.Attn.OProjWeight, QDim, FModel.HiddenSize);
         LayerWork.Add(X, Y, Rows * FModel.HiddenSize);
         N :=
-            LayerWork.Norm(
-                X,
-                Layer.PostAttentionLayernormWeight,
-                Default(TMemoryBlock),
-                Rows,
-                FModel.HiddenSize,
-                False,
-                FEpsilon
-            );
+          LayerWork.Norm(
+          X,
+          Layer.PostAttentionLayernormWeight,
+          Default(TMemoryBlock),
+          Rows,
+          FModel.HiddenSize,
+          False,
+          FEpsilon
+        );
         if (FMoE <> nil) and FMoE.IsSparse(I) then
-          Y := FMoE.Forward(FCtx, LayerWork, N, I, Rows)
+          Y := FMoE.forward(FCtx, LayerWork, N, I, Rows)
         else
         begin
           G := Project(N, Layer.Mlp.GateProjWeight, FModel.HiddenSize, FModel.IntermediateSize);
@@ -559,15 +517,15 @@ begin
   RandomState := RandomState xor (RandomState shl 5);
   Uniform := Min(0.99999994, (Double(RandomState) + 0.5) / 4294967296.0);
   FCtx.SampleToken(
-      FSelected,
-      FLogits,
-      FSeen,
-      FModel.VocabSize,
-      Min(Options.TopK, FValidVocabulary),
-      Options.Temperature,
-      Options.TopP,
-      Options.RepetitionPenalty,
-      Uniform
+    FSelected,
+    FLogits,
+    FSeen,
+    FModel.VocabSize,
+    Min(Options.TopK, FValidVocabulary),
+    Options.Temperature,
+    Options.TopP,
+    Options.RepetitionPenalty,
+    Uniform
   );
   FCtx.Download(FSelected, @Result, 1);
   if (Result < 0) or (Result >= FModel.VocabSize) then
@@ -580,20 +538,20 @@ begin
   if FPlainTemplate and Options.EnableThinking then
     raise ENotSupportedException.Create('This chat template does not support thinking mode');
   if (Options.MaxNewTokens < 1)
-      or (Options.HardMaxNewTokens < 0)
-      or (Options.AutoContinue and (Options.HardMaxNewTokens < Options.MaxNewTokens))
-      or (Options.TopK < 1)
-      or (Options.TopK > 64)
-      or IsNan(Options.Temperature)
-      or IsInfinite(Options.Temperature)
-      or (Options.Temperature < 0)
-      or IsNan(Options.TopP)
-      or IsInfinite(Options.TopP)
-      or (Options.TopP <= 0)
-      or (Options.TopP > 1)
-      or IsNan(Options.RepetitionPenalty)
-      or IsInfinite(Options.RepetitionPenalty)
-      or (Options.RepetitionPenalty <= 0) then
+    or (Options.HardMaxNewTokens < 0)
+    or (Options.AutoContinue and (Options.HardMaxNewTokens < Options.MaxNewTokens))
+    or (Options.TopK < 1)
+    or (Options.TopK > 64)
+    or IsNan(Options.Temperature)
+    or IsInfinite(Options.Temperature)
+    or (Options.Temperature < 0)
+    or IsNan(Options.TopP)
+    or IsInfinite(Options.TopP)
+    or (Options.TopP <= 0)
+    or (Options.TopP > 1)
+    or IsNan(Options.RepetitionPenalty)
+    or IsInfinite(Options.RepetitionPenalty)
+    or (Options.RepetitionPenalty <= 0) then
     raise EArgumentException.Create('Invalid LLM generation options (TopK must be 1..64)');
 end;
 
@@ -615,23 +573,19 @@ end;
 function TQNNLLM.SameContinuation(const State: TLLMContinuationState): Boolean;
 begin
   Result :=
-      FCheckpoint.Available
-          and (State.ModelKey = FCheckpoint.ModelKey)
-          and (State.Text = FCheckpoint.Text)
-          and (State.RandomState = FCheckpoint.RandomState)
-          and (State.PendingUTF8 = FCheckpoint.PendingUTF8)
-          and (State.PromptTokens = FCheckpoint.PromptTokens)
-          and (State.GeneratedTokens = FCheckpoint.GeneratedTokens)
-          and (Length(State.Tokens) = Length(FCheckpoint.Tokens));
+    FCheckpoint.Available
+    and (State.ModelKey = FCheckpoint.ModelKey)
+    and (State.Text = FCheckpoint.Text)
+    and (State.RandomState = FCheckpoint.RandomState)
+    and (State.PendingUTF8 = FCheckpoint.PendingUTF8)
+    and (State.PromptTokens = FCheckpoint.PromptTokens)
+    and (State.GeneratedTokens = FCheckpoint.GeneratedTokens)
+    and (Length(State.Tokens) = Length(FCheckpoint.Tokens));
   if Result then
     Result := CompareMem(@State.Tokens[0], @FCheckpoint.Tokens[0], Length(State.Tokens) * SizeOf(LongInt));
 end;
 
-function TQNNLLM.Prefill(
-    const Tokens: TArray<LongInt>;
-    const OnToken: TLLMTokenCallback;
-    var Response: TLLMGenerationResult
-): Boolean;
+function TQNNLLM.Prefill(const Tokens: TArray<LongInt>; const OnToken: TLLMTokenCallback; var Response: TLLMGenerationResult): Boolean;
 var
   Common, Offset, Count: Integer;
   Work: TGPUWorkspace;
@@ -680,12 +634,7 @@ begin
   Result := True;
 end;
 
-procedure TQNNLLM.Decode(
-    const Options: TLLMGenerationOptions;
-    const OnToken: TLLMTokenCallback;
-    const StartedAt: Int64;
-    var Response: TLLMGenerationResult
-);
+procedure TQNNLLM.Decode(const Options: TLLMGenerationOptions; const OnToken: TLLMTokenCallback; const StartedAt: Int64; var Response: TLLMGenerationResult);
 var
   Budget, Available, Limit, InitialGenerated, Token: Integer;
   FirstAt, LastAt, DecodeStartedAt: Int64;
@@ -817,11 +766,7 @@ begin
   Result := LLMChatTokens(FTokenizer, Messages, EnableThinking, FPlainTemplate);
 end;
 
-function TQNNLLM.RebaseContinuation(
-    const State: TLLMContinuationState;
-    const Messages: TLLMMessages;
-    const EnableThinking: Boolean
-): TLLMContinuationState;
+function TQNNLLM.RebaseContinuation(const State: TLLMContinuationState; const Messages: TLLMMessages; const EnableThinking: Boolean): TLLMContinuationState;
 var
   Prompt: TArray<LongInt>;
 begin
@@ -842,11 +787,7 @@ begin
   Result.Tokens := Prompt + Copy(State.Tokens, State.PromptTokens, State.GeneratedTokens);
 end;
 
-function TQNNLLM.Generate(
-    const Messages: TLLMMessages;
-    const Options: TLLMGenerationOptions;
-    const OnToken: TLLMTokenCallback
-): TLLMGenerationResult;
+function TQNNLLM.Generate(const Messages: TLLMMessages; const Options: TLLMGenerationOptions; const OnToken: TLLMTokenCallback): TLLMGenerationResult;
 var
   Prompt: TArray<LongInt>;
   StartedAt: Int64;
@@ -876,15 +817,15 @@ begin
   try
     if FMoE <> nil then
       FMoE.CancelCheck :=
-          function: Boolean
-          var
-            Cancel: Boolean;
-          begin
-            Cancel := False;
-            if Assigned(OnToken) then
-              OnToken('', Cancel);
-            Result := Cancel
-          end;
+        function: Boolean
+        var
+          Cancel: Boolean;
+        begin
+          Cancel := False;
+          if Assigned(OnToken) then
+            OnToken('', Cancel);
+          Result := Cancel
+        end;
     try
       if Prefill(Prompt, OnToken, Result) then
         Decode(Options, OnToken, StartedAt, Result)
@@ -904,11 +845,7 @@ begin
   end;
 end;
 
-function TQNNLLM.ContinueGeneration(
-    const State: TLLMContinuationState;
-    const Options: TLLMGenerationOptions;
-    const OnToken: TLLMTokenCallback
-): TLLMGenerationResult;
+function TQNNLLM.ContinueGeneration(const State: TLLMContinuationState; const Options: TLLMGenerationOptions; const OnToken: TLLMTokenCallback): TLLMGenerationResult;
 var
   StartedAt: Int64;
 begin
@@ -937,15 +874,15 @@ begin
   try
     if FMoE <> nil then
       FMoE.CancelCheck :=
-          function: Boolean
-          var
-            Cancel: Boolean;
-          begin
-            Cancel := False;
-            if Assigned(OnToken) then
-              OnToken('', Cancel);
-            Result := Cancel
-          end;
+        function: Boolean
+        var
+          Cancel: Boolean;
+        begin
+          Cancel := False;
+          if Assigned(OnToken) then
+            OnToken('', Cancel);
+          Result := Cancel
+        end;
     try
       if Result.ResumedFromCache then
         Result.ReusedTokens := FPosition
@@ -1001,3 +938,4 @@ begin
 end;
 
 end.
+

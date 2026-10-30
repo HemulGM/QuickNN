@@ -7,10 +7,7 @@
 interface
 
 uses
-  System.SysUtils,
-  QuickNN.Common,
-  QuickNN.SafeTensors,
-  System.JSON,
+  System.SysUtils, QuickNN.Common, QuickNN.SafeTensors, System.JSON,
   System.Generics.Collections;
 
 (* ========================================================================
@@ -40,6 +37,7 @@ type
 
   { TQNNTokenizer }
   PQNNTokenizer = ^TQNNTokenizer;
+
   TQNNTokenizer = record
     (* Vocabulary: id -> token string *)
     Vocabs: TArray<RawByteString>;
@@ -58,10 +56,7 @@ type
     function GetMergeRank(const Left, Right: RawByteString): LongInt;
     function BPEEncodeWord(const Str: RawByteString): TArray<RawByteString>;
     function Tokenize(const Str: RawByteString; MaxLen: LongInt = 0): TArray<LongInt>;
-    function TokenizeChat(
-        const Prompt: RawByteString;
-        const SkipThinkTags: Boolean = False;
-        MaxLen: LongInt = 0
+    function TokenizeChat(const Prompt: RawByteString; const SkipThinkTags: Boolean = False; MaxLen: LongInt = 0
     ): TArray<LongInt>;
     function DeTokenize(const Tokens: TArray<LongInt>): RawByteString;
     procedure Free;
@@ -70,6 +65,7 @@ type
   end;
 
   PQWEN3Model = ^TQwen3Model;
+
   PQWEN3Layer = ^TQwen3Layer;
 
   { TQWEN3Attention }
@@ -91,7 +87,7 @@ type
     OProjWeightBF16: TMemoryBlock;
     QNormWeightBF16: TMemoryBlock;
     KNormWeightBF16: TMemoryBlock;
-    procedure Forward(const SeqLen: LongInt; const AttentionMask: TArray<LongInt>);
+    procedure forward(const SeqLen: LongInt; const AttentionMask: TArray<LongInt>);
 
   end;
 
@@ -108,7 +104,7 @@ type
     GateProjWeightBF16: TMemoryBlock;
     UpProjWeightBF16: TMemoryBlock;
     DownProjWeightBF16: TMemoryBlock;
-    procedure Forward(const SeqLen: LongInt);
+    procedure forward(const SeqLen: LongInt);
   end;
 
   { TQWEN3Layer }
@@ -123,7 +119,7 @@ type
     // BF16 layer norm weights (for GPU path) - unused currently, kept for future
     InputLayernormWeightBF16: TMemoryBlock;
     PostAttentionLayernormWeightBF16: TMemoryBlock;
-    procedure Forward(const SeqLen: LongInt; const AttentionMask: TArray<LongInt>);
+    procedure forward(const SeqLen: LongInt; const AttentionMask: TArray<LongInt>);
     procedure Load(const LayerIdx: LongInt; const AUseMMAP: Boolean; const AttentionOnly: Boolean = False);
     procedure Free();
   end;
@@ -132,8 +128,7 @@ type
 
   TQwen3Model = record
     (* Architecture (from config.json) *)
-    HiddenSize, IntermediateSize, NumHeads, NumKvHeads, HeadDim, VocabSize, TextDim, ExtractionMode:
-        LongInt; (* 0 = Flux (layers 8,17,26 concat), 1 = Z-Image (layer -2) *)
+    HiddenSize, IntermediateSize, NumHeads, NumKvHeads, HeadDim, VocabSize, TextDim, ExtractionMode: LongInt; (* 0 = Flux (layers 8,17,26 concat), 1 = Z-Image (layer -2) *)
     RoPETheta: QNNFloat;
 
     (* Embedding layer *)
@@ -173,7 +168,7 @@ type
     (* Mmap mode: keep safetensors files open, load layer weights on-demand *)
     UseMmap, UseBF16, ResidentOnly: Boolean;
     SfFiles: TSafeTensorFiles;
-    procedure Load(const ModelDir: string; const AUseMMAP: Boolean; const Resident: Boolean = False);
+    procedure Load(const ModelDir: string; const AUseMMAP: Boolean; const resident: Boolean = False);
 
     function Parse(const ModelDir: string): Boolean;
     procedure SetDefaults();
@@ -181,11 +176,7 @@ type
     procedure ReInitialize();
     procedure Free();
     procedure SetExtractionMode(const Mode: Boolean);
-    function Forward(
-        const InputIds: TArray<LongInt>;
-        const AttentionMask: TArray<LongInt>;
-        SeqLen: LongInt
-    ): TMemoryBlock;
+    function forward(const InputIds: TArray<LongInt>; const AttentionMask: TArray<LongInt>; SeqLen: LongInt): TMemoryBlock;
   (* BF16 GPU acceleration *)
   end;
 
@@ -194,22 +185,17 @@ type
   TQwen3Encoder = record
     Tokenizer: TQNNTokenizer;
     Model: TQwen3Model;
-    procedure Load(const ModelDir: string; const AUseMMAP: Boolean; const Resident: Boolean = False);
+    procedure Load(const ModelDir: string; const AUseMMAP: Boolean; const resident: Boolean = False);
     function EncodeText(const Prompt: RawByteString; var OutSeqLen: LongInt): TMemoryBlock;
     procedure Free;
   end;
 
-function PadTokens(
-    const Tokens: TArray<LongInt>;
-    const MaxLen: LongInt;
-    const AttentionMask: TArray<LongInt>
-): TArray<LongInt>;
+function PadTokens(const Tokens: TArray<LongInt>; const MaxLen: LongInt; const AttentionMask: TArray<LongInt>): TArray<LongInt>;
 
 implementation
+
 uses
-  QuickNN.Kernels,
-  QuickNN.Vulkan,
-  System.IOUtils;
+  QuickNN.Kernels, QuickNN.Vulkan, System.IOUtils;
 
 const
   // QWEN3_MAX_SEQ_LEN = 512;
@@ -237,10 +223,7 @@ begin
   end;
 end;
 
-procedure QWEN3ApplyRoPE(
-    const Q, K, CosCache, SinCache: TMemoryBlock;
-    const SeqLen, NumQHeads, NumKHeads, HeadDim: LongInt
-);
+procedure QWEN3ApplyRoPE(const Q, K, CosCache, SinCache: TMemoryBlock; const SeqLen, NumQHeads, NumKHeads, HeadDim: LongInt);
 begin
   QNNApplyRoPE3(Q, CosCache, SinCache, SeqLen, NumQHeads, HeadDim);
   QNNApplyRoPE3(K, CosCache, SinCache, SeqLen, NumKHeads, HeadDim);
@@ -307,11 +290,7 @@ begin
   Result := 1
 end;
 
-function PadTokens(
-    const Tokens: TArray<LongInt>;
-    const MaxLen: LongInt;
-    const AttentionMask: TArray<LongInt>
-): TArray<LongInt>;
+function PadTokens(const Tokens: TArray<LongInt>; const MaxLen: LongInt; const AttentionMask: TArray<LongInt>): TArray<LongInt>;
 begin
   SetLength(Result, MaxLen);
 
@@ -360,9 +339,9 @@ begin
     try
       JSON := TJSONValue.ParseJSONValue(TFile.ReadAllText(JsonFilename));
       if (JSON = nil)
-          or not (JSON.FindValue('model.vocab') is TJSONObject)
-          or not (JSON.FindValue('model.merges') is TJSONArray)
-          or not (JSON.FindValue('added_tokens') is TJSONArray) then
+        or not (JSON.FindValue('model.vocab') is TJSONObject)
+        or not (JSON.FindValue('model.merges') is TJSONArray)
+        or not (JSON.FindValue('added_tokens') is TJSONArray) then
         raise EArgumentException.Create('Invalid Qwen tokenizer structure: ' + JsonFilename);
       Vocab := JSON.FindValue('model.vocab') as TJSONObject;
       Merge := JSON.FindValue('model.merges') as TJSONArray;
@@ -445,6 +424,7 @@ begin
 end;
 
 function TQNNTokenizer.BPEEncodeWord(const Str: RawByteString): TArray<RawByteString>;
+
   procedure AppendToken(const A: RawByteString);
   begin
     Insert(A, Result, Length(Result));
@@ -454,7 +434,6 @@ var
   I, Len, BestIdx, BestRank, Rank: LongInt;
   S: RawByteString;
   Changed: Boolean;
-
 begin
   Assert(Assigned(VocabsDic), 'ERROR : no vocabs loaded, use <load> function to load vocab 1st.');
   Result := nil;
@@ -496,7 +475,6 @@ begin
     Result[BestIdx] := S;
     Delete(Result, BestIdx + 1, 1)
   end;
-
 end;
 
 function Pretokenize(const Text: RawByteString): TArray<RawByteString>;
@@ -643,11 +621,7 @@ end;
  * template that triggers direct generation. For Z-Image the think tags
  * are skipped (controlled by skipThinkTags). *)
 
-function TQNNTokenizer.TokenizeChat(
-    const Prompt: RawByteString;
-    const SkipThinkTags: Boolean;
-    MaxLen: LongInt
-): TArray<LongInt>;
+function TQNNTokenizer.TokenizeChat(const Prompt: RawByteString; const SkipThinkTags: Boolean; MaxLen: LongInt): TArray<LongInt>;
 var
   Tokens: TArray<LongInt>;
   Total, I: LongInt;
@@ -746,7 +720,6 @@ begin
       Result[Total - 1] := Tokens[I];
     end;
   end;
-
 end;
 
 function TQNNTokenizer.DeTokenize(const Tokens: TArray<LongInt>): RawByteString;
@@ -806,7 +779,7 @@ end;
 
 { TQWEN3Attention }
 
-procedure TQWEN3Attention.Forward(const SeqLen: LongInt; const AttentionMask: TArray<LongInt>);
+procedure TQWEN3Attention.forward(const SeqLen: LongInt; const AttentionMask: TArray<LongInt>);
 var
   Scale: QNNFloat;
   KvDim, QDim, HeadsPerKv, KvH, H: LongInt;
@@ -846,20 +819,20 @@ begin
     KStrided := Model.KBuf + KvH * Model.HeadDim;
 
     CblasGemm(
-        CblasRowMajor,
-        CblasNoTrans,
-        CblasTrans,
-        SeqLen,
-        SeqLen,
-        Model.HeadDim,
-        Scale,
-        QStrided,
-        QDim,
-        KStrided,
-        KvDim,
-        0.0,
-        Scores,
-        SeqLen
+      CblasRowMajor,
+      CblasNoTrans,
+      CblasTrans,
+      SeqLen,
+      SeqLen,
+      Model.HeadDim,
+      Scale,
+      QStrided,
+      QDim,
+      KStrided,
+      KvDim,
+      0.0,
+      Scores,
+      SeqLen
     );
 
     (* Apply causal mask and attention mask, then softmax *)
@@ -884,44 +857,43 @@ begin
     (* out = scores @ V using strided BLAS (avoids V copy and output copy)
      * scores: [seq_len, seq_len], V: [seq_len, head_dim] with ldb=kv_dim *)
     CblasGemm(
-        CblasRowMajor,
-        CblasNoTrans,
-        CblasNoTrans,
-        SeqLen,
-        Model.HeadDim,
-        SeqLen,
-        1.0,
-        Scores,
-        SeqLen,
-        VStrided,
-        KvDim,
-        0.0,
-        OutStrided,
-        QDim
+      CblasRowMajor,
+      CblasNoTrans,
+      CblasNoTrans,
+      SeqLen,
+      Model.HeadDim,
+      SeqLen,
+      1.0,
+      Scores,
+      SeqLen,
+      VStrided,
+      KvDim,
+      0.0,
+      OutStrided,
+      QDim
     );
   end;
 
   // model.attn_out.printCompare(readTensor);
   QNNLinearNoBias(Model.HiddenState, Model.AttnOut, Layer.Attn.OProjWeight, SeqLen, QDim, Model.HiddenSize);
-
 end;
 
 { TQWEN3MLP }
 
-procedure TQwen3MLP.Forward(const SeqLen: LongInt);
+procedure TQwen3MLP.forward(const SeqLen: LongInt);
 begin
   Assert(Assigned(Model) and Assigned(Layer), 'ERROR : failed MLP forward, no model loaded!');
   if SeqLen <= 0 then
     Exit;
   if TryVulkanSwiGLU(
-      Model.MlpOut,
-      Model.NormBuf,
-      Layer.Mlp.GateProjWeight,
-      Layer.Mlp.UpProjWeight,
-      Layer.Mlp.DownProjWeight,
-      SeqLen,
-      Model.HiddenSize,
-      Model.IntermediateSize) then
+    Model.MlpOut,
+    Model.NormBuf,
+    Layer.Mlp.GateProjWeight,
+    Layer.Mlp.UpProjWeight,
+    Layer.Mlp.DownProjWeight,
+    SeqLen,
+    Model.HiddenSize,
+    Model.IntermediateSize) then
     Exit;
   if Model.MlpGate.Count < Int64(SeqLen) * Model.IntermediateSize then
     Model.MlpGate.Resize([SeqLen, Model.IntermediateSize], dtF32);
@@ -929,12 +901,12 @@ begin
     Model.MlpUp.Resize([SeqLen, Model.IntermediateSize], dtF32);
   (* Gate and Up projections *)
   QNNLinearNoBias(
-      Model.MlpGate,
-      Model.NormBuf,
-      Layer.Mlp.GateProjWeight,
-      SeqLen,
-      Model.HiddenSize,
-      Model.IntermediateSize
+    Model.MlpGate,
+    Model.NormBuf,
+    Layer.Mlp.GateProjWeight,
+    SeqLen,
+    Model.HiddenSize,
+    Model.IntermediateSize
   );
   QNNLinearNoBias(Model.MlpUp, Model.NormBuf, Layer.Mlp.UpProjWeight, SeqLen, Model.HiddenSize, Model.IntermediateSize);
 
@@ -943,18 +915,18 @@ begin
 
   (* Down projection *)
   QNNLinearNoBias(
-      Model.MlpOut,
-      Model.MlpGate,
-      Layer.Mlp.DownProjWeight,
-      SeqLen,
-      Model.IntermediateSize,
-      Model.HiddenSize
+    Model.MlpOut,
+    Model.MlpGate,
+    Layer.Mlp.DownProjWeight,
+    SeqLen,
+    Model.IntermediateSize,
+    Model.HiddenSize
   );
 end;
 
 { TQWEN3Layer }
 
-procedure TQwen3Layer.Forward(const SeqLen: LongInt; const AttentionMask: TArray<LongInt>);
+procedure TQwen3Layer.forward(const SeqLen: LongInt; const AttentionMask: TArray<LongInt>);
 begin
 
   (* Save residual *)
@@ -964,7 +936,7 @@ begin
   QNNRMSNormRows(Model.NormBuf, Model.HiddenState, InputLayernormWeight, SeqLen, Model.HiddenSize);
 
   (* Self-attention *)
-  Attn.Forward(SeqLen, AttentionMask);
+  Attn.forward(SeqLen, AttentionMask);
 
   (* Residual connection *)
   QNNAddInplace(Model.HiddenState, Model.Residual, SeqLen * Model.HiddenSize);
@@ -978,7 +950,7 @@ begin
   QNNRMSNormRows(Model.NormBuf, Model.HiddenState, PostAttentionLayernormWeight, SeqLen, Model.HiddenSize);
 
   (* MLP *)
-  Mlp.Forward(SeqLen);
+  Mlp.forward(SeqLen);
 
   (* Residual connection *)
   QNNAdd(Model.HiddenState, Model.Residual, Model.MlpOut, SeqLen * Model.HiddenSize);
@@ -988,6 +960,7 @@ begin
 end;
 
 procedure TQwen3Layer.Load(const LayerIdx: LongInt; const AUseMMAP: Boolean; const AttentionOnly: Boolean);
+
   function Projection(const Name: string; const Mapped: Boolean): TMemoryBlock;
   begin
     if Model.ResidentOnly then
@@ -995,16 +968,17 @@ procedure TQwen3Layer.Load(const LayerIdx: LongInt; const AUseMMAP: Boolean; con
     else
       Result := Model.SfFiles.GetTensorDataMemBlock(Name, Mapped);
   end;
+
 begin
   Assert(Assigned(Model), 'ERROR : failed to load QWEN3 Layer, no model assigned yet');
   // Input layernorm
   InputLayernormWeight :=
-      Model.SfFiles.GetTensorDataMemBlock(Format('model.layers.%d.input_layernorm.weight', [LayerIdx]), AUseMMAP);
+    Model.SfFiles.GetTensorDataMemBlock(Format('model.layers.%d.input_layernorm.weight', [LayerIdx]), AUseMMAP);
   // Post-attention layernorm                                              layer->post_attention_layernorm_weight := sf_files.getTensorDataMemBlock(snprintf(name, sizeof(name), "model.layers.%d.post_attention_layernorm.weight", layer_idx);
   PostAttentionLayernormWeight :=
-      Model
-          .SfFiles
-          .GetTensorDataMemBlock(Format('model.layers.%d.post_attention_layernorm.weight', [LayerIdx]), AUseMMAP);
+    Model
+    .SfFiles
+    .GetTensorDataMemBlock(Format('model.layers.%d.post_attention_layernorm.weight', [LayerIdx]), AUseMMAP);
 
   // Attention weights
   Attn.Model := Model;
@@ -1016,9 +990,9 @@ begin
 
   // Q/K norm
   Attn.QNormWeight :=
-      Model.SfFiles.GetTensorDataMemBlock(Format('model.layers.%d.self_attn.q_norm.weight', [LayerIdx]), AUseMMAP);
+    Model.SfFiles.GetTensorDataMemBlock(Format('model.layers.%d.self_attn.q_norm.weight', [LayerIdx]), AUseMMAP);
   Attn.KNormWeight :=
-      Model.SfFiles.GetTensorDataMemBlock(Format('model.layers.%d.self_attn.k_norm.weight', [LayerIdx]), AUseMMAP);
+    Model.SfFiles.GetTensorDataMemBlock(Format('model.layers.%d.self_attn.k_norm.weight', [LayerIdx]), AUseMMAP);
 
   if AttentionOnly then
     Exit;
@@ -1026,10 +1000,10 @@ begin
   Mlp.Model := Model;
   Mlp.Layer := @Self;
   Mlp.GateProjWeight :=
-      Model.SfFiles.GetLinearWeight(Format('model.layers.%d.mlp.gate_proj.weight', [LayerIdx]), AUseMMAP);
+    Model.SfFiles.GetLinearWeight(Format('model.layers.%d.mlp.gate_proj.weight', [LayerIdx]), AUseMMAP);
   Mlp.UpProjWeight := Model.SfFiles.GetLinearWeight(Format('model.layers.%d.mlp.up_proj.weight', [LayerIdx]), AUseMMAP);
   Mlp.DownProjWeight :=
-      Model.SfFiles.GetLinearWeight(Format('model.layers.%d.mlp.down_proj.weight', [LayerIdx]), AUseMMAP);
+    Model.SfFiles.GetLinearWeight(Format('model.layers.%d.mlp.down_proj.weight', [LayerIdx]), AUseMMAP);
 end;
 
 procedure TQwen3Layer.Free();
@@ -1056,12 +1030,12 @@ end;
 
 { TQWEN3Model }
 
-procedure TQwen3Model.Load(const ModelDir: string; const AUseMMAP: Boolean; const Resident: Boolean);
+procedure TQwen3Model.Load(const ModelDir: string; const AUseMMAP: Boolean; const resident: Boolean);
 var
   HalfDim, MaxSeq, I: LongInt;
 begin
   UseMmap := AUseMMAP;
-  ResidentOnly := Resident;
+  ResidentOnly := resident;
   Parse(ModelDir);
 
   LoadSafeTensors(ModelDir);
@@ -1086,7 +1060,6 @@ begin
   RoPESin := TMemoryBlock.Create([MaxSeq, HalfDim], 'QWEN3_LOAD_ROPE_SIN');
   QNNComputeRoPE2(RoPECos, RoPESin, MaxSeq, HeadDim, RoPETheta);
   ReInitialize();
-
 end;
 
 function TQwen3Model.Parse(const ModelDir: string): Boolean;
@@ -1152,7 +1125,7 @@ end;
 procedure TQwen3Model.LoadSafeTensors(const ModelDir: string);
 begin
   if FileExists(TPath.Combine(ModelDir, 'model.safetensors.index.json'))
-      or FileExists(TPath.Combine(ModelDir, 'model.safetensors')) then
+    or FileExists(TPath.Combine(ModelDir, 'model.safetensors')) then
     SfFiles := LoadSafeTensorShards(ModelDir, 'model.safetensors.index.json', 'model.safetensors')
   else
   begin
@@ -1192,7 +1165,6 @@ begin
 
   for I := 0 to High(LayerOutputs) do
     LayerOutputs[I] := TMemoryBlock.Create([SeqLen, HiddenSize], 'QWEN3_LAYER_OUT_' + IntToStr(I));
-
 end;
 
 procedure TQwen3Model.Free();
@@ -1250,11 +1222,7 @@ end;
  * and concatenates them -> [seq, 3*hidden]. Z-Image mode: saves only
  * hidden_states[-2] (layer 34) -> [seq, hidden]. Stops early at the last
  * needed extraction layer to skip ~9 unnecessary layers of compute*)
-function TQwen3Model.Forward(
-    const InputIds: TArray<LongInt>;
-    const AttentionMask: TArray<LongInt>;
-    SeqLen: LongInt
-): TMemoryBlock;
+function TQwen3Model.forward(const InputIds: TArray<LongInt>; const AttentionMask: TArray<LongInt>; SeqLen: LongInt): TMemoryBlock;
 var
   ZImage: Boolean;
   LastLayer, S, TokenId, LayerIdx: LongInt;
@@ -1278,7 +1246,7 @@ begin
   begin
     if UseMmap then
       Layers[LayerIdx].Load(LayerIdx, UseMmap);
-    Layers[LayerIdx].Forward(SeqLen, AttentionMask);
+    Layers[LayerIdx].forward(SeqLen, AttentionMask);
     if UseMmap then
       Layers[LayerIdx].Free;
     if ZImage then
@@ -1313,10 +1281,10 @@ end;
 
 { TQWEN3Encoder }
 
-procedure TQwen3Encoder.Load(const ModelDir: string; const AUseMMAP: Boolean; const Resident: Boolean);
+procedure TQwen3Encoder.Load(const ModelDir: string; const AUseMMAP: Boolean; const resident: Boolean);
 begin
   Tokenizer := TQNNTokenizer.Load(ModelDir + '/tokenizer/tokenizer.json');
-  Model.Load(ModelDir + '/text_encoder', AUseMMAP, Resident);
+  Model.Load(ModelDir + '/text_encoder', AUseMMAP, resident);
 end;
 
 function TQwen3Encoder.EncodeText(const Prompt: RawByteString; var OutSeqLen: LongInt): TMemoryBlock;
@@ -1324,7 +1292,8 @@ var
   SkipThinkTags: Boolean;
   Tokens, AttentionMask, PaddedTokens: TArray<LongInt>;
 begin
-  AttentionMask := nil;;
+  AttentionMask := nil;
+  ;
   if not Assigned(Tokenizer.VocabsDic) or not Assigned(Model.Layers) then
     Exit(Default(TMemoryBlock));
   SkipThinkTags := Model.ExtractionMode = 1;
@@ -1332,7 +1301,7 @@ begin
   OutSeqLen := Length(Tokens);
   SetLength(AttentionMask, QWEN3_MAX_SEQ_LEN);
   PaddedTokens := PadTokens(Tokens, QWEN3_MAX_SEQ_LEN, AttentionMask);
-  Result := Model.Forward(PaddedTokens, AttentionMask, QWEN3_MAX_SEQ_LEN);
+  Result := Model.forward(PaddedTokens, AttentionMask, QWEN3_MAX_SEQ_LEN);
 end;
 
 procedure TQwen3Encoder.Free;
@@ -1368,3 +1337,4 @@ initialization
   // readln
 
 end.
+

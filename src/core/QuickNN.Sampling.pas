@@ -8,20 +8,28 @@
 interface
 
 uses
-  System.SysUtils,
-  System.Math,
-  QuickNN.Common;
+  System.SysUtils, System.Math, QuickNN.Common;
 
 function ScheduleLinear(const NumSteps: LongInt): TMemoryBlock;
+
 function SchedulePower(const NumSteps: LongInt; const Alpha: QNNFloat): TMemoryBlock;
+
 function ScheduleSigmoid(const NumSteps: LongInt; const Shift: QNNFloat): TMemoryBlock;
+
 function ScheduleResolution(const NumSteps, Height, Width: LongInt): TMemoryBlock;
+
 function ComputeEmpiricalMu(const ImageSeqLen, NumSteps: LongInt): Single;
+
 function GeneralizedTimeSnrShift(const T, Mu, Sigma: QNNFloat): QNNFloat;
+
 function ScheduleFlux(const NumSteps, ImageSeqLen: LongInt): TMemoryBlock;
+
 function ScheduleZimage(const NumSteps, ImageSeqLen: LongInt): TMemoryBlock;
+
 function InitNoise(const Batch, Channels, H, W: LongInt; const Seed: Int64): TMemoryBlock;
+
 procedure RngSeed(Seed: UInt64);
+
 function SelectedSchedule(const Params: TGenerateParams; const ImageSeqLen: LongInt): TMemoryBlock;
 
 implementation
@@ -76,7 +84,6 @@ begin
   // Ensure endpoints
   ResultPtr[0] := 1.0;
   ResultPtr[NumSteps] := 0.0;
-
 end;
 
 (*
@@ -208,8 +215,7 @@ begin
 end;
 
 var
-  RngState: array[0..3] of UInt64 =
-      (UInt64($853c49e6748fea9b), UInt64($da3e39cb94b95bdb), UInt64($647c4677a2884327), UInt64($c6e7918d2e2969f5));
+  RngState: array[0..3] of UInt64 = (UInt64($853c49e6748fea9b), UInt64($da3e39cb94b95bdb), UInt64($647c4677a2884327), UInt64($c6e7918d2e2969f5));
 
 function Rotl(const X: UInt64; const K: LongInt): UInt64; inline;
 begin
@@ -326,10 +332,14 @@ end;
 function SelectedSchedule(const Params: TGenerateParams; const ImageSeqLen: LongInt): TMemoryBlock;
 begin
   case Params.Schedule of
-    QNN_SCHEDULE_LINEAR: Exit(ScheduleLinear(Params.NumSteps));
-    QNN_SCHEDULE_POWER: Exit(SchedulePower(Params.NumSteps, Params.PowerAlpha));
-    QNN_SCHEDULE_FLOWMATCH: Exit(ScheduleZimage(Params.NumSteps, ImageSeqLen));
-    QNN_SCHEDULE_SIGMOID: Exit(ScheduleFlux(Params.NumSteps, ImageSeqLen));
+    QNN_SCHEDULE_LINEAR:
+      Exit(ScheduleLinear(Params.NumSteps));
+    QNN_SCHEDULE_POWER:
+      Exit(SchedulePower(Params.NumSteps, Params.PowerAlpha));
+    QNN_SCHEDULE_FLOWMATCH:
+      Exit(ScheduleZimage(Params.NumSteps, ImageSeqLen));
+    QNN_SCHEDULE_SIGMOID:
+      Exit(ScheduleFlux(Params.NumSteps, ImageSeqLen));
   else
     Exit(ScheduleFlux(Params.NumSteps, ImageSeqLen));
   end;
@@ -338,3 +348,4 @@ end;
 initialization
 
 end.
+

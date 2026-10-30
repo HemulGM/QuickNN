@@ -12,32 +12,18 @@
 interface
 
 uses
-  System.SysUtils,
-  QuickNN.Common,
-  QuickNN.SafeTensors,
-  QuickNN.Models.Qwen21.Math,
-  QuickNN.Vulkan;
+  System.SysUtils, QuickNN.Common, QuickNN.SafeTensors,
+  QuickNN.Models.Qwen21.Math, QuickNN.Vulkan;
 
 type
   TQwen21Conv = record
     Weight, Bias: TMemoryBlock;
     InputDim, OutputDim, Kernel: Integer;
     procedure Load(const Files: TSafeTensorFiles; const Prefix: string);
-    function ForwardGPU(
-        const Ctx: TQNNGPUContext;
-        const Src: TQNNGPUTensor;
-        const Height, Width: Integer;
-        const Stride: Integer = 1;
-        const Padding: Integer = -1;
-        const PadEnd: Boolean = False
-    ): TQNNGPUTensor;
-    function Forward(
-        const Src: TMemoryBlock;
-        const Height, Width: Integer;
-        const Stride: Integer = 1;
-        const Padding: Integer = -1;
-        const PadEnd: Boolean = False
-    ): TMemoryBlock;
+    function ForwardGPU(const Ctx: TQNNGPUContext; const Src: TQNNGPUTensor; const Height, Width: Integer; const Stride: Integer = 1; const Padding: Integer = -1; const PadEnd: Boolean = False
+): TQNNGPUTensor;
+    function forward(const Src: TMemoryBlock; const Height, Width: Integer; const Stride: Integer = 1; const Padding: Integer = -1; const PadEnd: Boolean = False
+): TMemoryBlock;
     procedure Free;
   end;
 
@@ -45,12 +31,8 @@ type
     Gamma1, Gamma2: TMemoryBlock;
     Conv1, Conv2, Shortcut: TQwen21Conv;
     procedure Load(const Files: TSafeTensorFiles; const Prefix: string);
-    function ForwardGPU(
-        const Ctx: TQNNGPUContext;
-        const Src: TQNNGPUTensor;
-        const Height, Width: Integer
-    ): TQNNGPUTensor;
-    function Forward(const Src: TMemoryBlock; const Height, Width: Integer): TMemoryBlock;
+    function ForwardGPU(const Ctx: TQNNGPUContext; const Src: TQNNGPUTensor; const Height, Width: Integer): TQNNGPUTensor;
+    function forward(const Src: TMemoryBlock; const Height, Width: Integer): TMemoryBlock;
     procedure Free;
   end;
 
@@ -60,7 +42,7 @@ type
     TemporalFactor: Integer;
     procedure Load(const Files: TSafeTensorFiles; const Index: Integer);
     function ForwardGPU(const Ctx: TQNNGPUContext; const Src: TQNNGPUTensor; var Height, Width: Integer): TQNNGPUTensor;
-    function Forward(const Src: TMemoryBlock; var Height, Width: Integer): TMemoryBlock;
+    function forward(const Src: TMemoryBlock; var Height, Width: Integer): TMemoryBlock;
     procedure Free;
   end;
 
@@ -70,7 +52,7 @@ type
     TemporalFactor, SpatialFactor: Integer;
     procedure Load(const Files: TSafeTensorFiles; const Index: Integer);
     function ForwardGPU(const Ctx: TQNNGPUContext; const Src: TQNNGPUTensor; var Height, Width: Integer): TQNNGPUTensor;
-    function Forward(const Src: TMemoryBlock; var Height, Width: Integer): TMemoryBlock;
+    function forward(const Src: TMemoryBlock; var Height, Width: Integer): TMemoryBlock;
     procedure Free;
   end;
 
@@ -89,30 +71,15 @@ type
     FEncMid1, FEncMid2: TQwen21VAERes;
     FDowns: array[0..4] of TQwen21VAEDown;
     procedure LoadEncoder;
-    function AttentionGPU(
-        const Ctx: TQNNGPUContext;
-        const Src: TQNNGPUTensor;
-        const Height, Width: Integer;
-        const Encoder: Boolean = False
-    ): TQNNGPUTensor;
-    function Attention(
-        const Src: TMemoryBlock;
-        const Height, Width: Integer;
-        const Encoder: Boolean = False
-    ): TMemoryBlock;
+    function AttentionGPU(const Ctx: TQNNGPUContext; const Src: TQNNGPUTensor; const Height, Width: Integer; const Encoder: Boolean = False
+): TQNNGPUTensor;
+    function Attention(const Src: TMemoryBlock; const Height, Width: Integer; const Encoder: Boolean = False
+): TMemoryBlock;
   public
     constructor Create(const Checkpoint, ConfigPath: string; const Status: TQwen21Status = nil);
     destructor Destroy; override;
-    function EncodeGPU(
-        const Ctx: TQNNGPUContext;
-        const Pixels: TQNNGPUTensor;
-        const ImageHeight, ImageWidth: Integer
-    ): TQNNGPUTensor;
-    function DecodeGPU(
-        const Ctx: TQNNGPUContext;
-        const Latents: TQNNGPUTensor;
-        const Height, Width: Integer
-    ): TQNNGPUTensor;
+    function EncodeGPU(const Ctx: TQNNGPUContext; const Pixels: TQNNGPUTensor; const ImageHeight, ImageWidth: Integer): TQNNGPUTensor;
+    function DecodeGPU(const Ctx: TQNNGPUContext; const Latents: TQNNGPUTensor; const Height, Width: Integer): TQNNGPUTensor;
     function Encode(const Image: TQNNImage): TMemoryBlock;
     function Decode(const Latents: TMemoryBlock; const Height, Width: Integer): TQNNImage;
   end;
@@ -124,14 +91,8 @@ procedure Q21SavePNG(const Image: TQNNImage; const FileName: string);
 implementation
 
 uses
-  System.Math,
-  System.JSON,
-  System.Generics.Collections,
-  System.IOUtils,
-  System.Classes,
-  System.ZLib,
-  QuickNN.Quantization,
-  QuickNN.Kernels;
+  System.Math, System.JSON, System.Generics.Collections, System.IOUtils,
+  System.Classes, System.ZLib, QuickNN.Quantization, QuickNN.Kernels;
 
 procedure Q21ChannelRMS(const Dst, Src, Gamma: TMemoryBlock; const Channels, Spatial: Integer);
 var
@@ -145,7 +106,7 @@ begin
     Inv := Sqrt(Channels) / Max(Sqrt(Sum), 1E-12);
     for var C := 0 to Channels - 1 do
       System.PSingle(Dst)[NativeInt(C) * Spatial + P] :=
-          System.PSingle(Src)[NativeInt(C) * Spatial + P] * Inv * System.PSingle(Gamma)[C];
+        System.PSingle(Src)[NativeInt(C) * Spatial + P] * Inv * System.PSingle(Gamma)[C];
   end;
 end;
 
@@ -173,12 +134,7 @@ begin
   end;
 end;
 
-function TQwen21Conv.Forward(
-    const Src: TMemoryBlock;
-    const Height, Width: Integer;
-    const Stride, Padding: Integer;
-    const PadEnd: Boolean
-): TMemoryBlock;
+function TQwen21Conv.forward(const Src: TMemoryBlock; const Height, Width: Integer; const Stride, Padding: Integer; const PadEnd: Boolean): TMemoryBlock;
 const
   TILE_PIXELS = 1024;
 var
@@ -267,13 +223,13 @@ begin
   if Conv1.InputDim <> Conv1.OutputDim then
     Shortcut.Load(Files, Prefix + '.shortcut');
   if (Gamma1.Count <> Conv1.InputDim)
-      or (Gamma2.Count <> Conv1.OutputDim)
-      or (Conv2.InputDim <> Conv1.OutputDim)
-      or (Conv2.OutputDim <> Conv1.OutputDim) then
+    or (Gamma2.Count <> Conv1.OutputDim)
+    or (Conv2.InputDim <> Conv1.OutputDim)
+    or (Conv2.OutputDim <> Conv1.OutputDim) then
     raise ESafeTensorError.Create('Inconsistent VAE residual shapes: ' + Prefix);
 end;
 
-function TQwen21VAERes.Forward(const Src: TMemoryBlock; const Height, Width: Integer): TMemoryBlock;
+function TQwen21VAERes.forward(const Src: TMemoryBlock; const Height, Width: Integer): TMemoryBlock;
 var
   N, C1, N2, Skip: TMemoryBlock;
   Spatial: Integer;
@@ -283,16 +239,16 @@ begin
     N := TMemoryBlock.Create([Conv1.InputDim, Height, Width], 'qwen21-vae-norm1');
     Q21ChannelRMS(N, Src, Gamma1, Conv1.InputDim, Spatial);
     Q21Silu(N, Conv1.InputDim * Spatial);
-    C1 := Conv1.Forward(N, Height, Width);
+    C1 := Conv1.forward(N, Height, Width);
     N.Free;
     N2 := TMemoryBlock.Create([Conv1.OutputDim, Height, Width], 'qwen21-vae-norm2');
     Q21ChannelRMS(N2, C1, Gamma2, Conv1.OutputDim, Spatial);
     Q21Silu(N2, Conv1.OutputDim * Spatial);
     C1.Free;
-    Result := Conv2.Forward(N2, Height, Width);
+    Result := Conv2.forward(N2, Height, Width);
     if Shortcut.Weight.IsAssigned then
     begin
-      Skip := Shortcut.Forward(Src, Height, Width);
+      Skip := Shortcut.forward(Src, Height, Width);
       QNNAddInplace(Result, Skip, Conv1.OutputDim * Spatial);
     end
     else
@@ -328,13 +284,13 @@ begin
   else
     TemporalFactor := 1;
   if Upsample.Weight.IsAssigned
-      and ((Upsample.InputDim <> Blocks[2].Conv2.OutputDim)
-          or (Upsample.OutputDim <> Blocks[2].Conv2.OutputDim)
-          or (Upsample.OutputDim * TemporalFactor * 4 mod Blocks[0].Conv1.InputDim <> 0)) then
+    and ((Upsample.InputDim <> Blocks[2].Conv2.OutputDim)
+    or (Upsample.OutputDim <> Blocks[2].Conv2.OutputDim)
+    or (Upsample.OutputDim * TemporalFactor * 4 mod Blocks[0].Conv1.InputDim <> 0)) then
     raise ESafeTensorError.Create('Inconsistent VAE upsample shapes: ' + P);
 end;
 
-function TQwen21VAEUp.Forward(const Src: TMemoryBlock; var Height, Width: Integer): TMemoryBlock;
+function TQwen21VAEUp.forward(const Src: TMemoryBlock; var Height, Width: Integer): TMemoryBlock;
 var
   X, Next, Resized: TMemoryBlock;
   InChannels, OutChannels, Repeats, InputChannel, Spatial, OutSpatial: Integer;
@@ -347,7 +303,7 @@ begin
     QNNCopy(X, Src, InChannels * Spatial);
     for var J := 0 to 2 do
     begin
-      Next := Blocks[J].Forward(X, Height, Width);
+      Next := Blocks[J].forward(X, Height, Width);
       X.Free;
       X := Next;
       Next := Default(TMemoryBlock)
@@ -364,8 +320,8 @@ begin
       for var Y := 0 to Height * 2 - 1 do
         for var Xx := 0 to Width * 2 - 1 do
           System.PSingle(Resized)[NativeInt(C) * OutSpatial + Y * (Width * 2) + Xx] :=
-              System.PSingle(X)[NativeInt(C) * Spatial + (Y div 2) * Width + Xx div 2];
-    Result := Upsample.Forward(Resized, Height * 2, Width * 2);
+            System.PSingle(X)[NativeInt(C) * Spatial + (Y div 2) * Width + Xx div 2];
+    Result := Upsample.forward(Resized, Height * 2, Width * 2);
     X.Free;
     Resized.Free;
     // First-frame specialization of DupUp3D(repeat_interleave -> reshape ->
@@ -377,8 +333,8 @@ begin
         begin
           InputChannel := (C * TemporalFactor * 4 + (TemporalFactor - 1) * 4 + (Y mod 2) * 2 + Xx mod 2) div Repeats;
           System.PSingle(Result)[NativeInt(C) * OutSpatial + Y * (Width * 2) + Xx] :=
-              System.PSingle(Result)[NativeInt(C) * OutSpatial + Y * (Width * 2) + Xx]
-                  + System.PSingle(Src)[NativeInt(InputChannel) * Spatial + (Y div 2) * Width + Xx div 2];
+            System.PSingle(Result)[NativeInt(C) * OutSpatial + Y * (Width * 2) + Xx]
+            + System.PSingle(Src)[NativeInt(InputChannel) * Spatial + (Y div 2) * Width + Xx div 2];
         end;
     Height := Height * 2;
     Width := Width * 2;
@@ -414,7 +370,7 @@ begin
     TemporalFactor := 2;
 end;
 
-function TQwen21VAEDown.Forward(const Src: TMemoryBlock; var Height, Width: Integer): TMemoryBlock;
+function TQwen21VAEDown.forward(const Src: TMemoryBlock; var Height, Width: Integer): TMemoryBlock;
 var
   X, Next: TMemoryBlock;
   InChannels, OutChannels, GroupSize, OldW, SrcSpatial, DstSpatial, Flat, C, Time, Dy, Dx: Integer;
@@ -432,14 +388,14 @@ begin
     QNNCopy(X, Src, X.Count);
     for var I := 0 to 1 do
     begin
-      Next := Blocks[I].Forward(X, Height, Width);
+      Next := Blocks[I].forward(X, Height, Width);
       X.Free;
       X := Next;
       Next := Default(TMemoryBlock)
     end;
     if Downsample.Weight.IsAssigned then
     begin
-      Next := Downsample.Forward(X, Height, Width, 2, 0, True);
+      Next := Downsample.forward(X, Height, Width, 2, 0, True);
       X.Free;
       X := Next;
       Next := Default(TMemoryBlock);
@@ -463,12 +419,12 @@ begin
             Dx := Flat mod SpatialFactor;
             if Time = TemporalFactor - 1 then
               Sum :=
-                  Sum
-                      + System.PSingle(Src)[
-                          NativeInt(C) * SrcSpatial + (Y * SpatialFactor + Dy) * OldW + Xx * SpatialFactor + Dx];
+                Sum
+                + System.PSingle(Src)[
+                  NativeInt(C) * SrcSpatial + (Y * SpatialFactor + Dy) * OldW + Xx * SpatialFactor + Dx];
           end;
           System.PSingle(X)[NativeInt(OutChannel) * DstSpatial + Y * Width + Xx] :=
-              System.PSingle(X)[NativeInt(OutChannel) * DstSpatial + Y * Width + Xx] + Sum / GroupSize;
+            System.PSingle(X)[NativeInt(OutChannel) * DstSpatial + Y * Width + Xx] + Sum / GroupSize;
         end;
     Result := X;
     X := Default(TMemoryBlock);
@@ -501,10 +457,10 @@ begin
   for var I := 0 to 4 do
     FDowns[I].Load(FFiles, I);
   if (FEncIn.InputDim <> 4)
-      or (FEncIn.OutputDim <> 96)
-      or (FEncOut.OutputDim <> 128)
-      or (FQuant.InputDim <> 128)
-      or (FQuant.OutputDim <> 128) then
+    or (FEncIn.OutputDim <> 96)
+    or (FEncOut.OutputDim <> 128)
+    or (FQuant.InputDim <> 128)
+    or (FQuant.OutputDim <> 128) then
     raise ESafeTensorError.Create('Unexpected RGBA VAE encoder');
   FEncoderLoaded := True;
 end;
@@ -521,8 +477,8 @@ begin
     raise EArgumentException.Create('Invalid Qwen-Image 2.1 VAE config');
   try
     if (JSON.GetValue<Integer>('z_dim') <> 64)
-        or (JSON.GetValue<Integer>('decoder_base_dim') <> 144)
-        or (JSON.GetValue<Integer>('out_channels') <> 4) then
+      or (JSON.GetValue<Integer>('decoder_base_dim') <> 144)
+      or (JSON.GetValue<Integer>('out_channels') <> 4) then
       raise EArgumentException.Create('Expected RGBA Qwen-Image 2.1 VAE');
     Means := JSON.FindValue('latents_mean') as TJSONArray;
     Stds := JSON.FindValue('latents_std') as TJSONArray;
@@ -583,11 +539,7 @@ begin
   inherited;
 end;
 
-function TQwen21VAE.Attention(
-    const Src: TMemoryBlock;
-    const Height, Width: Integer;
-    const Encoder: Boolean
-): TMemoryBlock;
+function TQwen21VAE.Attention(const Src: TMemoryBlock; const Height, Width: Integer; const Encoder: Boolean): TMemoryBlock;
 var
   Norm, Qkv, Q, K, V, A, Chw: TMemoryBlock;
   Spatial, Channels: Integer;
@@ -611,7 +563,7 @@ begin
   try
     Norm := TMemoryBlock.Create([Channels, Height, Width], 'qwen21-vae-attn-norm');
     Q21ChannelRMS(Norm, Src, Gamma, Channels, Spatial);
-    Qkv := QkvConv.Forward(Norm, Height, Width);
+    Qkv := QkvConv.forward(Norm, Height, Width);
     Norm.Free;
     Q := TMemoryBlock.Create([Spatial, Channels], 'qwen21-vae-q');
     K := TMemoryBlock.Create([Spatial, Channels], 'qwen21-vae-k');
@@ -623,7 +575,7 @@ begin
         System.PSingle(Q)[NativeInt(P) * Channels + C] := System.PSingle(Qkv)[NativeInt(C) * Spatial + P];
         System.PSingle(K)[NativeInt(P) * Channels + C] := System.PSingle(Qkv)[NativeInt(C + Channels) * Spatial + P];
         System.PSingle(V)[NativeInt(P) * Channels + C] :=
-            System.PSingle(Qkv)[NativeInt(C + 2 * Channels) * Spatial + P];
+          System.PSingle(Qkv)[NativeInt(C + 2 * Channels) * Spatial + P];
       end;
     Qkv.Free;
     Q21Attention(A, Q, K, V, Spatial, 1, 1, Channels, 0);
@@ -631,7 +583,7 @@ begin
     for var P := 0 to Spatial - 1 do
       for var C := 0 to Channels - 1 do
         System.PSingle(Chw)[NativeInt(C) * Spatial + P] := System.PSingle(A)[NativeInt(P) * Channels + C];
-    Result := ProjConv.Forward(Chw, Height, Width);
+    Result := ProjConv.forward(Chw, Height, Width);
     QNNAddInplace(Result, Src, Channels * Spatial);
   finally
     Norm.Free;
@@ -651,10 +603,10 @@ var
   Value: Single;
 begin
   if not (Image.Channels in [3, 4])
-      or (Image.Width < 16)
-      or (Image.Height < 16)
-      or (Image.Width mod 16 <> 0)
-      or (Image.Height mod 16 <> 0) then
+    or (Image.Width < 16)
+    or (Image.Height < 16)
+    or (Image.Width mod 16 <> 0)
+    or (Image.Height mod 16 <> 0) then
     raise EArgumentException.Create('Invalid VAE reference image');
   LoadEncoder;
   Height := Image.Height;
@@ -670,13 +622,13 @@ begin
           Value := 1;
         System.PSingle(X)[NativeInt(C) * Height * Width + P] := Value;
       end;
-    Next := FEncIn.Forward(X, Height, Width);
+    Next := FEncIn.forward(X, Height, Width);
     X.Free;
     X := Next;
     Next := Default(TMemoryBlock);
     for var I := 0 to 4 do
     begin
-      Next := FDowns[I].Forward(X, Height, Width);
+      Next := FDowns[I].forward(X, Height, Width);
       X.Free;
       X := Next;
       Next := Default(TMemoryBlock);
@@ -684,7 +636,7 @@ begin
       if Assigned(FStatus) then
         FStatus(Format('VAE encoder %d/5: %dx%d', [I + 1, Width, Height]));
     end;
-    Next := FEncMid1.Forward(X, Height, Width);
+    Next := FEncMid1.forward(X, Height, Width);
     X.Free;
     X := Next;
     Next := Default(TMemoryBlock);
@@ -692,7 +644,7 @@ begin
     X.Free;
     X := Next;
     Next := Default(TMemoryBlock);
-    Next := FEncMid2.Forward(X, Height, Width);
+    Next := FEncMid2.forward(X, Height, Width);
     X.Free;
     X := Next;
     Next := Default(TMemoryBlock);
@@ -700,14 +652,14 @@ begin
     Q21ChannelRMS(N, X, FEncNorm, FEncOut.InputDim, Height * Width);
     Q21Silu(N, N.Count);
     X.Free;
-    X := FEncOut.Forward(N, Height, Width);
-    Next := FQuant.Forward(X, Height, Width);
+    X := FEncOut.forward(N, Height, Width);
+    Next := FQuant.forward(X, Height, Width);
     QNNCheckFinite(Next, Next.Count, 'VAE encoded distribution');
     Result := TMemoryBlock.Create([Height * Width, 64], 'vae-normalized-reference');
     for var P := 0 to Height * Width - 1 do
       for var C := 0 to 63 do
         System.PSingle(Result)[NativeInt(P) * 64 + C] :=
-            (System.PSingle(Next)[NativeInt(C) * Height * Width + P] - FMean[C]) / FStd[C];
+          (System.PSingle(Next)[NativeInt(C) * Height * Width + P] - FMean[C]) / FStd[C];
   finally
     X.Free;
     Next.Free;
@@ -731,16 +683,16 @@ begin
     for var P := 0 to Spatial - 1 do
       for var C := 0 to 63 do
         System.PSingle(X)[NativeInt(C) * Spatial + P] :=
-            System.PSingle(Latents)[NativeInt(P) * 64 + C] * FStd[C] + FMean[C];
-    Next := FPost.Forward(X, H, W);
+          System.PSingle(Latents)[NativeInt(P) * 64 + C] * FStd[C] + FMean[C];
+    Next := FPost.forward(X, H, W);
     X.Free;
     X := Next;
     Next := Default(TMemoryBlock);
-    Next := FIn.Forward(X, H, W);
+    Next := FIn.forward(X, H, W);
     X.Free;
     X := Next;
     Next := Default(TMemoryBlock);
-    Next := FMid1.Forward(X, H, W);
+    Next := FMid1.forward(X, H, W);
     X.Free;
     X := Next;
     Next := Default(TMemoryBlock);
@@ -748,13 +700,13 @@ begin
     X.Free;
     X := Next;
     Next := Default(TMemoryBlock);
-    Next := FMid2.Forward(X, H, W);
+    Next := FMid2.forward(X, H, W);
     X.Free;
     X := Next;
     Next := Default(TMemoryBlock);
     for var I := 0 to 4 do
     begin
-      Next := FUps[I].Forward(X, H, W);
+      Next := FUps[I].forward(X, H, W);
       X.Free;
       X := Next;
       Next := Default(TMemoryBlock);
@@ -766,7 +718,7 @@ begin
     Q21ChannelRMS(N, X, FOutGamma, FOut.InputDim, H * W);
     Q21Silu(N, N.Count);
     X.Free;
-    X := FOut.Forward(N, H, W);
+    X := FOut.forward(N, H, W);
     QNNCheckFinite(X, X.Count, 'Decoded RGBA image');
     Result := TQNNImage.Create(W, H, 4);
     for var P := 0 to H * W - 1 do
@@ -832,9 +784,9 @@ var
 
 begin
   if not (Image.Channels in [3, 4])
-      or (Image.Width < 1)
-      or (Image.Height < 1)
-      or (Length(Image.Data) <> Int64(Image.Width) * Image.Height * Image.Channels) then
+    or (Image.Width < 1)
+    or (Image.Height < 1)
+    or (Length(Image.Data) <> Int64(Image.Width) * Image.Height * Image.Channels) then
     raise EArgumentException.Create('Expected RGB or RGBA image');
   Raw := TMemoryStream.Create;
   Compressed := TMemoryStream.Create;
@@ -887,3 +839,4 @@ end;
 {$I QuickNN.Models.Qwen21.VAE.GPU.inc}
 
 end.
+

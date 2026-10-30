@@ -5,11 +5,9 @@
 {$Z4}
 {$T+}
 interface
+
 uses
-  System.SysUtils,
-  System.Generics.Collections,
-  System.Math,
-  System.TypInfo,
+  System.SysUtils, System.Generics.Collections, System.Math, System.TypInfo,
   QuickNN.Vulkan.API;
 
 const
@@ -17,6 +15,7 @@ const
 
 type
   PHalf = ^Half;
+
   Half = type SmallInt;
   { TWorkloadSizes }
 
@@ -36,34 +35,31 @@ type
     QueueIndex: LongInt;
     QueuePropCount: LongWord;
     QueueProperties: TArray<VkQueueFamilyProperties>;
-    function GetMemoryIndex(
-        const MemType: LongWord;
-        const MemPropertyFlags: VkMemoryPropertyFlags;
-        const Preferred: VkMemoryPropertyFlags = 0
+    function GetMemoryIndex(const MemType: LongWord; const MemPropertyFlags: VkMemoryPropertyFlags; const Preferred: VkMemoryPropertyFlags = 0
     ): LongWord;
   end;
 
   TVulkanPrecision = (
       // floating
-      VpF32,
-      VpBf16,
-      VpF16,
-      VpF8E5m2,
-      VpF8E4m3,
-      VpF4E2m1,
-      VpF4E3m0,
-      VpF64,
+  VpF32,
+    VpBf16,
+    VpF16,
+    VpF8E5m2,
+    VpF8E4m3,
+    VpF4E2m1,
+    VpF4E3m0,
+    VpF64,
       // signed integers
-      VpS32,
-      VpS16,
-      VpS8,
-      VpS4,
+    VpS32,
+    VpS16,
+    VpS8,
+    VpS4,
       // unsigned integers
-      VpU32,
-      VpU16,
-      VpU8,
-      VpU4,
-      VpBoolean
+    VpU32,
+    VpU16,
+    VpU8,
+    VpU4,
+    VpBoolean
           // vpE8m0,
   );
   { TVulkanMemory }
@@ -82,6 +78,7 @@ type
 {$IF not defined(Int4)}
   TInt4 = -8..7;
 {$ENDIF}
+
   TVulkanArgType = (AtPointer, AtInt4, AtInt8, AtInt16, AtInt32, AtInt64, AtBF16, AtHalf, AtSingle, AtDouble);
 
   { TVulkanArg }
@@ -110,16 +107,25 @@ type
     // argType : TVulkanArgType;
     // value   : uint64;
     Size: UInt64;
-  case ArgType: TVulkanArgType of
-    AtPointer: (VPointer: Pointer);
-    AtInt4: (VInt4: TInt4);
-    AtInt8: (VInt8: ShortInt);
-    AtInt16: (VInt16: SmallInt);
-    AtInt32: (VInt32: LongInt);
-    AtInt64: (VInt64: Int64);
-    AtHalf: (VHalf: Half);
-    AtSingle: (VSingle: Single);
-    AtDouble: (VDouble: Double);
+    case ArgType: TVulkanArgType of
+      AtPointer:
+        (VPointer: Pointer);
+      AtInt4:
+        (VInt4: TInt4);
+      AtInt8:
+        (VInt8: ShortInt);
+      AtInt16:
+        (VInt16: SmallInt);
+      AtInt32:
+        (VInt32: LongInt);
+      AtInt64:
+        (VInt64: Int64);
+      AtHalf:
+        (VHalf: Half);
+      AtSingle:
+        (VSingle: Single);
+      AtDouble:
+        (VDouble: Double);
   end;
 
   { TVulkanPipeline }
@@ -160,14 +166,11 @@ type
       TVulkanConstants = array[0..VULKAN_ARGS_MAX_CONSTANTS_COUNT - 1] of LongInt;
     // TSPIVTDictionary = TDictionary<rawbytestring, TKernelHandle>;
     const
-      VK_BUFFER_USAGE_STORAGE =
-          (LongWord(VK_BUFFER_USAGE_TRANSFER_DST_BIT) or LongWord(VK_BUFFER_USAGE_TRANSFER_SRC_BIT))
-              or LongWord(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-      VK_BUFFER_USAGE_STAGING =
-          (LongWord(VK_BUFFER_USAGE_TRANSFER_DST_BIT) or LongWord(VK_BUFFER_USAGE_TRANSFER_SRC_BIT));
+      VK_BUFFER_USAGE_STORAGE = ( LongWord(VK_BUFFER_USAGE_TRANSFER_DST_BIT) or LongWord(VK_BUFFER_USAGE_TRANSFER_SRC_BIT))
+        or LongWord(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+      VK_BUFFER_USAGE_STAGING = ( LongWord(VK_BUFFER_USAGE_TRANSFER_DST_BIT) or LongWord(VK_BUFFER_USAGE_TRANSFER_SRC_BIT));
       VK_MEMORY_PROPERTY_STORAGE = LongWord(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-      VK_MEMORY_PROPERTY_STAGING =
-          LongWord(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) or LongWord(VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+      VK_MEMORY_PROPERTY_STAGING = LongWord(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) or LongWord(VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
   private
     class function LoadFile(const FileName: TFileName): RawByteString; static;
@@ -175,9 +178,8 @@ type
     class procedure CreateInstance(const AppName: AnsiString); static;
     class procedure DestroyInstance(); static;
     class function DeviceCount(): LongWord; static;
-    class function QueryPhysicalDevices(
-        const Flags: VkQueueFlags = VkQueueFlags(VK_QUEUE_COMPUTE_BIT)
-    ): TArray<TVulkanDevice>; static;
+    class function QueryPhysicalDevices(const Flags: VkQueueFlags = VkQueueFlags(VK_QUEUE_COMPUTE_BIT)
+        ): TArray<TVulkanDevice>; static;
 
   protected
     VulkanDevice: TVulkanDevice;
@@ -202,15 +204,10 @@ type
     constructor Create(const DeviceIndex: LongInt = 0; const QueuePriority: Single = 1.0);
     destructor Destroy; override;
     // function CompileSPIRV(const sourcefile:TFileName):RawByteString;
-    function CreateBuffer(
-        const ByteSize: VkDeviceSize;
-        const Usage: VkBufferUsageFlags = VK_BUFFER_USAGE_STORAGE
-    ): VkBuffer;
-    function AllocMem(
-        const Buffer: VkBuffer;
-        const MemProperty: VkMemoryPropertyFlags = VK_MEMORY_PROPERTY_STORAGE;
-        const Preferred: VkMemoryPropertyFlags = 0
-    ): VkDeviceMemory;
+    function CreateBuffer(const ByteSize: VkDeviceSize; const Usage: VkBufferUsageFlags = VK_BUFFER_USAGE_STORAGE
+        ): VkBuffer;
+    function AllocMem(const Buffer: VkBuffer; const MemProperty: VkMemoryPropertyFlags = VK_MEMORY_PROPERTY_STORAGE; const Preferred: VkMemoryPropertyFlags = 0
+        ): VkDeviceMemory;
     function CreateStorageMemory(const Size: UInt64): TVulkanMemory;
     function CreateStagingMemory(const Size: UInt64; const HostCached: Boolean = False): TVulkanMemory;
     procedure FreeMemory(const Mem: TVulkanMemory);
@@ -218,105 +215,95 @@ type
     procedure UnMapMemory(const Mem: TVulkanMemory);
     procedure PushToDevice(const AData: Pointer; const Mem: TVulkanMemory; N: NativeInt = -1);
     procedure PullFromDevice(const AData: Pointer; const Mem: TVulkanMemory; N: NativeInt = -1);
-    procedure CopyBuffer(
-        const Src, Dst: TVulkanMemory;
-        const N: VkDeviceSize = VK_WHOLE_SIZE;
-        const SrcOffset: VkDeviceSize = 0;
-        const DstOffset: VkDeviceSize = 0
-    );
+    procedure CopyBuffer(const Src, Dst: TVulkanMemory; const N: VkDeviceSize = VK_WHOLE_SIZE; const SrcOffset: VkDeviceSize = 0; const DstOffset: VkDeviceSize = 0
+        );
     function LoadShader(const FileNameSpirV: string): VkShaderModule;
-    procedure PreparePipeline(
-        const Op: TKernelHandle;
-        const Shader: VkShaderModule;
-        const LocalThreads: TWorkloadSizes;
-        const BufferCount: Integer = VULKAN_ARGS_MAX_BUFFERS_COUNT;
-        const SetCount: Integer = 1
-    ); overload;
+    procedure PreparePipeline(const Op: TKernelHandle; const Shader: VkShaderModule; const LocalThreads: TWorkloadSizes; const BufferCount: Integer = VULKAN_ARGS_MAX_BUFFERS_COUNT; const SetCount: Integer = 1
+        ); overload;
     procedure PreparePipeline(const Op: TKernelHandle; const Shader: VkShaderModule); overload;
-    procedure DispatchPipeline(
-        const Op: TKernelHandle;
-        const Args: TVulkanArgs;
-        const X: LongWord;
-        const Y: LongWord = 1;
-        const Z: LongWord = 1;
-        const SetIndex: Integer = 0
-    );
+    procedure DispatchPipeline(const Op: TKernelHandle; const Args: TVulkanArgs; const X: LongWord; const Y: LongWord = 1; const Z: LongWord = 1; const SetIndex: Integer = 0
+        );
     procedure BeginCommadBuffer;
     procedure EndCommandBuffer;
     procedure Finish;
   end;
+
 type
   Nfloat = Single;
+
   Pnfloat = ^Nfloat;
 
 procedure CheckVulkanResult(const Res: VkResult); overload; // inline;
+
 function CeilDiv(const M, N: LongWord): LongWord; inline;
 
 function ArraySum(const N: LongWord; const A: Pnfloat): Single; overload;
+
 function ArraySum(const A: TArray<Nfloat>): Single; overload;
+
 function ArrayMax(const N: LongWord; const A: Pnfloat): Nfloat; overload;
+
 function ArrayMax(const A: TArray<Nfloat>): Nfloat; overload;
+
 function ArrayMin(const N: LongWord; const A: Pnfloat): Nfloat; overload;
+
 function ArrayMin(const A: TArray<Nfloat>): Nfloat; overload;
+
 procedure ArrayMinMax(const N: LongWord; const A: Pnfloat; const LocalMin, LocalMax: Pnfloat); overload;
+
 procedure ArrayMinMax(const A: TArray<Nfloat>; var LocalMin, LocalMax: Nfloat); overload;
+
 function ArraySumSqrDiff(const N: LongWord; const A: Pnfloat; const B: Single): Single; overload;
+
 function ArraySumSqrDiff(const A: TArray<Nfloat>; const B: Single): Single; overload;
+
 function ArrayVariance(const N: LongWord; const Mean: Single; const A: Pnfloat): Single; overload;
+
 function ArrayVariance(const N: LongWord; const A: Pnfloat): Single; overload;
+
 function ArrayVariace(const A: TArray<Nfloat>): Single; overload;
+
 procedure ArrayRand(const N: LongWord; const Start, Finish: Nfloat; const A: Pnfloat); overload;
+
 function ArrayRand(const N: LongWord; const Start: Single = -1; const Finish: Single = 1): TArray<Nfloat>; overload;
+
 procedure ArrayLinSpace(const N: LongWord; const Start, Finish: Nfloat; const A: Pnfloat); overload;
+
 function ArrayLinSpace(const N: LongWord; const Start: Single = -1; const Finish: Single = 1): TArray<Nfloat>; overload;
+
 procedure ArrayAdd(const N: LongWord; const A, B, C: Pnfloat); overload;
+
 procedure ArrayAdd(const A, B, C: TArray<Nfloat>); overload;
+
 procedure ArrayAxpy(const N: LongWord; const A: Nfloat; const X, Y: Pnfloat);
+
 procedure ArrayPrint(const N: LongWord; const A: Pnfloat; const Decimals: Word = 2); overload;
+
 procedure ArrayPrint(const A: TArray<Nfloat>; const Decimals: Word = 2); overload;
+
 procedure ArrayStat(const N: LongWord; const A: Pnfloat; const Decimals: Word = 2); overload;
+
 procedure ArrayStat(const A: TArray<Nfloat>; const Decimals: Word = 2); overload;
+
 function ArraySumSqrDiff(const N: LongWord; const A, B: Pnfloat): Single; overload;
+
 function ArraySumSqrDiff(const A, B: TArray<Nfloat>): Single; overload;
+
 procedure ArrayPrintDiff(const N: LongWord; const A, B: Pnfloat; const Eps: Single = 0.000001); overload;
+
 procedure ArrayPrintDiff(const A, B: TArray<Nfloat>; const Eps: Single = 0.000001); overload;
+
 procedure ArrayFma(const N: LongWord; const A, B: Nfloat; const X, Y: Pnfloat); overload;
-procedure ArrayGemmNN(
-    const M, N, K: LongWord;
-    const Alpha: Single;
-    const A: TArray<Nfloat>;
-    const Lda: LongWord;
-    const B: TArray<Nfloat>;
-    const Ldb: LongWord;
-    const Beta: Single;
-    const C: TArray<Nfloat>;
-    const Ldc: LongWord
-); overload;
-procedure ArrayGemmTN(
-    const M, N, K: LongWord;
-    const Alpha: Single;
-    const A: TArray<Nfloat>;
-    const Lda: LongWord;
-    const B: TArray<Nfloat>;
-    const Ldb: LongWord;
-    const Beta: Single;
-    const C: TArray<Nfloat>;
-    const Ldc: LongWord
-); overload;
-procedure ArrayGemmNT(
-    const M, N, K: LongWord;
-    const Alpha: Single;
-    const A: TArray<Nfloat>;
-    const Lda: LongWord;
-    const B: TArray<Nfloat>;
-    const Ldb: LongWord;
-    const Beta: Single;
-    const C: TArray<Nfloat>;
-    const Ldc: LongWord
-); overload;
+
+procedure ArrayGemmNN(const M, N, K: LongWord; const Alpha: Single; const A: TArray<Nfloat>; const Lda: LongWord; const B: TArray<Nfloat>; const Ldb: LongWord; const Beta: Single; const C: TArray<Nfloat>; const Ldc: LongWord); overload;
+
+procedure ArrayGemmTN(const M, N, K: LongWord; const Alpha: Single; const A: TArray<Nfloat>; const Lda: LongWord; const B: TArray<Nfloat>; const Ldb: LongWord; const Beta: Single; const C: TArray<Nfloat>; const Ldc: LongWord); overload;
+
+procedure ArrayGemmNT(const M, N, K: LongWord; const Alpha: Single; const A: TArray<Nfloat>; const Lda: LongWord; const B: TArray<Nfloat>; const Ldb: LongWord; const Beta: Single; const C: TArray<Nfloat>; const Ldc: LongWord); overload;
 
 implementation
 {$IFDEF MSWINDOWS}
+
 uses
   Winapi.Windows;
 {$ENDIF}
@@ -346,23 +333,19 @@ end;
 
 { TVulkanDevice }
 
-function TVulkanDevice.GetMemoryIndex(
-    const MemType: LongWord;
-    const MemPropertyFlags: VkMemoryPropertyFlags;
-    const Preferred: VkMemoryPropertyFlags
-): LongWord;
+function TVulkanDevice.GetMemoryIndex(const MemType: LongWord; const MemPropertyFlags: VkMemoryPropertyFlags; const Preferred: VkMemoryPropertyFlags): LongWord;
 var
   I: LongWord;
 begin
   if Preferred <> 0 then
     for I := 0 to MemoryProperties.MemoryTypeCount - 1 do
       if ((MemType and (LongWord(1) shl I)) <> 0)
-          and ((MemoryProperties.MemoryTypes[I].PropertyFlags and (MemPropertyFlags or Preferred))
-              = (MemPropertyFlags or Preferred)) then
+        and ((MemoryProperties.MemoryTypes[I].PropertyFlags and (MemPropertyFlags or Preferred))
+        = (MemPropertyFlags or Preferred)) then
         Exit(I);
   for I := 0 to MemoryProperties.MemoryTypeCount - 1 do
     if (MemType and (1 shl I) > 0)
-        and ((MemoryProperties.MemoryTypes[I].PropertyFlags and MemPropertyFlags) = MemPropertyFlags) then
+      and ((MemoryProperties.MemoryTypes[I].PropertyFlags and MemPropertyFlags) = MemPropertyFlags) then
       Exit(I);
   raise Exception.Create('No compatible Vulkan memory type');
 end;
@@ -557,7 +540,8 @@ begin
   CheckVulkanResult(VkEnumeratePhysicalDevices(Instance, @DevCount, Pointer(Pd)));
   for I := 0 to High(R) do
   begin
-    R[I].QueueIndex := -1;;
+    R[I].QueueIndex := -1;
+    ;
     R[I].PhysicalDevice := Pd[I];
     VkGetPhysicalDeviceProperties(Pd[I], @R[I].DeviceProperties);
     VkGetPhysicalDeviceFeatures(Pd[I], @R[I].DeviceFeatures);
@@ -707,11 +691,7 @@ begin
   CheckVulkanResult(VkCreateBuffer(Device, @CreateInfo, nil, @Result))
 end;
 
-function TVulkanCompute.AllocMem(
-    const Buffer: VkBuffer;
-    const MemProperty: VkMemoryPropertyFlags;
-    const Preferred: VkMemoryPropertyFlags
-): VkDeviceMemory;
+function TVulkanCompute.AllocMem(const Buffer: VkBuffer; const MemProperty: VkMemoryPropertyFlags; const Preferred: VkMemoryPropertyFlags): VkDeviceMemory;
 var
   MemReq: VkMemoryRequirements;
   MemInfo: VkMemoryAllocateInfo;
@@ -754,11 +734,11 @@ begin
   Result.Buffer := CreateBuffer(Size, VK_BUFFER_USAGE_STAGING);
   try
     Result.Memory :=
-        AllocMem(
-            Result.Buffer,
-            VK_MEMORY_PROPERTY_STAGING,
-            LongWord(VK_MEMORY_PROPERTY_HOST_CACHED_BIT) * LongWord(Ord(HostCached))
-        );
+      AllocMem(
+      Result.Buffer,
+      VK_MEMORY_PROPERTY_STAGING,
+      LongWord(VK_MEMORY_PROPERTY_HOST_CACHED_BIT) * LongWord(Ord(HostCached))
+    );
   except
     VkDestroyBuffer(Device, Result.Buffer, nil);
     raise;
@@ -795,8 +775,8 @@ begin
   if N < 0 then
     N := Mem.Size;
   Assert(
-      (not CommandBufferStarted) or (N < $10000),
-      'ERROR [PushtoDevice] : buffer is too big to push to device during command record state!, retry after calling EndCommandBuffer()'
+    (not CommandBufferStarted) or (N < $10000),
+    'ERROR [PushtoDevice] : buffer is too big to push to device during command record state!, retry after calling EndCommandBuffer()'
   );
 
   if CommandBufferStarted then
@@ -830,7 +810,6 @@ procedure TVulkanCompute.PullFromDevice(const AData: Pointer; const Mem: TVulkan
 var
   D: Pointer;
   StagingMem: TVulkanMemory;
-
   CmdStarted: Boolean;
 begin
   Assert(Assigned(AData));
@@ -860,11 +839,7 @@ begin
   end;
 end;
 
-procedure TVulkanCompute.CopyBuffer(
-    const Src, Dst: TVulkanMemory;
-    const N: VkDeviceSize;
-    const SrcOffset, DstOffset: VkDeviceSize
-);
+procedure TVulkanCompute.CopyBuffer(const Src, Dst: TVulkanMemory; const N: VkDeviceSize; const SrcOffset, DstOffset: VkDeviceSize);
 var
   Copy: VkBufferCopy;
 begin
@@ -883,10 +858,7 @@ begin
   VkCmdCopyBuffer(Cmd.Buffers[0], Src.Buffer, Dst.Buffer, 1, @Copy);
 end;
 
-procedure TVulkanCompute.MemoryBarrier(
-    const SrcStage, DstStage: VkPipelineStageFlags;
-    const SrcAccess, DstAccess: VkAccessFlags
-);
+procedure TVulkanCompute.MemoryBarrier(const SrcStage, DstStage: VkPipelineStageFlags; const SrcAccess, DstAccess: VkAccessFlags);
 var
   Barrier: VkMemoryBarrier;
 begin
@@ -923,28 +895,21 @@ begin
   CheckVulkanResult(VkCreateShaderModule(Device, @MInfo, nil, @Result));
 end;
 
-procedure TVulkanCompute.PreparePipeline(
-    const Op: TKernelHandle;
-    const Shader: VkShaderModule;
-    const LocalThreads: TWorkloadSizes;
-    const BufferCount, SetCount: Integer
-);
+procedure TVulkanCompute.PreparePipeline(const Op: TKernelHandle; const Shader: VkShaderModule; const LocalThreads: TWorkloadSizes; const BufferCount, SetCount: Integer);
 type
   TVkDescriptorSetLayoutBindings = array[0..VULKAN_ARGS_MAX_BUFFERS_COUNT - 1] of VkDescriptorSetLayoutBinding;
 var
   // pl : TVulkanPipeline;
   I // , j, k
-      : LongInt;
+: LongInt;
   DescLayoutBinds: TVkDescriptorSetLayoutBindings;
   PCreateInfo: VkPipelineLayoutCreateInfo;
   DescCreateInfo: VkDescriptorSetLayoutCreateInfo;
-
   PStageInfo: VkPipelineShaderStageCreateInfo;
   PComputeInfo: VkComputePipelineCreateInfo;
   DescPoolSize: VkDescriptorPoolSize;
   DescPoolInfo: VkDescriptorPoolCreateInfo;
   AllocInfo: VkDescriptorSetAllocateInfo;
-
 begin
   // j := 0; k := 0;
   // if not Ops.TryGetValue(Op, pl) then begin
@@ -1044,16 +1009,10 @@ begin
   PreparePipeline(Op, Shader, DEFAULT_WORKLOAD);
 end;
 
-procedure TVulkanCompute.DispatchPipeline(
-    const Op: TKernelHandle;
-    const Args: TVulkanArgs;
-    const X: LongWord;
-    const Y: LongWord;
-    const Z: LongWord;
-    const SetIndex: Integer
-);
+procedure TVulkanCompute.DispatchPipeline(const Op: TKernelHandle; const Args: TVulkanArgs; const X: LongWord; const Y: LongWord; const Z: LongWord; const SetIndex: Integer);
 type
   TVukanDescWrites = array[0..VULKAN_ARGS_MAX_BUFFERS_COUNT - 1] of VkWriteDescriptorSet;
+
   TVulkanDescBufferInfo = array[0..VULKAN_ARGS_MAX_BUFFERS_COUNT - 1] of VkDescriptorBufferInfo;
 var
   BufInfo: TVulkanDescBufferInfo;
@@ -1075,21 +1034,21 @@ begin
   begin
     case Args[I].ArgType of
       AtPointer:
-      begin
-        if J >= VulkanPipelines[Op].BufferCount then
-          raise ERangeError.Create('Too many Vulkan buffers');
-        BufInfo[J].Buffer := Args[I].VPointer;
-        BufInfo[J].Offset := 0;
-        BufInfo[J].Range := VK_WHOLE_SIZE;
+        begin
+          if J >= VulkanPipelines[Op].BufferCount then
+            raise ERangeError.Create('Too many Vulkan buffers');
+          BufInfo[J].Buffer := Args[I].VPointer;
+          BufInfo[J].Offset := 0;
+          BufInfo[J].Range := VK_WHOLE_SIZE;
 
-        Writes[J].SType := VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        Writes[J].DstSet := DescriptorSet;
-        Writes[J].DstBinding := J;
-        Writes[J].DescriptorCount := 1;
-        Writes[J].DescriptorType := VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        Writes[J].PBufferInfo := @BufInfo[J];
-        Inc(J)
-      end
+          Writes[J].SType := VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+          Writes[J].DstSet := DescriptorSet;
+          Writes[J].DstBinding := J;
+          Writes[J].DescriptorCount := 1;
+          Writes[J].DescriptorType := VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+          Writes[J].PBufferInfo := @BufInfo[J];
+          Inc(J)
+        end
     else
       begin
         if K >= VULKAN_ARGS_MAX_CONSTANTS_COUNT then
@@ -1102,22 +1061,22 @@ begin
   VkCmdBindPipeline(Cmd.Buffers[0], VK_PIPELINE_BIND_POINT_COMPUTE, VulkanPipelines[Op].Pipeline);
   VkUpdateDescriptorSets(Device, J, @Writes[0], 0, nil);
   VkCmdBindDescriptorSets(
-      Cmd.Buffers[0],
-      VK_PIPELINE_BIND_POINT_COMPUTE,
-      VulkanPipelines[Op].PipelineLayout,
-      0,
-      1,
-      @DescriptorSet,
-      0,
-      nil
+    Cmd.Buffers[0],
+    VK_PIPELINE_BIND_POINT_COMPUTE,
+    VulkanPipelines[Op].PipelineLayout,
+    0,
+    1,
+    @DescriptorSet,
+    0,
+    nil
   );
   VkCmdPushConstants(
-      Cmd.Buffers[0],
-      VulkanPipelines[Op].PipelineLayout,
-      LongWord(VK_SHADER_STAGE_COMPUTE_BIT),
-      0,
-      K * SizeOf(LongInt),
-      @ConstArgs[0]
+    Cmd.Buffers[0],
+    VulkanPipelines[Op].PipelineLayout,
+    LongWord(VK_SHADER_STAGE_COMPUTE_BIT),
+    0,
+    K * SizeOf(LongInt),
+    @ConstArgs[0]
   );
   VkCmdDispatch(Cmd.Buffers[0], X, Y, Z);
 end;
@@ -1469,22 +1428,22 @@ begin
   I := Max(Length(IntToStr(Round(Mi))), Length(IntToStr(Round(Ma))));
   I := Max(I, Max(Length(IntToStr(Round(Mean))), Length(IntToStr(Round(Variance)))));
   WriteLn(
-      '[',
-      N,
-      '] mean :',
-      Mean:
-          I:
-          Decimals,
-          ', stdDev :',
-          Sqrt(Variance):
-          I:
-          Decimals,
-          ', min/max :',
-          Mi:
-          I:
-          Decimals,
-          '/',
-          Ma: I: Decimals
+    '[',
+    N,
+    '] mean :',
+    Mean:
+    I:
+    Decimals,
+    ', stdDev :',
+    Sqrt(Variance):
+    I:
+    Decimals,
+    ', min/max :',
+    Mi:
+    I:
+    Decimals,
+    '/',
+    Ma: I: Decimals
   );
 end;
 
@@ -1562,58 +1521,56 @@ asm
 
 //.NOSTACK
 
-  Mov          Eax ,  N
-  and          Eax ,  31
-  Vbroadcastss Ymm1,  A
-  shr          N   ,  5
-  Jz           @Skip1
+        Mov     Eax, N
+        AND     Eax, 31
+        Vbroadcastss Ymm1, A
+        SHR     N, 5
+        Jz      @Skip1
+
 @While1:
-  Vmulps       Ymm0, Ymm1, Yword [X]
-  Vaddps       Ymm0, Ymm0, Yword [Y]
-
-  Vmulps       Ymm2, Ymm1, Yword [X+32]
-  Vaddps       Ymm2, Ymm2, Yword [Y+32]
-
-  Vmulps       Ymm3, Ymm1, Yword [X+32*2]
-  Vaddps       Ymm3, Ymm3, Yword [Y+32*2]
-
-  Vmulps       Ymm4, Ymm1, Yword [X+32*3]
-  Vaddps       Ymm4, Ymm4, Yword [Y+32*3]
-
-  Vmovups      Yword [Y]     , Ymm0
-  Vmovups      Yword [Y+32]  , Ymm2
-  Vmovups      Yword [Y+32*2], Ymm3
-  Vmovups      Yword [Y+32*3], Ymm4
-  Add          X   , 4*8*SizeOf(Single)
-  Add          Y   , 4*8*SizeOf(Single)
-  Dec          N
-  Jnz          @While1
+        Vmulps  Ymm0, Ymm1, Yword[X]
+        Vaddps  Ymm0, Ymm0, Yword[Y]
+        Vmulps  Ymm2, Ymm1, Yword[X + 32]
+        Vaddps  Ymm2, Ymm2, Yword[Y + 32]
+        Vmulps  Ymm3, Ymm1, Yword[X + 32 * 2]
+        Vaddps  Ymm3, Ymm3, Yword[Y + 32 * 2]
+        Vmulps  Ymm4, Ymm1, Yword[X + 32 * 3]
+        Vaddps  Ymm4, Ymm4, Yword[Y + 32 * 3]
+        Vmovups Yword[Y], Ymm0
+        Vmovups Yword[Y + 32], Ymm2
+        Vmovups Yword[Y + 32 * 2], Ymm3
+        Vmovups Yword[Y + 32 * 3], Ymm4
+        Add     X, 4 * 8 * SizeOf(Single)
+        Add     Y, 4 * 8 * SizeOf(Single)
+        Dec     N
+        Jnz     @While1
 
 @Skip1:
+        Mov     N, Eax
+        SHR     N, 3
+        Jz      @Skip2
 
-  Mov          N   , Eax
-  shr          N   , 3
-  Jz           @Skip2
 @While2:
-  Vmulps       Ymm0, Ymm1, Yword [X]
-  Vaddps       Ymm0, Ymm0, Yword [Y]
-  Vmovups      Yword [Y], Ymm0
-  Add          X   , 8*SizeOf(Single)
-  Add          Y   , 8*SizeOf(Single)
-  Dec          N
-  Jnz          @While2
+        Vmulps  Ymm0, Ymm1, Yword[X]
+        Vaddps  Ymm0, Ymm0, Yword[Y]
+        Vmovups Yword[Y], Ymm0
+        Add     X, 8 * SizeOf(Single)
+        Add     Y, 8 * SizeOf(Single)
+        Dec     N
+        Jnz     @While2
 
 @Skip2:
-  and          Eax  , 7
-  Jz           @Done
+        AND     Eax, 7
+        Jz      @Done
+
 @While3:
-  Vmulss       Xmm0, Xmm1, Dword [X]
-  Vaddss       Xmm0, Xmm0, Dword [Y]
-  Movss        Dword [Y], Xmm0
-  Add          X   , SizeOf(Single)
-  Add          Y   , SizeOf(Single)
-  Dec          Eax
-  Jnz          @While3
+        Vmulss  Xmm0, Xmm1, Dword[X]
+        Vaddss  Xmm0, Xmm0, Dword[Y]
+        Movss   Dword[Y], Xmm0
+        Add     X, SizeOf(Single)
+        Add     Y, SizeOf(Single)
+        Dec     Eax
+        Jnz     @While3
 
 @Done:
 end;
@@ -1627,94 +1584,88 @@ asm
 
 //.NOSTACK
 
-  Mov          Eax ,  N
-  and          Eax ,  31
-  Vbroadcastss Ymm1,  A
+        Mov     Eax, N
+        AND     Eax, 31
+        Vbroadcastss Ymm1, A
   //vcvtsh2ss    ymm1,  a
-  shr          N   ,  5
-  Jz           @Skip1
+        SHR     N, 5
+        Jz      @Skip1
+
 @While1:
-
 // intels F16C instructions, using OP cods instead
-
   //vcvtph2ps    ymm0, [x]
   //vcvtph2ps    ymm5, [y]
-  Db $C4, $C2, $7D, $13, $00       // vcvtph2ps ymm0, [x]
-  Db $C4, $C2, $7D, $13, $29       // vcvtph2ps ymm5, [y]
-  Vmulps       Ymm0, Ymm1, Ymm0
-  Vaddps       Ymm0, Ymm0, Ymm5
-
+        Db      $C4, $C2, $7D, $13, $00       // vcvtph2ps ymm0, [x]
+        Db      $C4, $C2, $7D, $13, $29       // vcvtph2ps ymm5, [y]
+        Vmulps  Ymm0, Ymm1, Ymm0
+        Vaddps  Ymm0, Ymm0, Ymm5
   //vcvtph2ps    ymm2, [x+16]
   //vcvtph2ps    ymm5, [y+16]
-  Db $C4, $C2, $7D, $13, $50, $10  // vcvtph2ps ymm2, [x+$10]
-  Db $C4, $C2, $7D, $13, $69, $10  // vcvtph2ps ymm5, [y+$10]
-  Vmulps       Ymm2, Ymm1, Ymm2
-  Vaddps       Ymm2, Ymm2, Ymm5
-
+        Db      $C4, $C2, $7D, $13, $50, $10  // vcvtph2ps ymm2, [x+$10]
+        Db      $C4, $C2, $7D, $13, $69, $10  // vcvtph2ps ymm5, [y+$10]
+        Vmulps  Ymm2, Ymm1, Ymm2
+        Vaddps  Ymm2, Ymm2, Ymm5
   //vcvtph2ps    ymm3, [x+2*16]
   //vcvtph2ps    ymm5, [y+2*16]
-  Db $C4, $C2, $7D, $13, $58, $20  // vcvtph2ps ymm3, [x+$20]
-  Db $C4, $C2, $7D, $13, $69, $20  // vcvtph2ps ymm5, [y+$20]
-  Vmulps       Ymm3, Ymm1, Ymm3
-  Vaddps       Ymm3, Ymm3, Ymm5
-
+        Db      $C4, $C2, $7D, $13, $58, $20  // vcvtph2ps ymm3, [x+$20]
+        Db      $C4, $C2, $7D, $13, $69, $20  // vcvtph2ps ymm5, [y+$20]
+        Vmulps  Ymm3, Ymm1, Ymm3
+        Vaddps  Ymm3, Ymm3, Ymm5
   //vcvtph2ps    ymm4, [x+3*16]
   //vcvtph2ps    ymm5, [y+3*16]
-  Db $C4, $C2, $7D, $13, $60, $30  // vcvtph2ps ymm4, [x+$30]
-  Db $C4, $C2, $7D, $13, $69, $30  // vcvtph2ps ymm5, [y+$30]
-  Vmulps       Ymm4, Ymm1, Ymm4
-  Vaddps       Ymm4, Ymm4, Ymm5
-
+        Db      $C4, $C2, $7D, $13, $60, $30  // vcvtph2ps ymm4, [x+$30]
+        Db      $C4, $C2, $7D, $13, $69, $30  // vcvtph2ps ymm5, [y+$30]
+        Vmulps  Ymm4, Ymm1, Ymm4
+        Vaddps  Ymm4, Ymm4, Ymm5
   //vcvtps2ph    [Y]     , ymm0, RND
   //vcvtps2ph    [Y+16]  , ymm2, RND
   //vcvtps2ph    [Y+16*2], ymm3, RND
   //vcvtps2ph    [Y+16*3], ymm4, RND
-  Db $C4, $C3, $7D, $1D, $01, RND      //  vcvtps2ph [y]    , ymm0, RND
-  Db $C4, $C3, $7D, $1D, $51, $10, RND //  vcvtps2ph [y+$10], ymm2, RND
-  Db $C4, $C3, $7D, $1D, $59, $20, RND //  vcvtps2ph [y+$20], ymm3, RND
-  Db $C4, $C3, $7D, $1D, $61, $30, RND //  vcvtps2ph [y+$30], ymm4, RND
-
-  Add          X   , 4*8*SizeOf(Half)
-  Add          Y   , 4*8*SizeOf(Half)
-  Dec          N
-  Jnz          @While1
+        Db      $C4, $C3, $7D, $1D, $01, RND      //  vcvtps2ph [y]    , ymm0, RND
+        Db      $C4, $C3, $7D, $1D, $51, $10, RND //  vcvtps2ph [y+$10], ymm2, RND
+        Db      $C4, $C3, $7D, $1D, $59, $20, RND //  vcvtps2ph [y+$20], ymm3, RND
+        Db      $C4, $C3, $7D, $1D, $61, $30, RND //  vcvtps2ph [y+$30], ymm4, RND
+        Add     X, 4 * 8 * SizeOf(Half)
+        Add     Y, 4 * 8 * SizeOf(Half)
+        Dec     N
+        Jnz     @While1
 
 @Skip1:
+        Mov     N, Eax
+        SHR     N, 3
+        Jz      @Skip2
 
-  Mov          N   , Eax
-  shr          N   , 3
-  Jz           @Skip2
 @While2:
   //vcvtph2ps    ymm0, [x]
   //vcvtph2ps    ymm5, [y]
-  Db $C4, $C2, $7D, $13, $00           // vcvtph2ps ymm0, [x]
-  Db $C4, $C2, $7D, $13, $29           // vcvtph2ps ymm5, [y]
-  Vmulps       Ymm0, Ymm1, Ymm0
-  Vaddps       Ymm0, Ymm0, Ymm5
+        Db      $C4, $C2, $7D, $13, $00           // vcvtph2ps ymm0, [x]
+        Db      $C4, $C2, $7D, $13, $29           // vcvtph2ps ymm5, [y]
+        Vmulps  Ymm0, Ymm1, Ymm0
+        Vaddps  Ymm0, Ymm0, Ymm5
   //vcvtps2ph    [Y], ymm0, RND
-  Db $C4, $C3, $7D, $1D, $01, RND      //  vcvtps2ph [y]    , ymm0, RND
-  Add          X   , 8*SizeOf(Half)
-  Add          Y   , 8*SizeOf(Half)
-  Dec          N
-  Jnz          @While2
+        Db      $C4, $C3, $7D, $1D, $01, RND      //  vcvtps2ph [y]    , ymm0, RND
+        Add     X, 8 * SizeOf(Half)
+        Add     Y, 8 * SizeOf(Half)
+        Dec     N
+        Jnz     @While2
 
 @Skip2:
-  and          Eax  , 7
-  Jz           @Done
-
+        AND     Eax, 7
+        Jz      @Done
   //vcvtph2ps    ymm0, [x]
   //vcvtph2ps    ymm5, [y]
-  Db $C4, $C2, $7D, $13, $00           // vcvtph2ps ymm0, [x]
-  Db $C4, $C2, $7D, $13, $29           // vcvtph2ps ymm5, [y]
-  Vmulps       Ymm0, Ymm1, Ymm0
-  Vaddps       Ymm0, Ymm0, Ymm5
+        Db      $C4, $C2, $7D, $13, $00           // vcvtph2ps ymm0, [x]
+        Db      $C4, $C2, $7D, $13, $29           // vcvtph2ps ymm5, [y]
+        Vmulps  Ymm0, Ymm1, Ymm0
+        Vaddps  Ymm0, Ymm0, Ymm5
   //vcvtps2ph    ar  , ymm0, RND       // storing to the stack
-  Db $C4, $E3, $7D, $1D, $45, $F0, RND //  vcvtps2ph [rbp-$10], ymm0, RND
+        Db      $C4, $E3, $7D, $1D, $45, $F0, RND //  vcvtps2ph [rbp-$10], ymm0, RND
+
 @While3:
-  Dec          Eax
-  Mov          Cx ,  Word [AR + Rax*2]
-  Mov          Word [Y + Rax*2],  Cx
-  Jnz          @While3
+        Dec     Eax
+        Mov     Cx, Word[AR + Rax * 2]
+        Mov     Word[Y + Rax * 2], Cx
+        Jnz     @While3
 
 @Done:
 end;
@@ -1723,6 +1674,7 @@ end;
 
 type
   TBlasInt = LongInt;
+
   TCBLASLayout = (CblasRowMajor = 101, CblasColMajor = 102);
 // {$else}
 // const
@@ -1731,120 +1683,78 @@ type
 // {$endif}
 
 // {$if not declared(CBLAS_ORDER)}
+
 type
   TCBLASOrder = TCBLASLayout;
 // {$endif}
 // {$if not declared(CBLAS_TRANSPOSE)}
+
 type
   TCBLASTranspose = (CblasNoTrans = 111, CblasTrans = 112, CblasConjTrans = 113, CblasConjNoTrans = 114);
 
 {$IF not defined(cblas_sgemm)}
-procedure CblasSgemm(
-    Order: TCBLASOrder;
-    TransA: TCBLASTranspose;
-    TransB: TCBLASTranspose;
-    M: TBlasInt;
-    N: TBlasInt;
-    K: TBlasInt;
-    Alpha: Single;
-    A: System.PSingle;
-    Lda: TBlasInt;
-    B: System.PSingle;
-    Ldb: TBlasInt;
-    Beta: Single;
-    C: System.PSingle;
-    Ldc: TBlasInt
-); winapi; external 'libopenblas.dll' name 'cblas_sgemm';
+procedure CblasSgemm(Order: TCBLASOrder; TransA: TCBLASTranspose; TransB: TCBLASTranspose; M: TBlasInt; N: TBlasInt; K: TBlasInt; Alpha: Single; A: System.PSingle; Lda: TBlasInt; B: System.PSingle; Ldb: TBlasInt; Beta: Single; C: System.PSingle; Ldc: TBlasInt); winapi; external 'libopenblas.dll' name 'cblas_sgemm';
 {$ENDIF}
 
 {$T+}
-procedure ArrayGemmNN(
-    const M, N, K: LongWord;
-    const Alpha: Single;
-    const A: TArray<Nfloat>;
-    const Lda: LongWord;
-    const B: TArray<Nfloat>;
-    const Ldb: LongWord;
-    const Beta: Single;
-    const C: TArray<Nfloat>;
-    const Ldc: LongWord
-); overload;
+
+procedure ArrayGemmNN(const M, N, K: LongWord; const Alpha: Single; const A: TArray<Nfloat>; const Lda: LongWord; const B: TArray<Nfloat>; const Ldb: LongWord; const Beta: Single; const C: TArray<Nfloat>; const Ldc: LongWord); overload;
 begin
   CblasSgemm(
-      CblasRowMajor,
-      CblasNoTrans,
-      CblasNoTrans,
-      M,
-      N,
-      K,
-      Alpha,
-      Pnfloat(A),
-      Lda,
-      Pnfloat(B),
-      Ldb,
-      Beta,
-      Pnfloat(C),
-      Ldc
+    CblasRowMajor,
+    CblasNoTrans,
+    CblasNoTrans,
+    M,
+    N,
+    K,
+    Alpha,
+    Pnfloat(A),
+    Lda,
+    Pnfloat(B),
+    Ldb,
+    Beta,
+    Pnfloat(C),
+    Ldc
   );
 end;
 
-procedure ArrayGemmNT(
-    const M, N, K: LongWord;
-    const Alpha: Single;
-    const A: TArray<Nfloat>;
-    const Lda: LongWord;
-    const B: TArray<Nfloat>;
-    const Ldb: LongWord;
-    const Beta: Single;
-    const C: TArray<Nfloat>;
-    const Ldc: LongWord
-); overload;
+procedure ArrayGemmNT(const M, N, K: LongWord; const Alpha: Single; const A: TArray<Nfloat>; const Lda: LongWord; const B: TArray<Nfloat>; const Ldb: LongWord; const Beta: Single; const C: TArray<Nfloat>; const Ldc: LongWord); overload;
 begin
   CblasSgemm(
-      CblasRowMajor,
-      CblasNoTrans,
-      CblasTrans,
-      M,
-      N,
-      K,
-      Alpha,
-      Pnfloat(A),
-      Lda,
-      Pnfloat(B),
-      Ldb,
-      Beta,
-      Pnfloat(C),
-      Ldc
+    CblasRowMajor,
+    CblasNoTrans,
+    CblasTrans,
+    M,
+    N,
+    K,
+    Alpha,
+    Pnfloat(A),
+    Lda,
+    Pnfloat(B),
+    Ldb,
+    Beta,
+    Pnfloat(C),
+    Ldc
   )
 end;
 
-procedure ArrayGemmTN(
-    const M, N, K: LongWord;
-    const Alpha: Single;
-    const A: TArray<Nfloat>;
-    const Lda: LongWord;
-    const B: TArray<Nfloat>;
-    const Ldb: LongWord;
-    const Beta: Single;
-    const C: TArray<Nfloat>;
-    const Ldc: LongWord
-); overload;
+procedure ArrayGemmTN(const M, N, K: LongWord; const Alpha: Single; const A: TArray<Nfloat>; const Lda: LongWord; const B: TArray<Nfloat>; const Ldb: LongWord; const Beta: Single; const C: TArray<Nfloat>; const Ldc: LongWord); overload;
 begin
   CblasSgemm(
-      CblasRowMajor,
-      CblasTrans,
-      CblasNoTrans,
-      M,
-      N,
-      K,
-      Alpha,
-      Pnfloat(A),
-      Lda,
-      Pnfloat(B),
-      Ldb,
-      Beta,
-      Pnfloat(C),
-      Ldc
+    CblasRowMajor,
+    CblasTrans,
+    CblasNoTrans,
+    M,
+    N,
+    K,
+    Alpha,
+    Pnfloat(A),
+    Lda,
+    Pnfloat(B),
+    Ldb,
+    Beta,
+    Pnfloat(C),
+    Ldc
   )
 end;
 {$T-}
@@ -1853,8 +1763,11 @@ initialization
   // Initialize only when the optional backend is requested. CPU startup never
   // loads a driver or changes the application's floating point exception mask.
 
+
+
 finalization
   if TVulkanCompute.Instance <> nil then
     TVulkanCompute.DestroyInstance();
 
 end.
+

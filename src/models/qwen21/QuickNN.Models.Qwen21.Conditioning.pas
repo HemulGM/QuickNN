@@ -4,18 +4,21 @@
   follow Qwen / Hugging Face / ComfyUI (Apache-2.0).
   See LICENSE.QwenImage21.txt in the repository root. }
 {$POINTERMATH ON}
+
 interface
+
 uses
-  QuickNN.Common,
-  QuickNN.Models.Qwen21.Tokenizer,
-  QuickNN.Vulkan;
+  QuickNN.Common, QuickNN.Models.Qwen21.Tokenizer, QuickNN.Vulkan;
+
 type
   TQwen21GPUImageCondition = record
     Pixels, Latents, Visual: TQNNGPUTensor;
     DeepStack: array[0..2] of TQNNGPUTensor;
     procedure Free(const Ctx: TQNNGPUContext);
   end;
+
   TQwen21GPUImageConditions = TArray<TQwen21GPUImageCondition>;
+
   TQwen21ImageCondition = record
     Pixels: TQNNImage;
     Latents, Visual: TMemoryBlock;
@@ -24,58 +27,48 @@ type
     procedure Free;
     function VisualTokens: Integer;
   end;
+
   TQwen21ImageConditions = TArray<TQwen21ImageCondition>;
+
   TQwen21TextImageSpan = record
     ImageIndex, TokenStart, TokenCount: Integer;
   end;
+
   TQwen21TextImageSpans = TArray<TQwen21TextImageSpan>;
+
 type
   TQwen21SequenceSegment = record
     IsImage: Boolean;
     SourceIndex, SourceStart, JointStart, Count: Integer;
   end;
+
   TQwen21SequenceLayout = record
     Segments: TArray<TQwen21SequenceSegment>;
     Positions: TArray<Single>;
     KeyLimits: TArray<Integer>;
     Rows, PrefixRows: Integer;
   end;
-function Q21ReferenceLayout(
-    const TextRows: Integer;
-    const Images: TQwen21ImageConditions;
-    const Slots: TArray<Integer>;
-    const TargetHeight, TargetWidth: Integer
-): TQwen21SequenceLayout;
-procedure Q21BuildImagePrompt(
-    const Tokenizer: TQwen21Tokenizer;
-    const Prompt: string;
-    const Images: TQwen21ImageConditions;
-    out Ids, PositionIds: TArray<Integer>;
-    out Spans: TQwen21TextImageSpans;
-    out DropTokens: Integer
-);
-function Q21LoadReference(const FileName: string; const MaxSide: Integer): TQNNImage;
-function Q21ResizeRGBA(const Image: TQNNImage; const Width, Height: Integer): TQNNImage;
-implementation
-uses
-  System.SysUtils,
-  System.Math,
-  System.Generics.Collections,
-  Winapi.Windows,
-  Winapi.ActiveX,
-  Winapi.Wincodec,
-  System.Win.ComObj;
 
-function Q21ReferenceLayout(
-    const TextRows: Integer;
-    const Images: TQwen21ImageConditions;
-    const Slots: TArray<Integer>;
-    const TargetHeight, TargetWidth: Integer
-): TQwen21SequenceLayout;
+function Q21ReferenceLayout(const TextRows: Integer; const Images: TQwen21ImageConditions; const Slots: TArray<Integer>; const TargetHeight, TargetWidth: Integer): TQwen21SequenceLayout;
+
+procedure Q21BuildImagePrompt(const Tokenizer: TQwen21Tokenizer; const Prompt: string; const Images: TQwen21ImageConditions; out Ids, PositionIds: TArray<Integer>; out Spans: TQwen21TextImageSpans; out DropTokens: Integer);
+
+function Q21LoadReference(const FileName: string; const MaxSide: Integer): TQNNImage;
+
+function Q21ResizeRGBA(const Image: TQNNImage; const Width, Height: Integer): TQNNImage;
+
+implementation
+
+uses
+  System.SysUtils, System.Math, System.Generics.Collections, Winapi.Windows,
+  Winapi.ActiveX, Winapi.Wincodec, System.Win.ComObj;
+
+function Q21ReferenceLayout(const TextRows: Integer; const Images: TQwen21ImageConditions; const Slots: TArray<Integer>; const TargetHeight, TargetWidth: Integer): TQwen21SequenceLayout;
 var
   Total: Int64;
   Start, Stop, Joint, Position, H, W, SegmentIndex: Integer;
   Segment: TQwen21SequenceSegment;
+
   procedure AddSegment(const Image: Boolean; const Source, SourceStart, Count: Integer);
   begin
     if Count = 0 then
@@ -88,6 +81,7 @@ var
     Result.Segments[SegmentIndex] := Segment;
     Inc(SegmentIndex);
   end;
+
 begin
   Result := Default(TQwen21SequenceLayout);
   if (TextRows < 1) or (TargetHeight < 1) or (TargetWidth < 1) or (Length(Slots) <> Length(Images)) then
@@ -97,11 +91,11 @@ begin
   for var I := 0 to High(Images) do
   begin
     if (Slots[I] < Start)
-        or (Slots[I] > TextRows)
-        or (Images[I].Pixels.Width mod 16 <> 0)
-        or (Images[I].Pixels.Height mod 16 <> 0)
-        or (Images[I].Pixels.Width < 16)
-        or (Images[I].Pixels.Height < 16) then
+      or (Slots[I] > TextRows)
+      or (Images[I].Pixels.Width mod 16 <> 0)
+      or (Images[I].Pixels.Height mod 16 <> 0)
+      or (Images[I].Pixels.Width < 16)
+      or (Images[I].Pixels.Height < 16) then
       raise EArgumentException.Create('Invalid reference image slot/dimensions');
     Start := Slots[I];
     Inc(Total, Int64(Images[I].Pixels.Width div 16) * (Images[I].Pixels.Height div 16));
@@ -162,14 +156,7 @@ begin
   SetLength(Result.Segments, SegmentIndex);
 end;
 
-procedure Q21BuildImagePrompt(
-    const Tokenizer: TQwen21Tokenizer;
-    const Prompt: string;
-    const Images: TQwen21ImageConditions;
-    out Ids, PositionIds: TArray<Integer>;
-    out Spans: TQwen21TextImageSpans;
-    out DropTokens: Integer
-);
+procedure Q21BuildImagePrompt(const Tokenizer: TQwen21Tokenizer; const Prompt: string; const Images: TQwen21ImageConditions; out Ids, PositionIds: TArray<Integer>; out Spans: TQwen21TextImageSpans; out DropTokens: Integer);
 var
   References: string;
   BaseIds: TArray<Integer>;
@@ -209,9 +196,9 @@ begin
         H := Images[ImageIndex].GridHeight div 2;
         W := Images[ImageIndex].GridWidth div 2;
         if (H < 1)
-            or (W < 1)
-            or (Images[ImageIndex].GridHeight mod 2 <> 0)
-            or (Images[ImageIndex].GridWidth mod 2 <> 0) then
+          or (W < 1)
+          or (Images[ImageIndex].GridHeight mod 2 <> 0)
+          or (Images[ImageIndex].GridWidth mod 2 <> 0) then
           raise EArgumentException.Create('Invalid visual merge grid');
         Span.ImageIndex := ImageIndex;
         Span.TokenStart := Tokens.Count;
@@ -274,6 +261,7 @@ begin
   GridHeight := 0;
   GridWidth := 0
 end;
+
 function TQwen21ImageCondition.VisualTokens: Integer;
 begin
   Result := GridHeight * GridWidth div 4
@@ -302,12 +290,12 @@ begin
       for var C := 0 to 3 do
       begin
         Value :=
-            (1 - Fy)
-                    * ((1 - Fx) * Image.Data[(Y0 * Image.Width + X0) * 4 + C]
-                        + Fx * Image.Data[(Y0 * Image.Width + X1) * 4 + C])
-                + Fy
-                    * ((1 - Fx) * Image.Data[(Y1 * Image.Width + X0) * 4 + C]
-                        + Fx * Image.Data[(Y1 * Image.Width + X1) * 4 + C]);
+          (1 - Fy)
+          * ((1 - Fx) * Image.Data[(Y0 * Image.Width + X0) * 4 + C]
+          + Fx * Image.Data[(Y0 * Image.Width + X1) * 4 + C])
+          + Fy
+          * ((1 - Fx) * Image.Data[(Y1 * Image.Width + X0) * 4 + C]
+          + Fx * Image.Data[(Y1 * Image.Width + X1) * 4 + C]);
         Result.Data[(Y * Width + X) * 4 + C] := EnsureRange(Round(Value), 0, 255);
       end;
     end;
@@ -336,13 +324,13 @@ begin
   try
     OleCheck(CoCreateInstance(CLSID_WICImagingFactory, nil, CLSCTX_INPROC_SERVER, IWICImagingFactory, Factory));
     OleCheck(
-        Factory.CreateDecoderFromFilename(
-            PWideChar(FileName),
-            GUID_VendorMicrosoft,
-            GENERIC_READ,
-            WICDecodeMetadataCacheOnLoad,
-            Decoder
-        )
+      Factory.CreateDecoderFromFilename(
+        PWideChar(FileName),
+        GUID_VendorMicrosoft,
+        GENERIC_READ,
+        WICDecodeMetadataCacheOnLoad,
+        Decoder
+      )
     );
     OleCheck(Decoder.GetFrame(0, Frame));
     OleCheck(Frame.GetSize(W, H));
@@ -351,14 +339,14 @@ begin
     OleCheck(Factory.CreateFormatConverter(Converter));
     // Explicit straight RGBA preserves alpha; no external image library.
     OleCheck(
-        Converter.Initialize(
-            Frame,
-            GUID_WICPixelFormat32bppRGBA,
-            WICBitmapDitherTypeNone,
-            nil,
-            0,
-            WICBitmapPaletteTypeCustom
-        )
+      Converter.Initialize(
+        Frame,
+        GUID_WICPixelFormat32bppRGBA,
+        WICBitmapDitherTypeNone,
+        nil,
+        0,
+        WICBitmapPaletteTypeCustom
+      )
     );
     Image := TQNNImage.Create(W, H, 4);
     OleCheck(Converter.CopyPixels(nil, W * 4, Length(Image.Data), @Image.Data[0]));
@@ -382,4 +370,6 @@ begin
       CoUninitialize;
   end;
 end;
+
 end.
+

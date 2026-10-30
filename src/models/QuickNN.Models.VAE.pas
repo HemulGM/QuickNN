@@ -9,64 +9,39 @@
 interface
 
 uses
-  System.SysUtils,
-  QuickNN.SafeTensors,
-  QuickNN.Common;
+  System.SysUtils, QuickNN.SafeTensors, QuickNN.Common;
 
 type
 
   { TVAEResBlock }
 
   TVAEResBlock = record
-    Norm1Weight,
-    Norm1Bias, (* [channels] *)
-    Conv1Weight,
-    Conv1Bias, (* [out_ch, in_ch, 3, 3] *)
-    Norm2Weight,
-    Norm2Bias, (* [channels] *)
-    Conv2Weight,
-    Conv2Bias, (* [out_ch, out_ch, 3, 3] *)
-    SkipWeight,
-    SkipBias: TMemoryBlock; (* [out_ch, in_ch, 1, 1] if in_ch != out_ch *)
+    Norm1Weight, Norm1Bias, (* [channels] *)
+    Conv1Weight, Conv1Bias, (* [out_ch, in_ch, 3, 3] *)
+    Norm2Weight, Norm2Bias, (* [channels] *)
+    Conv2Weight, Conv2Bias, (* [out_ch, out_ch, 3, 3] *)
+    SkipWeight, SkipBias: TMemoryBlock; (* [out_ch, in_ch, 1, 1] if in_ch != out_ch *)
     InChannels, OutChannels: LongInt;
-    procedure Forward(var Dst: TMemoryBlock; const Src, Work: TMemoryBlock; const Batch, H, W, NumGroups: LongInt);
+    procedure forward(var Dst: TMemoryBlock; const Src, Work: TMemoryBlock; const Batch, H, W, NumGroups: LongInt);
     // procedure load(var f: file);                                     overload;
-    procedure Load(
-        const Sf: TSafeTensorFiles;
-        const APrefix: string;
-        const InCh, OutCh: LongInt;
-        const UseMMAP: Boolean = False
-    ); overload;
+    procedure Load(const Sf: TSafeTensorFiles; const APrefix: string; const InCh, OutCh: LongInt; const UseMMAP: Boolean = False
+); overload;
     procedure Free();
   end;
 
   { TVAEAttnBlock }
 
   TVAEAttnBlock = record
-    NormWeight,
-    NormBias, (* [channels] *)
-    QWeight,
-    QBias, (* [channels, channels, 1, 1] *)
-    KWeight,
-    KBias, (* [channels, channels, 1, 1] *)
-    VWeight,
-    VBias, (* [channels, channels, 1, 1] *)
-    OutWeight,
-    OutBias: TMemoryBlock; (* [channels, channels, 1, 1] *)
+    NormWeight, NormBias, (* [channels] *)
+    QWeight, QBias, (* [channels, channels, 1, 1] *)
+    KWeight, KBias, (* [channels, channels, 1, 1] *)
+    VWeight, VBias, (* [channels, channels, 1, 1] *)
+    OutWeight, OutBias: TMemoryBlock; (* [channels, channels, 1, 1] *)
     Channels: LongInt;
-    procedure Forward(
-        var Dst: TMemoryBlock;
-        const Src: TMemoryBlock;
-        var Work: TMemoryBlock;
-        const Batch, H, W, NumGroups: LongInt
-    );
+    procedure forward(var Dst: TMemoryBlock; const Src: TMemoryBlock; var Work: TMemoryBlock; const Batch, H, W, NumGroups: LongInt);
     // procedure load(var f:file);                                    overload;
-    procedure Load(
-        const Sf: TSafeTensorFiles;
-        const APrefix: string;
-        const AChannels: LongInt;
-        const UseMMAP: Boolean = False
-    ); overload;
+    procedure Load(const Sf: TSafeTensorFiles; const APrefix: string; const AChannels: LongInt; const UseMMAP: Boolean = False
+); overload;
     procedure Free();
   end;
 
@@ -84,6 +59,7 @@ type
 
   { TVAE }
   PVAE = ^TVAE;
+
   TVAE = record
   private
     MappedFiles: TSafeTensorFiles;
@@ -145,28 +121,18 @@ type
     function Encode(const Img: TMemoryBlock; const Batch, H, W: LongInt; var OutH, OutW: LongInt): TMemoryBlock;
     function Decode(const Latent: TMemoryBlock; const Batch, LatentH, LatentW: LongInt): TQNNImage; overload;
     procedure Decode(const Dst, Latent: TMemoryBlock; const Batch, LatentH, LatentW: LongInt); overload;
-    class function Preview(
-        const Latents: TMemoryBlock;
-        const LatentRGBProj: TArray<TArray<Single>>;
-        const LatentHeight, LatentWidth, Dims, Frames: LongInt;
-        const LatentRGBBias: TArray<Single>;
-        const PatchSize: LongInt
-    ): TQNNImage; static;
+    class function Preview(const Latents: TMemoryBlock; const LatentRGBProj: TArray<TArray<Single>>; const LatentHeight, LatentWidth, Dims, Frames: LongInt; const LatentRGBBias: TArray<Single>; const PatchSize: LongInt): TQNNImage; static;
     // procedure load(var f: file);                                    overload;
-    procedure Load(
-        const Sf: TSafeTensorFiles;
-        const AZChannels: LongInt;
-        const AScalingFactor, AShiftFactor: QNNFloat
-    ); overload;
+    procedure Load(const Sf: TSafeTensorFiles; const AZChannels: LongInt; const AScalingFactor, AShiftFactor: QNNFloat); overload;
     function IsLoaded(): Boolean;
     class procedure PadRightBottom(const Dst, Src: TMemoryBlock; Batch, Channels, H, W: LongInt); static;
     procedure Free;
   end;
 
 implementation
+
 uses
-  QuickNN.Kernels,
-  QuickNN.Vulkan;
+  QuickNN.Kernels, QuickNN.Vulkan;
 
 function ReadInt(var F: file): LongInt;
 begin
@@ -184,11 +150,7 @@ end;
 
 { TVAEResBlock }
 
-procedure TVAEResBlock.Forward(
-    var Dst: TMemoryBlock;
-    const Src, Work: TMemoryBlock;
-    const Batch, H, W, NumGroups: LongInt
-);
+procedure TVAEResBlock.forward(var Dst: TMemoryBlock; const Src, Work: TMemoryBlock; const Batch, H, W, NumGroups: LongInt);
 var
   Spatial: LongInt;
   Conv1Out: TMemoryBlock;
@@ -236,12 +198,7 @@ end;
 //
 // end;
 
-procedure TVAEResBlock.Load(
-    const Sf: TSafeTensorFiles;
-    const APrefix: string;
-    const InCh, OutCh: LongInt;
-    const UseMMAP: Boolean
-);
+procedure TVAEResBlock.Load(const Sf: TSafeTensorFiles; const APrefix: string; const InCh, OutCh: LongInt; const UseMMAP: Boolean);
 begin
   InChannels := InCh;
   OutChannels := OutCh;
@@ -263,7 +220,6 @@ begin
     // skip_weight := nil;
     // skip_bias   := nil
   end;
-
 end;
 
 procedure TVAEResBlock.Free();
@@ -282,12 +238,7 @@ end;
 
 { TVAEAttnBlock }
 
-procedure TVAEAttnBlock.Forward(
-    var Dst: TMemoryBlock;
-    const Src: TMemoryBlock;
-    var Work: TMemoryBlock;
-    const Batch, H, W, NumGroups: LongInt
-);
+procedure TVAEAttnBlock.forward(var Dst: TMemoryBlock; const Src: TMemoryBlock; var Work: TMemoryBlock; const Batch, H, W, NumGroups: LongInt);
 var
   Ch, Spatial, B: LongInt;
   Q, K, V, Qb, Kb, Vb, Ob, AttnOut {, q_ptr, k_ptr, v_ptr, o_ptr}: TMemoryBlock;
@@ -360,12 +311,7 @@ end;
 //  out_bias    := readSingles(f, channels);
 // end;
 
-procedure TVAEAttnBlock.Load(
-    const Sf: TSafeTensorFiles;
-    const APrefix: string;
-    const AChannels: LongInt;
-    const UseMMAP: Boolean
-);
+procedure TVAEAttnBlock.Load(const Sf: TSafeTensorFiles; const APrefix: string; const AChannels: LongInt; const UseMMAP: Boolean);
 begin
   Channels := AChannels;
 
@@ -417,29 +363,7 @@ end;
 function TVAE.Encode(const Img: TMemoryBlock; const Batch, H, W: LongInt; var OutH, OutW: LongInt): TMemoryBlock;
 // const ch_mult : array[0..3] of longint = (1, 2, 4, 4);
 var
-  CurH,
-  CurW,
-  BlockIdx,
-  DownIdx,
-  Progress,
-  TotalBlocks,
-  Level,
-  ChOut,
-  R,
-  PaddedH,
-  PaddedW,
-  NewH,
-  NewW,
-  MidCh,
-  ZCh,
-  LatentH,
-  LatentW,
-  ZSpatial,
-  B,
-  PatchH,
-  PatchW,
-  LatCh,
-  N: LongInt;
+  CurH, CurW, BlockIdx, DownIdx, Progress, TotalBlocks, Level, ChOut, R, PaddedH, PaddedW, NewH, NewW, MidCh, ZCh, LatentH, LatentW, ZSpatial, B, PatchH, PatchW, LatCh, N: LongInt;
   X, Work, Padded: TMemoryBlock;
   Mean: TMemoryBlock;
 begin
@@ -467,7 +391,7 @@ begin
     ChOut := BaseChannels * ChMult[Level];
     for R := 0 to NumResBlocks - 1 do
     begin
-      EncDownBlocks[BlockIdx].Forward(Work, X, Work3, Batch, CurH, CurW, NumGroups);
+      EncDownBlocks[BlockIdx].forward(Work, X, Work3, Batch, CurH, CurW, NumGroups);
       Inc(BlockIdx);
       QNNCopy(X, Work, Batch * ChOut * CurH * CurW);
       if Assigned(VAEProgressCallback) then
@@ -485,19 +409,19 @@ begin
       NewW := (PaddedW - 3) div 2 + 1;
       PadRightBottom(Padded, X, Batch, ChOut, CurH, CurW);
       QNNConv2d(
-          Work,
-          Padded,
-          EncDownsample[DownIdx].ConvWeight,
-          EncDownsample[DownIdx].ConvBias,
-          ChOut,
-          ChOut,
-          PaddedH,
-          PaddedW,
-          3,
-          3,
-          2,
-          0,
-          Batch
+        Work,
+        Padded,
+        EncDownsample[DownIdx].ConvWeight,
+        EncDownsample[DownIdx].ConvBias,
+        ChOut,
+        ChOut,
+        PaddedH,
+        PaddedW,
+        3,
+        3,
+        2,
+        0,
+        Batch
       );
       Inc(DownIdx);
       CurH := NewH;
@@ -506,20 +430,20 @@ begin
     end
   end;
   MidCh := BaseChannels * ChMult[3];
-  EncMidBlock1.Forward(Work, X, Work3, Batch, CurH, CurW, NumGroups);
+  EncMidBlock1.forward(Work, X, Work3, Batch, CurH, CurW, NumGroups);
   if Assigned(VAEProgressCallback) then
   begin
     VAEProgressCallback(Progress, TotalBlocks);
     Inc(Progress)
   end;
-  EncMidAttn.Forward(X, Work, Work3, Batch, CurH, CurW, NumGroups); // < 0 then
+  EncMidAttn.forward(X, Work, Work3, Batch, CurH, CurW, NumGroups); // < 0 then
   // exit(nil);
   if Assigned(VAEProgressCallback) then
   begin
     VAEProgressCallback(Progress, TotalBlocks);
     Inc(Progress)
   end;
-  EncMidBlock2.Forward(Work, X, Work3, Batch, CurH, CurW, NumGroups);
+  EncMidBlock2.forward(Work, X, Work3, Batch, CurH, CurW, NumGroups);
   QNNCopy(X, Work, Batch * MidCh * CurH * CurW);
   if Assigned(VAEProgressCallback) then
   begin
@@ -538,10 +462,10 @@ begin
   LatentW := CurW;
   ZSpatial := LatentH * LatentW;
   Mean :=
-      TMemoryBlock.Create(
-          [Batch, ZChannels, LatentH div 2, 2, LatentW div 2, 2],
-          'VAE_ENCODE_MEAN ' + TGUID.NewGuid.ToString()
-      );
+    TMemoryBlock.Create(
+    [Batch, ZChannels, LatentH div 2, 2, LatentW div 2, 2],
+    'VAE_ENCODE_MEAN ' + TGUID.NewGuid.ToString()
+  );
   for B := 0 to Batch - 1 do
     QNNCopy(Mean + B * ZChannels * ZSpatial, X + B * ZCh * ZSpatial, ZChannels * ZSpatial);
   PatchH := LatentH div 2;
@@ -575,29 +499,8 @@ function TVAE.Decode(const Latent: TMemoryBlock; const Batch, LatentH, LatentW: 
 var
   X, Work: TMemoryBlock;
   MeanPtr, VarPtr: PQNNFloat;
-  LatCh,
-  ZSpatial,
-  B,
-  C,
-  UnpatchH,
-  UnpatchW,
-  CurW,
-  CurH,
-  MidCh,
-  Progress,
-  TotalBlocks,
-  BlockIdx,
-  UpIdx,
-  Level,
-  ChOut,
-  R,
-  NewH,
-  NewW,
-  OutCh,
-  H,
-  W: LongInt;
+  LatCh, ZSpatial, B, C, UnpatchH, UnpatchW, CurW, CurH, MidCh, Progress, TotalBlocks, BlockIdx, UpIdx, Level, ChOut, R, NewH, NewW, OutCh, H, W: LongInt;
   Mean, Std: Single;
-
 begin
   if Assigned(PhaseCallback) then
     PhaseCallback('VAE Decode', False);
@@ -673,14 +576,14 @@ begin
 
   Progress := 0;
   TotalBlocks := 3 + 4 * (NumResBlocks + 1);
-  DecMidBlock1.Forward(Work, X, Work3, Batch, CurH, CurW, NumGroups);
+  DecMidBlock1.forward(Work, X, Work3, Batch, CurH, CurW, NumGroups);
 
   if Assigned(VAEProgressCallback) then
   begin
     VAEProgressCallback(Progress, TotalBlocks);
     Inc(Progress)
   end;
-  DecMidAttn.Forward(X, Work, Work3, Batch, CurH, CurW, NumGroups); // < 0 then
+  DecMidAttn.forward(X, Work, Work3, Batch, CurH, CurW, NumGroups); // < 0 then
 
   // exit(nil);
   if Assigned(VAEProgressCallback) then
@@ -688,7 +591,7 @@ begin
     VAEProgressCallback(Progress, TotalBlocks);
     Inc(Progress)
   end;
-  DecMidBlock2.Forward(Work, X, Work3, Batch, CurH, CurW, NumGroups);
+  DecMidBlock2.forward(Work, X, Work3, Batch, CurH, CurW, NumGroups);
   // if x.size<work.size then x.reSize(work.shape, work.DataType);
   QNNCopy(X, Work, Batch * MidCh * CurH * CurW);
   if Assigned(VAEProgressCallback) then
@@ -704,7 +607,7 @@ begin
     ChOut := BaseChannels * ChMult[Level];
     for R := 0 to NumResBlocks + 1 - 1 do
     begin
-      DecUpBlocks[BlockIdx].Forward(Work, X, Work3, Batch, CurH, CurW, NumGroups);
+      DecUpBlocks[BlockIdx].forward(Work, X, Work3, Batch, CurH, CurW, NumGroups);
       Inc(BlockIdx);
       // if x.size<work.size then x.reSize(work.shape, work.dataType);
       QNNCopy(X, Work, Batch * ChOut * CurH * CurW);
@@ -723,19 +626,19 @@ begin
       //  work.resize(work.shape, work.dataType);
       QNNUpSampleNearest(Work, X, Batch, ChOut, CurH, CurW, 2, 2);
       QNNConv2d(
-          X,
-          Work,
-          DecUpsample[UpIdx].ConvWeight,
-          DecUpsample[UpIdx].ConvBias,
-          ChOut,
-          ChOut,
-          NewH,
-          NewW,
-          3,
-          3,
-          1,
-          1,
-          Batch
+        X,
+        Work,
+        DecUpsample[UpIdx].ConvWeight,
+        DecUpsample[UpIdx].ConvBias,
+        ChOut,
+        ChOut,
+        NewH,
+        NewW,
+        3,
+        3,
+        1,
+        1,
+        Batch
       );
       Inc(UpIdx);
       CurH := NewH;
@@ -772,7 +675,6 @@ begin
   //    end;
   if Assigned(PhaseCallback) then
     PhaseCallback('VAE Decode', True);
-
 end;
 
 procedure TVAE.Decode(const Dst, Latent: TMemoryBlock; const Batch, LatentH, LatentW: LongInt);
@@ -780,25 +682,7 @@ const
   CH_MULT: array[0..3] of Integer = (1, 2, 4, 4);
 var
   X, Work: TMemoryBlock;
-
-  LatCh,
-  ZSpatial,
-  UnpatchH,
-  UnpatchW,
-  CurW,
-  CurH,
-  MidCh,
-  Progress,
-  TotalBlocks,
-  BlockIdx,
-  UpIdx,
-  Level,
-  ChOut,
-  R,
-  NewH,
-  NewW,
-  OutCh: LongInt;
-
+  LatCh, ZSpatial, UnpatchH, UnpatchW, CurW, CurH, MidCh, Progress, TotalBlocks, BlockIdx, UpIdx, Level, ChOut, R, NewH, NewW, OutCh: LongInt;
 begin
   if Assigned(PhaseCallback) then
     PhaseCallback('VAE Decode', False);
@@ -853,20 +737,20 @@ begin
   QNNCopy(X, Work, Batch * MidCh * CurH * CurW);
   Progress := 0;
   TotalBlocks := 3 + 4 * (NumResBlocks + 1);
-  DecMidBlock1.Forward(Work, X, Work3, Batch, CurH, CurW, NumGroups);
+  DecMidBlock1.forward(Work, X, Work3, Batch, CurH, CurW, NumGroups);
   if Assigned(VAEProgressCallback) then
   begin
     VAEProgressCallback(Progress, TotalBlocks);
     Inc(Progress)
   end;
-  DecMidAttn.Forward(X, Work, Work3, Batch, CurH, CurW, NumGroups); // < 0 then
+  DecMidAttn.forward(X, Work, Work3, Batch, CurH, CurW, NumGroups); // < 0 then
   // exit(nil);
   if Assigned(VAEProgressCallback) then
   begin
     VAEProgressCallback(Progress, TotalBlocks);
     Inc(Progress)
   end;
-  DecMidBlock2.Forward(Work, X, Work3, Batch, CurH, CurW, NumGroups);
+  DecMidBlock2.forward(Work, X, Work3, Batch, CurH, CurW, NumGroups);
   QNNCopy(X, Work, Batch * MidCh * CurH * CurW);
   if Assigned(VAEProgressCallback) then
   begin
@@ -881,7 +765,7 @@ begin
     ChOut := BaseChannels * CH_MULT[Level];
     for R := 0 to NumResBlocks + 1 - 1 do
     begin
-      DecUpBlocks[BlockIdx].Forward(Work, X, Work3, Batch, CurH, CurW, NumGroups);
+      DecUpBlocks[BlockIdx].forward(Work, X, Work3, Batch, CurH, CurW, NumGroups);
       Inc(BlockIdx);
       QNNCopy(X, Work, Batch * ChOut * CurH * CurW);
       if Assigned(VAEProgressCallback) then
@@ -896,19 +780,19 @@ begin
       NewW := CurW * 2;
       QNNUpSampleNearest(Work, X, Batch, ChOut, CurH, CurW, 2, 2);
       QNNConv2d(
-          X,
-          Work,
-          DecUpsample[UpIdx].ConvWeight,
-          DecUpsample[UpIdx].ConvBias,
-          ChOut,
-          ChOut,
-          NewH,
-          NewW,
-          3,
-          3,
-          1,
-          1,
-          Batch
+        X,
+        Work,
+        DecUpsample[UpIdx].ConvWeight,
+        DecUpsample[UpIdx].ConvBias,
+        ChOut,
+        ChOut,
+        NewH,
+        NewW,
+        3,
+        3,
+        1,
+        1,
+        Batch
       );
       Inc(UpIdx);
       CurH := NewH;
@@ -925,13 +809,7 @@ begin
     PhaseCallback('VAE Decode', True);
 end;
 
-class function TVAE.Preview(
-    const Latents: TMemoryBlock;
-    const LatentRGBProj: TArray<TArray<Single>>;
-    const LatentHeight, LatentWidth, Dims, Frames: LongInt;
-    const LatentRGBBias: TArray<Single>;
-    const PatchSize: LongInt
-): TQNNImage;
+class function TVAE.Preview(const Latents: TMemoryBlock; const LatentRGBProj: TArray<TArray<Single>>; const LatentHeight, LatentWidth, Dims, Frames: LongInt; const LatentRGBBias: TArray<Single>; const PatchSize: LongInt): TQNNImage;
 var
   RGBWidth, RGBHeight, UnpatchedDim, K, RGBY, RGBX, LatentY, LatentX, ChannelOffset, LatentChannel, PixelId, D: LongInt;
   R, G, B, Value: Single;
@@ -1108,14 +986,9 @@ end;
 //
 // end;
 
-procedure TVAE.Load(
-    const Sf: TSafeTensorFiles;
-    const AZChannels: LongInt;
-    const AScalingFactor, AShiftFactor: QNNFloat
-);
+procedure TVAE.Load(const Sf: TSafeTensorFiles; const AZChannels: LongInt; const AScalingFactor, AShiftFactor: QNNFloat);
 var
-  NumDownBlocks, BlockIdx, Level, Ch, PrevCh, R, InCh, I, MidCh, NumUpBlocks, UpIdx, Lc, MaxSpatial, MaxChannels:
-      LongInt;
+  NumDownBlocks, BlockIdx, Level, Ch, PrevCh, R, InCh, I, MidCh, NumUpBlocks, UpIdx, Lc, MaxSpatial, MaxChannels: LongInt;
   BnMeanT, BnVarT: PSafeTensor;
 begin
 
@@ -1164,9 +1037,9 @@ begin
     Ch := BaseChannels * ChMult[I];
     EncDownsample[I].Channels := Ch;
     EncDownsample[I].ConvWeight :=
-        Sf.GetTensorDataMemBlock(Format('encoder.down_blocks.%d.downsamplers.0.conv.weight', [I]), UseMMAP);
+      Sf.GetTensorDataMemBlock(Format('encoder.down_blocks.%d.downsamplers.0.conv.weight', [I]), UseMMAP);
     EncDownsample[I].ConvBias :=
-        Sf.GetTensorDataMemBlock(Format('encoder.down_blocks.%d.downsamplers.0.conv.bias', [I]), UseMMAP)
+      Sf.GetTensorDataMemBlock(Format('encoder.down_blocks.%d.downsamplers.0.conv.bias', [I]), UseMMAP)
   end;
   MidCh := BaseChannels * ChMult[3];
   EncMidBlock1.Load(Sf, 'encoder.mid_block.resnets.0', MidCh, MidCh, UseMMAP);
@@ -1215,9 +1088,9 @@ begin
     Ch := BaseChannels * ChMult[3 - I];
     DecUpsample[I].Channels := Ch;
     DecUpsample[I].ConvWeight :=
-        Sf.GetTensorDataMemBlock(Format('decoder.up_blocks.%d.upsamplers.0.conv.weight', [I]), UseMMAP);
+      Sf.GetTensorDataMemBlock(Format('decoder.up_blocks.%d.upsamplers.0.conv.weight', [I]), UseMMAP);
     DecUpsample[I].ConvBias :=
-        Sf.GetTensorDataMemBlock(Format('decoder.up_blocks.%d.upsamplers.0.conv.bias', [I]), UseMMAP)
+      Sf.GetTensorDataMemBlock(Format('decoder.up_blocks.%d.upsamplers.0.conv.bias', [I]), UseMMAP)
   end;
   DecNormOutWeight := Sf.GetTensorDataMemBlock('decoder.conv_norm_out.weight', UseMMAP);
   DecNormOutBias := Sf.GetTensorDataMemBlock('decoder.conv_norm_out.bias', UseMMAP);
@@ -1332,4 +1205,6 @@ begin
     MappedFiles[I].Close;
   Self := Default(TVAE)
 end;
+
 end.
+

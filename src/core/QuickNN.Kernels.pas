@@ -13,26 +13,19 @@
 interface
 
 uses
-  System.SysUtils,
-  System.Classes,
-  System.Math,
-  System.TypInfo
+  System.SysUtils, System.Classes, System.Math, System.TypInfo
 {$IF defined(MSWINDOWS)}
-  ,
-  Winapi.Windows
+    , Winapi.Windows
 {$ELSEIF defined(DARWIN)}
 {$ENDIF}
 {$IFDEF USE_MULTITHREADING}
-  ,
-  QuickNN.Threading
+    , QuickNN.Threading
 {$ENDIF}
-  ,
-  QuickNN.Common
+    , QuickNN.Common
 {$IFDEF USE_PROFILING}
-  ,
-  QuickNN.Metrics
+    , QuickNN.Metrics
 {$ENDIF}
-      ;
+;
 
 var
   HBLASLIB: HMODULE;
@@ -42,31 +35,9 @@ var
   Metrics: TTensorMetrics;
 {$ENDIF}
 
-procedure CblasGemm(
-    Order: TCBLASOrder;
-    TransA: TCBLASTranspose;
-    TransB: TCBLASTranspose;
-    M: TBlasInt;
-    N: TBlasInt;
-    K: TBlasInt;
-    Alpha: Single;
-    A: TMemoryBlock;
-    Lda: TBlasInt;
-    B: TMemoryBlock;
-    Ldb: TBlasInt;
-    Beta: Single;
-    C: TMemoryBlock;
-    Ldc: TBlasInt
-); winapi;
+procedure CblasGemm(Order: TCBLASOrder; TransA: TCBLASTranspose; TransB: TCBLASTranspose; M: TBlasInt; N: TBlasInt; K: TBlasInt; Alpha: Single; A: TMemoryBlock; Lda: TBlasInt; B: TMemoryBlock; Ldb: TBlasInt; Beta: Single; C: TMemoryBlock; Ldc: TBlasInt); winapi;
 
-procedure CblasAxpy(
-    N: TBlasInt;
-    Alpha: Single;
-    X: TMemoryBlock;
-    IncX: TBlasInt;
-    Y: TMemoryBlock;
-    Incy: TBlasInt
-); winapi;
+procedure CblasAxpy(N: TBlasInt; Alpha: Single; X: TMemoryBlock; IncX: TBlasInt; Y: TMemoryBlock; Incy: TBlasInt); winapi;
 
 function CblasDot(N: TBlasInt; X: TMemoryBlock; IncX: TBlasInt; Y: TMemoryBlock; Incy: TBlasInt): Single; winapi;
 
@@ -130,65 +101,20 @@ procedure QNNLinearNoBias(const Dst, X, W: TMemoryBlock; const SeqLen, InDIM, Ou
 
 procedure QNNLinearNoBiasBF16(const Dst, X: TMemoryBlock; const W: PBF16; const SeqLen, InDIM, OutDIM: Integer);
 
-procedure QNNIm2Col(
-    const AChannels,
-    AHeight,
-    AWidth,
-    KernelHeight,
-    KernelWidth,
-    PadHeight,
-    PadWidth,
-    StrideY,
-    StrideX,
-    DilationY,
-    DilationX: Integer;
-    const Im: TMemoryBlock;
-    const Col: TMemoryBlock;
-    const ImOffset: Integer = 0;
-    const ColOffset: Integer = 0;
-    const MultiThread: Boolean = False
+procedure QNNIm2Col(const AChannels, AHeight, AWidth, KernelHeight, KernelWidth, PadHeight, PadWidth, StrideY, StrideX, DilationY, DilationX: Integer; const Im: TMemoryBlock; const Col: TMemoryBlock; const ImOffset: Integer = 0; const ColOffset: Integer = 0; const MultiThread: Boolean = False
 );
 
-procedure QNNIm2ColStridedBatched(
-    const AChannels,
-    AHeight,
-    AWidth,
-    KernelHeight,
-    KernelWidth,
-    PadHeight,
-    PadWidth,
-    StrideY,
-    StrideX,
-    DilationY,
-    DilationX: Integer;
-    const Im: TMemoryBlock;
-    const ImStride, ImOffset: Integer;
-    const Col: TMemoryBlock;
-    const ColStride, ColOffset: Integer;
-    const Batch: Integer
-);
+procedure QNNIm2ColStridedBatched(const AChannels, AHeight, AWidth, KernelHeight, KernelWidth, PadHeight, PadWidth, StrideY, StrideX, DilationY, DilationX: Integer; const Im: TMemoryBlock; const ImStride, ImOffset: Integer; const Col: TMemoryBlock; const ColStride, ColOffset: Integer; const Batch: Integer);
 
 function QNNConv2DShape(const Batch, Filters, SrcH, SrcW, KH, KW, Padding, Stride: Int64): TArray<Int64>;
 
-procedure QNNConv2d(
-    var Dst: TMemoryBlock;
-    const Src, Weights, Bias: TMemoryBlock;
-    const InCh, OutCh, H, W, KH, KW, Stride, Padding: LongInt;
-    const Batch: LongInt = 1
+procedure QNNConv2d(var Dst: TMemoryBlock; const Src, Weights, Bias: TMemoryBlock; const InCh, OutCh, H, W, KH, KW, Stride, Padding: LongInt; const Batch: LongInt = 1
 );
 
-procedure QNNNorm(
-    const N: LongInt;
-    const Dst, Src: TMemoryBlock;
-    const Weights: TMemoryBlock;
-    const Stride: LongInt = 1
+procedure QNNNorm(const N: LongInt; const Dst, Src: TMemoryBlock; const Weights: TMemoryBlock; const Stride: LongInt = 1
 );
 
-procedure QNNRMSNorm(
-    const N: LongInt;
-    const Dst, Src: TMemoryBlock;
-    const Weights: TMemoryBlock;
-    const Stride: LongInt = 1
+procedure QNNRMSNorm(const N: LongInt; const Dst, Src: TMemoryBlock; const Weights: TMemoryBlock; const Stride: LongInt = 1
 );
 
 procedure QNNRMSNormRows(const Dst, Src, Weight: TMemoryBlock; const Rows, Dim: Integer);
@@ -201,34 +127,17 @@ procedure QNNRMSNormSeq(const Dst, NormWeights: TMemoryBlock; const Seq, Heads, 
 
 procedure QNNGroupNorm(const Dst, Src, Gamma, Beta: TMemoryBlock; const Batch, Channels, H, W, NumGroups: Integer);
 
-procedure QNNBatchNormGammaBeta(
-    const Dst, Src, RunningMean, RunningVar, Gamma, Beta: TMemoryBlock;
-    const Batch, Channels, H, W: Integer
-);
+procedure QNNBatchNormGammaBeta(const Dst, Src, RunningMean, RunningVar, Gamma, Beta: TMemoryBlock; const Batch, Channels, H, W: Integer);
 
 procedure QNNBatchNorm(const Dst, Src, RunningMean, RunningVar: TMemoryBlock; const Batch, Channels, H, W: Integer);
 
-procedure QNNMinMax(
-    const N: Integer;
-    const Src: TMemoryBlock;
-    out OutMin, OutMax: QNNFloat;
-    const ArgMin: PInteger;
-    const ArgMax: PInteger = nil;
-    const Stride: Integer = 1
+procedure QNNMinMax(const N: Integer; const Src: TMemoryBlock; out OutMin, OutMax: QNNFloat; const ArgMin: PInteger; const ArgMax: PInteger = nil; const Stride: Integer = 1
 );
 
-function QNNMax(
-    const N: Integer;
-    const Src: TMemoryBlock;
-    const Arg: PInteger = nil;
-    const Stride: Integer = 1
+function QNNMax(const N: Integer; const Src: TMemoryBlock; const Arg: PInteger = nil; const Stride: Integer = 1
 ): QNNFloat;
 
-function QNNMin(
-    const N: Integer;
-    const Src: TMemoryBlock;
-    const Arg: PInteger = nil;
-    const Stride: Integer = 1
+function QNNMin(const N: Integer; const Src: TMemoryBlock; const Arg: PInteger = nil; const Stride: Integer = 1
 ): QNNFloat;
 
 function QNNMaxAbs(const N: Integer; const Src: TMemoryBlock; const Stride: Integer = 1): QNNFloat;
@@ -243,41 +152,24 @@ function QNNSum(const N: Integer; const Src: TMemoryBlock; const Stride: Integer
 
 function QNNSumSqr(const N: Integer; const Src: TMemoryBlock; const Stride: Integer = 1): QNNFloat;
 
-function QNNSumSqrDiff(
-    const N: Integer;
-    const Src: TMemoryBlock;
-    const AMean: QNNFloat;
-    const Stride: Integer = 1
+function QNNSumSqrDiff(const N: Integer; const Src: TMemoryBlock; const AMean: QNNFloat; const Stride: Integer = 1
 ): QNNFloat;
 
 function QNNSqrDistance(const N: Integer; const Src1, Src2: TMemoryBlock; const Stride: Integer = 1): QNNFloat;
 
-function QNNMaxAbsDiff2(
-    const N: Integer;
-    const Src1, Src2: TMemoryBlock;
-    out OutSrc1, OutSrc2: QNNFloat;
-    const Stride: Integer = 1
+function QNNMaxAbsDiff2(const N: Integer; const Src1, Src2: TMemoryBlock; out OutSrc1, OutSrc2: QNNFloat; const Stride: Integer = 1
 ): QNNFloat;
 
 function QNNMaxAbsDiff(const N: Integer; const Src1, Src2: TMemoryBlock; const Stride: Integer = 1): QNNFloat;
 
 function QNNSumAbsDiff(const N: Integer; const Src1, Src2: TMemoryBlock; const Stride: Integer = 1): QNNFloat;
 
-function QNNSumAbsDiffScalar(
-    const N: Integer;
-    const Src: TMemoryBlock;
-    const AMean: QNNFloat;
-    const Stride: Integer = 1
+function QNNSumAbsDiffScalar(const N: Integer; const Src: TMemoryBlock; const AMean: QNNFloat; const Stride: Integer = 1
 ): QNNFloat;
 
 function QNNMean(const N: Integer; const Src: TMemoryBlock; const Stride: Integer = 1): QNNFloat;
 
-function QNNVariance(
-    const N: Integer;
-    const Src: TMemoryBlock;
-    const AMean: QNNFloat;
-    const Stride: Integer = 1;
-    const IsPopulation: Boolean = True
+function QNNVariance(const N: Integer; const Src: TMemoryBlock; const AMean: QNNFloat; const Stride: Integer = 1; const IsPopulation: Boolean = True
 ): QNNFloat;
 
 procedure QNNSigmoidInplace(const X: TMemoryBlock; const N: Integer);
@@ -294,39 +186,17 @@ procedure QNNSoftmax(const X: TMemoryBlock; const N: Integer);
 
 procedure QNNSoftmaxRows(const X: TMemoryBlock; const Rows, Cols: Integer);
 
-procedure QNNAttention(
-    const Dst, Q, K, V: TMemoryBlock;
-    const Batch, Heads, SeqQ, SeqK, HeadDim: LongInt;
-    const Scale: QNNFloat
-);
+procedure QNNAttention(const Dst, Q, K, V: TMemoryBlock; const Batch, Heads, SeqQ, SeqK, HeadDim: LongInt; const Scale: QNNFloat);
 
-procedure QNNFlashAttentionHead(
-    const Dst, Q, K, V: TMemoryBlock;
-    const SeqQ, SeqK, HeadDim: LongInt;
-    const Scale: QNNFloat
-);
+procedure QNNFlashAttentionHead(const Dst, Q, K, V: TMemoryBlock; const SeqQ, SeqK, HeadDim: LongInt; const Scale: QNNFloat);
 
-procedure QNNFlashAttentionHeadTiled(
-    const Dst, Q, K, V: TMemoryBlock;
-    const SeqQ, SeqK, HeadDim: LongInt;
-    const Scale: QNNFloat;
-    const TileScores: TMemoryBlock;
-    const QTileSize, KTileSize: LongInt
-);
+procedure QNNFlashAttentionHeadTiled(const Dst, Q, K, V: TMemoryBlock; const SeqQ, SeqK, HeadDim: LongInt; const Scale: QNNFloat; const TileScores: TMemoryBlock; const QTileSize, KTileSize: LongInt);
 
-procedure QNNFlashAttention(
-    const Dst, Q, K, V: TMemoryBlock;
-    const SeqQ, SeqK, Heads, HeadDim: LongInt;
-    const Scale: QNNFloat
-);
+procedure QNNFlashAttention(const Dst, Q, K, V: TMemoryBlock; const SeqQ, SeqK, Heads, HeadDim: LongInt; const Scale: QNNFloat);
 
 procedure QNNUpSampleNearest(const Dst, Src: TMemoryBlock; const Batch, Channels, H, W, ScaleH, ScaleW: LongInt);
 
-procedure QNNUpSample(
-    const Dst, Src: TMemoryBlock;
-    const Batch, Channels, H, W: LongInt;
-    const ScaleH, ScaleW: QNNFloat;
-    const Interpolation: TInterpolation = INearest
+procedure QNNUpSample(const Dst, Src: TMemoryBlock; const Batch, Channels, H, W: LongInt; const ScaleH, ScaleW: QNNFloat; const Interpolation: TInterpolation = INearest
 );
 
 procedure QNNPatchify(const Dst, Src: TMemoryBlock; const Batch, Channels, H, W, PatchSize: LongInt);
@@ -339,13 +209,7 @@ function QNNPermut(const Src: TMemoryBlock; const Axis: TArray<Byte>): TMemoryBl
 
 procedure QNNCopy(const Dst, Src: TMemoryBlock; const N: Integer);
 
-procedure QNNCopyStrided(
-    const Dst: TMemoryBlock;
-    const DstStride: Integer;
-    const Src: TMemoryBlock;
-    const SrcStride: Integer;
-    const N: Integer
-);
+procedure QNNCopyStrided(const Dst: TMemoryBlock; const DstStride: Integer; const Src: TMemoryBlock; const SrcStride: Integer; const N: Integer);
 
 procedure QNNFill(const Dst: TMemoryBlock; const Val: QNNFloat; const N: Integer; const Stride: Integer = 1);
 
@@ -357,18 +221,9 @@ procedure QNNComputeRoPE(const Dst: TMemoryBlock; const MaxSeq, Dim: LongInt; co
 
 procedure QNNComputeRoPE2(const CosOut, SinOut: TMemoryBlock; const MaxSeqLen, HeadDim: LongInt; const Theta: QNNFloat);
 
-procedure QNNComputeRoPE2D(
-    const CosOut, SinDst: TMemoryBlock;
-    const PatchH, PatchW, Dim: LongInt;
-    const Theta: QNNFloat
-);
+procedure QNNComputeRoPE2D(const CosOut, SinDst: TMemoryBlock; const PatchH, PatchW, Dim: LongInt; const Theta: QNNFloat);
 
-procedure QNNComputeRoPE2DOffset(
-    const CosOut, SinOut: TMemoryBlock;
-    const PatchH, PatchW, Dim: LongInt;
-    const Theta: QNNFloat;
-    const OffsetT: LongInt
-);
+procedure QNNComputeRoPE2DOffset(const CosOut, SinOut: TMemoryBlock; const PatchH, PatchW, Dim: LongInt; const Theta: QNNFloat; const OffsetT: LongInt);
 
 procedure QNNComputeRoPEText(const CosOut, SinOut: TMemoryBlock; const TxtSeq, AxisDim: LongInt; const Theta: QNNFloat);
 
@@ -378,38 +233,23 @@ procedure QNNApplyRoPE2(const Dst, CosIn, SinIn: TMemoryBlock; const NumHeads, H
 
 procedure QNNApplyRoPE3(const Dst, CosIn, SinIn: TMemoryBlock; const SeqLen, NumHeads, HeadDim: LongInt);
 
-procedure QNNApplyRoPEQK(
-    const Q, K, CosCache, SinCache: TMemoryBlock;
-    const SeqLen, NumQHeads, NumKvHeads, HeadDim: LongInt
-);
+procedure QNNApplyRoPEQK(const Q, K, CosCache, SinCache: TMemoryBlock; const SeqLen, NumQHeads, NumKvHeads, HeadDim: LongInt);
 
 procedure QNNApplyRoPE2D(const Dst, CosFreq, SinFreq: TMemoryBlock; const Seq, Heads, HeadDim, Dim: LongInt);
 // Positional Embedding
 
 function QNNTimeStepEmbedding(const T: QNNFloat; const Dim: Integer; const MaxPeriod: QNNFloat): TMemoryBlock;
 
-procedure QNNMatTriangularFill(
-    const Dim: Integer;
-    const Dst: TMemoryBlock;
-    const Val: QNNFloat;
-    const Mask: PLongint = nil
+procedure QNNMatTriangularFill(const Dim: Integer; const Dst: TMemoryBlock; const Val: QNNFloat; const Mask: PLongint = nil
 );
 
 procedure QNNMaskFill(const Dst: TMemoryBlock; const Mask: PLongint; const Val: QNNFloat; const Rows, Cols: LongInt);
 
 // Adaptive Layer Normalization
-procedure QNNAdaLN(
-    const Dst, Src, Bias, Scale: TMemoryBlock;
-    const Seq, Hidden: LongInt;
-    const Eps: QNNFloat = EPSILON
+procedure QNNAdaLN(const Dst, Src, Bias, Scale: TMemoryBlock; const Seq, Hidden: LongInt; const Eps: QNNFloat = EPSILON
 );
 
-procedure QNNLinearBF16OrF32(
-    const Dst, Src: System.PSingle;
-    const Weight: TMemoryBlock;
-    const WeightBF16: TMemoryBlock;
-    const Seq, SrcDim, DstDim: Integer
-);
+procedure QNNLinearBF16OrF32(const Dst, Src: System.PSingle; const Weight: TMemoryBlock; const WeightBF16: TMemoryBlock; const Seq, SrcDim, DstDim: Integer);
 
 {$IF not declared(FillWord)}
   {$DEFINE FILLWORD}
@@ -444,8 +284,7 @@ procedure qgemm(Order:CBLAS_ORDER; TransA:CBLAS_TRANSPOSE; TransB:CBLAS_TRANSPOS
 implementation
 
 uses
-  QuickNN.CPU,
-  QuickNN.Vulkan;
+  QuickNN.CPU, QuickNN.Vulkan;
 
 const
   OP_NOT_IMPL = 'Operation is not implemented for this datatype!';
@@ -493,28 +332,14 @@ begin
   Result := TQNNSingleOps.IsUsingBlas
 end;
 
-procedure CblasGemm(
-    Order: TCBLASOrder;
-    TransA: TCBLASTranspose;
-    TransB: TCBLASTranspose;
-    M: TBlasInt;
-    N: TBlasInt;
-    K: TBlasInt;
-    Alpha: Single;
-    A: TMemoryBlock;
-    Lda: TBlasInt;
-    B: TMemoryBlock;
-    Ldb: TBlasInt;
-    Beta: Single;
-    C: TMemoryBlock;
-    Ldc: TBlasInt
-); winapi;
+procedure CblasGemm(Order: TCBLASOrder; TransA: TCBLASTranspose; TransB: TCBLASTranspose; M: TBlasInt; N: TBlasInt; K: TBlasInt; Alpha: Single; A: TMemoryBlock; Lda: TBlasInt; B: TMemoryBlock; Ldb: TBlasInt; Beta: Single; C: TMemoryBlock; Ldc: TBlasInt); winapi;
 begin
 {$IF defined(USE_PROFILING)}
   Metrics.Start(opGemm);
 {$ENDIF}
   case C.DataType of
-    dtF32: TQNNSingleOps.CblasGemm(Order, TransA, TransB, M, N, K, Alpha, A, Lda, B, Ldb, Beta, C, Ldc);
+    dtF32:
+      TQNNSingleOps.CblasGemm(Order, TransA, TransB, M, N, K, Alpha, A, Lda, B, Ldb, Beta, C, Ldc);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -523,20 +348,14 @@ begin
 {$ENDIF}
 end;
 
-procedure CblasAxpy(
-    N: TBlasInt;
-    Alpha: Single;
-    X: TMemoryBlock;
-    IncX: TBlasInt;
-    Y: TMemoryBlock;
-    Incy: TBlasInt
-); winapi;
+procedure CblasAxpy(N: TBlasInt; Alpha: Single; X: TMemoryBlock; IncX: TBlasInt; Y: TMemoryBlock; Incy: TBlasInt); winapi;
 begin
 {$IF defined(USE_PROFILING)}
   Metrics.Start(opAxpy);
 {$ENDIF}
   case X.DataType of
-    dtF32: TQNNSingleOps.CblasAxpy(N, Alpha, X, IncX, Y, Incy);
+    dtF32:
+      TQNNSingleOps.CblasAxpy(N, Alpha, X, IncX, Y, Incy);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -551,7 +370,8 @@ begin
   Metrics.Start(opDot);
 {$ENDIF}
   case X.DataType of
-    dtF32: Result := TQNNSingleOps.CblasDot(N, X, IncX, Y, Incy);
+    dtF32:
+      Result := TQNNSingleOps.CblasDot(N, X, IncX, Y, Incy);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -566,7 +386,8 @@ begin
   Metrics.Start(opAbsSum);
 {$ENDIF}
   case X.DataType of
-    dtF32: Result := TQNNSingleOps.CblasAsum(N, X, IncX);
+    dtF32:
+      Result := TQNNSingleOps.CblasAsum(N, X, IncX);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -581,7 +402,8 @@ begin
   Metrics.Start(opMulvs);
 {$ENDIF}
   case X.DataType of
-    dtF32: TQNNSingleOps.CblasScal(N, Alpha, X, IncX);
+    dtF32:
+      TQNNSingleOps.CblasScal(N, Alpha, X, IncX);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -599,7 +421,8 @@ begin
   Assert(B.Offset + N <= B.Size, 'ERROR [QNNAdd] : N is out of destination tesnor bounds');
   Assert(Dst.Offset + N <= Dst.Size, 'ERROR [QNNAdd] : N is out of destination tesnor bounds');
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNAdd(Dst, A, B, N);
+    dtF32:
+      TQNNSingleOps.QNNAdd(Dst, A, B, N);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -616,7 +439,8 @@ begin
   Assert(A.Offset + N <= A.Size, 'ERROR [QNNAddInplace] : N is out of source tesnor bounds');
   Assert(Dst.Offset + N <= Dst.Size, 'ERROR [QNNAddInplace] : N is out of destination tesnor bounds');
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNAddInplace(Dst, A, N);
+    dtF32:
+      TQNNSingleOps.QNNAddInplace(Dst, A, N);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -634,7 +458,8 @@ begin
   Assert(B.Offset + N <= B.Size, 'ERROR [QNNMul] : N is out of destination tesnor bounds');
   Assert(Dst.Offset + N <= Dst.Size, 'ERROR [QNNMul] : N is out of destination tesnor bounds');
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNMul(Dst, A, B, N);
+    dtF32:
+      TQNNSingleOps.QNNMul(Dst, A, B, N);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -651,7 +476,8 @@ begin
   Assert(A.Offset + N <= A.Size, 'ERROR [QNNMulInplace] : N is out of source tesnor bounds');
   Assert(Dst.Offset + N <= Dst.Size, 'ERROR [QNNMulInplace] : N is out of destination tesnor bounds');
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNMulInplace(Dst, A, N);
+    dtF32:
+      TQNNSingleOps.QNNMulInplace(Dst, A, N);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -668,7 +494,8 @@ begin
   Assert(Src.Offset + N <= Src.Size, 'ERROR [QNNScale] : N is out of source tesnor bounds');
   Assert(Dst.Offset + N <= Dst.Size, 'ERROR [QNNScale] : N is out of destination tesnor bounds');
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNScale(Dst, Src, AScale, N);
+    dtF32:
+      TQNNSingleOps.QNNScale(Dst, Src, AScale, N);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -684,7 +511,8 @@ begin
 {$ENDIF}
   Assert(Dst.Offset + N <= Dst.Size, 'ERROR [QNNScaleInplace] : N is out of destination tesnor bounds');
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNScaleInplace(Dst, AScale, N);
+    dtF32:
+      TQNNSingleOps.QNNScaleInplace(Dst, AScale, N);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -701,7 +529,8 @@ begin
   Assert(Src.Offset + N <= Src.Size, 'ERROR [QNNBias] : N is out of source tesnor bounds');
   Assert(Dst.Offset + N <= Dst.Size, 'ERROR [QNNBias] : N is out of destination tesnor bounds');
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNBias(Dst, Src, ABias, N)
+    dtF32:
+      TQNNSingleOps.QNNBias(Dst, Src, ABias, N)
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -717,7 +546,8 @@ begin
 {$ENDIF}
   Assert(Dst.Offset + N <= Dst.Size, 'ERROR [QNNBiasInplace] : N is out of destination tesnor bounds');
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNBiasInplace(Dst, ABias, N);
+    dtF32:
+      TQNNSingleOps.QNNBiasInplace(Dst, ABias, N);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -736,7 +566,8 @@ begin
   Assert(SrcA.Offset + N <= SrcA.Size, 'ERROR [QNNFusedMulAdd] : N is out of sourceA tesnor bounds');
   Assert(SrcM.Offset + N <= SrcM.Size, 'ERROR [QNNFusedMulAdd] : N is out of sourceM tesnor bounds');
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNFusedMulAdd(Dst, Src, SrcM, SrcA, N);
+    dtF32:
+      TQNNSingleOps.QNNFusedMulAdd(Dst, Src, SrcM, SrcA, N);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -755,7 +586,8 @@ begin
   Assert(SrcA.Offset + N <= SrcA.Size, 'ERROR [QNNFusedAddMul] : N is out of sourceA tesnor bounds');
   Assert(SrcM.Offset + N <= SrcM.Size, 'ERROR [QNNFusedAddMul] : N is out of sourceM tesnor bounds');
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNFusedAddMul(Dst, Src, SrcA, SrcM, N);
+    dtF32:
+      TQNNSingleOps.QNNFusedAddMul(Dst, Src, SrcA, SrcM, N);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -772,7 +604,8 @@ begin
   Assert(Src.Offset + N <= Src.Size, 'ERROR [QNNFusedScaleBias] : N is out of source tesnor bounds');
   Assert(Dst.Offset + N <= Dst.Size, 'ERROR [QNNFusedScaleBias] : N is out of destination tesnor bounds');
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNFusedScaleBias(Dst, Src, AScale, ABias, N);
+    dtF32:
+      TQNNSingleOps.QNNFusedScaleBias(Dst, Src, AScale, ABias, N);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -789,7 +622,8 @@ begin
   Assert(Src.Offset + N <= Src.Size, 'ERROR [QNNFusedBiasScale] : N is out of source tesnor bounds');
   Assert(Dst.Offset + N <= Dst.Size, 'ERROR [QNNFusedBiasScale] : N is out of destination tesnor bounds');
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNFusedBiasScale(Dst, Src, ABias, AScale, N);
+    dtF32:
+      TQNNSingleOps.QNNFusedBiasScale(Dst, Src, ABias, AScale, N);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -807,7 +641,8 @@ begin
   Assert(SrcM.Offset + N <= SrcM.Size, 'ERROR [QNNFusedMulScale] : N is out of sourceM tesnor bounds');
   Assert(Dst.Offset + N <= Dst.Size, 'ERROR [QNNFusedMulScale] : N is out of destination tesnor bounds');
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNFusedMulScale(Dst, Src, SrcM, AScale, N);
+    dtF32:
+      TQNNSingleOps.QNNFusedMulScale(Dst, Src, SrcM, AScale, N);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -825,7 +660,8 @@ begin
   Assert(SrcM.Offset + N <= SrcM.Size, 'ERROR [QNNFusedBiasMulScale] : N is out of sourceM tesnor bounds');
   Assert(Dst.Offset + N <= Dst.Size, 'ERROR [QNNFusedBiasMulScale] : N is out of destination tesnor bounds');
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNFusedBiasMulScale(Dst, Src, SrcM, ABias, AScale, N);
+    dtF32:
+      TQNNSingleOps.QNNFusedBiasMulScale(Dst, Src, SrcM, ABias, AScale, N);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -844,7 +680,8 @@ begin
   Assert(Dst.Offset + N <= Dst.Size, 'ERROR [QNNFusedScaleAdd] : N is out of destination tesnor bounds');
 
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNFusedScaleAdd(Dst, Src, SrcAdd, AScale, N);
+    dtF32:
+      TQNNSingleOps.QNNFusedScaleAdd(Dst, Src, SrcAdd, AScale, N);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -862,7 +699,8 @@ begin
   Assert(SrcA.Offset + N <= SrcA.Size, 'ERROR [QNNFusedBiasAdd] : N is out of sourceAdd tesnor bounds');
   Assert(Dst.Offset + N <= Dst.Size, 'ERROR [QNNFusedBiasAdd] : N is out of destination tesnor bounds');
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNFusedBiasAdd(Dst, Src, SrcA, ABias, N);
+    dtF32:
+      TQNNSingleOps.QNNFusedBiasAdd(Dst, Src, SrcA, ABias, N);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -879,7 +717,8 @@ begin
   Assert(A.Offset + N <= A.Size, 'ERROR [QNNDot] : N is out of source tesnor bounds');
   Assert(B.Offset + N <= B.Size, 'ERROR [QNNDot] : N is out of destination tesnor bounds');
   case A.DataType of
-    dtF32: Result := TQNNSingleOps.QNNDot(A, B, N);
+    dtF32:
+      Result := TQNNSingleOps.QNNDot(A, B, N);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -897,7 +736,8 @@ begin
   Assert(B.Offset + N <= B.Size, 'ERROR [QNNAccAdd] : N is out of destination tesnor bounds');
   Assert(Dst.Offset + N <= Dst.Size, 'ERROR [QNNAccAdd] : N is out of destination tesnor bounds');
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNAccAdd(Dst, A, B, N);
+    dtF32:
+      TQNNSingleOps.QNNAccAdd(Dst, A, B, N);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -915,7 +755,8 @@ begin
   Assert(B.Offset + N <= B.Size, 'ERROR [QNNAccMul] : N is out of destination tesnor bounds');
   Assert(Dst.Offset + N <= Dst.Size, 'ERROR [QNNAccMul] : N is out of destination tesnor bounds');
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNAccMul(Dst, A, B, N);
+    dtF32:
+      TQNNSingleOps.QNNAccMul(Dst, A, B, N);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -930,7 +771,8 @@ begin
   Metrics.Start(opGemm);
 {$ENDIF}
   case C.DataType of
-    dtF32: TQNNSingleOps.QNNMatMulNN(C, A, B, M, K, N);
+    dtF32:
+      TQNNSingleOps.QNNMatMulNN(C, A, B, M, K, N);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -966,7 +808,8 @@ begin
   Metrics.Start(opGemm);
 {$ENDIF}
   case C.DataType of
-    dtF32: TQNNSingleOps.QNNMatMulTN(C, A, B, M, K, N);
+    dtF32:
+      TQNNSingleOps.QNNMatMulTN(C, A, B, M, K, N);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -983,7 +826,8 @@ begin
   Assert(Src.Offset + SrcRows * SrcCols <= Src.Size, 'QNNTranspose : src dimensions out of bounds.');
   Assert(Dst.Offset + SrcRows * SrcCols <= Dst.Size, 'QNNTranspose : dst dimensions out of bounds.');
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNMatTranspose(Dst, Src, SrcRows, SrcCols);
+    dtF32:
+      TQNNSingleOps.QNNMatTranspose(Dst, Src, SrcRows, SrcCols);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1052,7 +896,8 @@ begin
   Metrics.Start(opGemm);
 {$ENDIF}
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNLinearNoBiasBF16(Dst, X, W, SeqLen, InDIM, OutDIM);
+    dtF32:
+      TQNNSingleOps.QNNLinearNoBiasBF16(Dst, X, W, SeqLen, InDIM, OutDIM);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1061,24 +906,7 @@ begin
 {$ENDIF}
 end;
 
-procedure QNNIm2Col(
-    const AChannels,
-    AHeight,
-    AWidth,
-    KernelHeight,
-    KernelWidth,
-    PadHeight,
-    PadWidth,
-    StrideY,
-    StrideX,
-    DilationY,
-    DilationX: Integer;
-    const Im: TMemoryBlock;
-    const Col: TMemoryBlock;
-    const ImOffset: Integer;
-    const ColOffset: Integer;
-    const MultiThread: Boolean
-);
+procedure QNNIm2Col(const AChannels, AHeight, AWidth, KernelHeight, KernelWidth, PadHeight, PadWidth, StrideY, StrideX, DilationY, DilationX: Integer; const Im: TMemoryBlock; const Col: TMemoryBlock; const ImOffset: Integer; const ColOffset: Integer; const MultiThread: Boolean);
 begin
 {$IF defined(USE_PROFILING)}
   Metrics.Start(opIm2col);
@@ -1087,22 +915,22 @@ begin
   case Col.DataType of
     dtF32:
       TQNNSingleOps.QNNIm2Col(
-          AChannels,
-          AHeight,
-          AWidth,
-          KernelHeight,
-          KernelWidth,
-          PadHeight,
-          PadWidth,
-          StrideY,
-          StrideX,
-          DilationY,
-          DilationX,
-          Im,
-          Col,
-          ImOffset,
-          ColOffset,
-          MultiThread
+        AChannels,
+        AHeight,
+        AWidth,
+        KernelHeight,
+        KernelWidth,
+        PadHeight,
+        PadWidth,
+        StrideY,
+        StrideX,
+        DilationY,
+        DilationX,
+        Im,
+        Col,
+        ImOffset,
+        ColOffset,
+        MultiThread
       );
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
@@ -1112,24 +940,7 @@ begin
 {$ENDIF}
 end;
 
-procedure QNNIm2ColStridedBatched(
-    const AChannels,
-    AHeight,
-    AWidth,
-    KernelHeight,
-    KernelWidth,
-    PadHeight,
-    PadWidth,
-    StrideY,
-    StrideX,
-    DilationY,
-    DilationX: Integer;
-    const Im: TMemoryBlock;
-    const ImStride, ImOffset: Integer;
-    const Col: TMemoryBlock;
-    const ColStride, ColOffset: Integer;
-    const Batch: Integer
-);
+procedure QNNIm2ColStridedBatched(const AChannels, AHeight, AWidth, KernelHeight, KernelWidth, PadHeight, PadWidth, StrideY, StrideX, DilationY, DilationX: Integer; const Im: TMemoryBlock; const ImStride, ImOffset: Integer; const Col: TMemoryBlock; const ColStride, ColOffset: Integer; const Batch: Integer);
 begin
 {$IF defined(USE_PROFILING)}
   Metrics.Start(opIm2ColExt);
@@ -1138,24 +949,24 @@ begin
   case Col.DataType of
     dtF32:
       TQNNSingleOps.QNNIm2ColStridedBatched(
-          AChannels,
-          AHeight,
-          AWidth,
-          KernelHeight,
-          KernelWidth,
-          PadHeight,
-          PadWidth,
-          StrideY,
-          StrideX,
-          DilationY,
-          DilationX,
-          Im,
-          ImStride,
-          ImOffset,
-          Col,
-          ColStride,
-          ColOffset,
-          Batch
+        AChannels,
+        AHeight,
+        AWidth,
+        KernelHeight,
+        KernelWidth,
+        PadHeight,
+        PadWidth,
+        StrideY,
+        StrideX,
+        DilationY,
+        DilationX,
+        Im,
+        ImStride,
+        ImOffset,
+        Col,
+        ColStride,
+        ColOffset,
+        Batch
       );
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
@@ -1174,12 +985,7 @@ end;
 const
   SZ: Int64 = 0;
 
-procedure QNNConv2d(
-    var Dst: TMemoryBlock;
-    const Src, Weights, Bias: TMemoryBlock;
-    const InCh, OutCh, H, W, KH, KW, Stride, Padding: LongInt;
-    const Batch: LongInt
-);
+procedure QNNConv2d(var Dst: TMemoryBlock; const Src, Weights, Bias: TMemoryBlock; const InCh, OutCh, H, W, KH, KW, Stride, Padding: LongInt; const Batch: LongInt);
 var
   Dims: TArray<Int64>;
 begin
@@ -1190,7 +996,8 @@ begin
   Assert(Dst.Offset + Product(Dims) <= Dst.Size, 'ERROR [Conv2D] : Incorrect destination size');
   Dst.Reshape(Dims);
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNConv2d(Dst, Src, Weights, Bias, InCh, OutCh, H, W, KH, KW, Stride, Padding, Batch);
+    dtF32:
+      TQNNSingleOps.QNNConv2d(Dst, Src, Weights, Bias, InCh, OutCh, H, W, KH, KW, Stride, Padding, Batch);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1208,7 +1015,8 @@ begin
   Assert(Weights.Offset + N <= Weights.Size, 'ERROR [QNNNorm] : N is out of weights tesnor bounds');
   Assert(Dst.Offset + N <= Dst.Size, 'ERROR [QNNNorm] : N is out of destination tesnor bounds');
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNNorm(N, Dst, Src, Weights, Stride);
+    dtF32:
+      TQNNSingleOps.QNNNorm(N, Dst, Src, Weights, Stride);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1217,12 +1025,7 @@ begin
 {$ENDIF}
 end;
 
-procedure QNNRMSNorm(
-    const N: LongInt;
-    const Dst, Src: TMemoryBlock;
-    const Weights: TMemoryBlock;
-    const Stride: LongInt
-);
+procedure QNNRMSNorm(const N: LongInt; const Dst, Src: TMemoryBlock; const Weights: TMemoryBlock; const Stride: LongInt);
 begin
 {$IF defined(USE_PROFILING)}
   Metrics.Start(opRMSNorm);
@@ -1231,7 +1034,8 @@ begin
   Assert(Weights.Offset + N <= Weights.Size, 'ERROR [QNNRMSNorm] : N is out of weights tesnor bounds');
   Assert(Dst.Offset + N <= Dst.Size, 'ERROR [QNNRMSNorm] : N is out of destination tesnor bounds');
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNRMSNorm(N, Dst, Src, Weights, Stride);
+    dtF32:
+      TQNNSingleOps.QNNRMSNorm(N, Dst, Src, Weights, Stride);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1249,7 +1053,8 @@ begin
   Assert(Weight.Offset + Dim <= Weight.Size, 'ERROR [QNNRMSNormRows] : dim is out of weight tesnor bounds');
   Assert(Dst.Offset + Dim * Rows <= Dst.Size, 'ERROR [QNNRMSNormRows] : out of destination tesnor bounds');
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNRMSNormRows(Dst, Src, Weight, Rows, Dim);
+    dtF32:
+      TQNNSingleOps.QNNRMSNormRows(Dst, Src, Weight, Rows, Dim);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1265,7 +1070,8 @@ begin
 {$ENDIF}
   Assert(Dst.Offset + N <= Dst.Size, 'ERROR [QNNTanh] : N is out of destination tesnor bounds');
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNTanh(Dst, N);
+    dtF32:
+      TQNNSingleOps.QNNTanh(Dst, N);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1284,7 +1090,8 @@ begin
   Assert(K.Offset + Seq * Heads * HeadDim <= K.Size, 'ERROR [QNNQKRMSNorm] : out of K tesnor bounds');
   Assert(KWeights.Offset + HeadDim <= KWeights.Size, 'ERROR [QNNQKRMSNorm] : headDim is out of Kweights tesnor bounds');
   case Q.DataType of
-    dtF32: TQNNSingleOps.QNNQKRMSNorm(Q, K, QWeights, KWeights, Seq, Heads, HeadDim);
+    dtF32:
+      TQNNSingleOps.QNNQKRMSNorm(Q, K, QWeights, KWeights, Seq, Heads, HeadDim);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1299,12 +1106,13 @@ begin
   Metrics.Start(opRMSNorm);
 {$ENDIF}
   Assert(
-      NormWeights.Offset + HeadDim <= NormWeights.Size,
-      'ERROR [QNNRMSNormSeq] : headDim is out of weights tesnor bounds'
+    NormWeights.Offset + HeadDim <= NormWeights.Size,
+    'ERROR [QNNRMSNormSeq] : headDim is out of weights tesnor bounds'
   );
   Assert(Dst.Offset + Seq * Heads * HeadDim <= Dst.Size, 'ERROR [QNNRMSNormSeq] : out of destination tesnor bounds');
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNRMSNormSeq(Dst, NormWeights, Seq, Heads, HeadDim);
+    dtF32:
+      TQNNSingleOps.QNNRMSNormSeq(Dst, NormWeights, Seq, Heads, HeadDim);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1324,7 +1132,8 @@ begin
   Assert(Dst.Offset + Batch * Channels * H * W <= Dst.Size, 'ERROR [QNNGroupNorm] : out of destination tesnor bounds');
 
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNGroupNorm(Dst, Src, Gamma, Beta, Batch, Channels, H, W, NumGroups)
+    dtF32:
+      TQNNSingleOps.QNNGroupNorm(Dst, Src, Gamma, Beta, Batch, Channels, H, W, NumGroups)
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1333,34 +1142,32 @@ begin
 {$ENDIF}
 end;
 
-procedure QNNBatchNormGammaBeta(
-    const Dst, Src, RunningMean, RunningVar, Gamma, Beta: TMemoryBlock;
-    const Batch, Channels, H, W: Integer
-);
+procedure QNNBatchNormGammaBeta(const Dst, Src, RunningMean, RunningVar, Gamma, Beta: TMemoryBlock; const Batch, Channels, H, W: Integer);
 begin
 {$IF defined(USE_PROFILING)}
   Metrics.Start(opBatchNorm);
 {$ENDIF}
   Assert(
-      RunningMean.Offset + Channels <= RunningMean.Size,
-      'ERROR [QNNBatchNormGammaBeta] : out of running_mean tesnor bounds'
+    RunningMean.Offset + Channels <= RunningMean.Size,
+    'ERROR [QNNBatchNormGammaBeta] : out of running_mean tesnor bounds'
   );
   Assert(
-      RunningVar.Offset + Channels <= RunningVar.Size,
-      'ERROR [QNNBatchNormGammaBeta] : out of running_var tesnor bounds'
+    RunningVar.Offset + Channels <= RunningVar.Size,
+    'ERROR [QNNBatchNormGammaBeta] : out of running_var tesnor bounds'
   );
   Assert(Gamma.Offset + Channels <= Gamma.Size, 'ERROR [QNNBatchNormGammaBeta] : out of gamma tesnor bounds');
   Assert(Beta.Offset + Channels <= Beta.Size, 'ERROR [QNNBatchNormGammaBeta] : out of beta tesnor bounds');
   Assert(
-      Src.Offset + Batch * Channels * H * W <= Src.Size,
-      'ERROR [QNNBatchNormGammaBeta] : out of source tesnor bounds'
+    Src.Offset + Batch * Channels * H * W <= Src.Size,
+    'ERROR [QNNBatchNormGammaBeta] : out of source tesnor bounds'
   );
   Assert(
-      Dst.Offset + Batch * Channels * H * W <= Dst.Size,
-      'ERROR [QNNBatchNormGammaBeta] : out of destination tesnor bounds'
+    Dst.Offset + Batch * Channels * H * W <= Dst.Size,
+    'ERROR [QNNBatchNormGammaBeta] : out of destination tesnor bounds'
   );
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNBatchNorm(Dst, Src, RunningMean, RunningVar, Gamma, Beta, Batch, Channels, H, W);
+    dtF32:
+      TQNNSingleOps.QNNBatchNorm(Dst, Src, RunningMean, RunningVar, Gamma, Beta, Batch, Channels, H, W);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1379,7 +1186,8 @@ begin
   Assert(Src.Offset + Batch * Channels * H * W <= Src.Size, 'ERROR [QNNBatchNorm] : out of source tesnor bounds');
   Assert(Dst.Offset + Batch * Channels * H * W <= Dst.Size, 'ERROR [QNNBatchNorm] : out of destination tesnor bounds');
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNBatchNorm(Dst, Src, RunningMean, RunningVar, nil, nil, Batch, Channels, H, W);
+    dtF32:
+      TQNNSingleOps.QNNBatchNorm(Dst, Src, RunningMean, RunningVar, nil, nil, Batch, Channels, H, W);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1388,21 +1196,15 @@ begin
 {$ENDIF}
 end;
 
-procedure QNNMinMax(
-    const N: Integer;
-    const Src: TMemoryBlock;
-    out OutMin, OutMax: QNNFloat;
-    const ArgMin: PInteger;
-    const ArgMax: PInteger;
-    const Stride: Integer
-);
+procedure QNNMinMax(const N: Integer; const Src: TMemoryBlock; out OutMin, OutMax: QNNFloat; const ArgMin: PInteger; const ArgMax: PInteger; const Stride: Integer);
 begin
 {$IF defined(USE_PROFILING)}
   Metrics.Start(opMinAndMax);
 {$ENDIF}
 
   case Src.DataType of
-    dtF32: TQNNSingleOps.QNNMinMax(N, Src, OutMin, OutMax, ArgMin, ArgMax, Stride);
+    dtF32:
+      TQNNSingleOps.QNNMinMax(N, Src, OutMin, OutMax, ArgMin, ArgMax, Stride);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1418,7 +1220,8 @@ begin
 {$ENDIF}
 
   case Src.DataType of
-    dtF32: Result := TQNNSingleOps.QNNMax(N, Src, Arg, Stride);
+    dtF32:
+      Result := TQNNSingleOps.QNNMax(N, Src, Arg, Stride);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1434,7 +1237,8 @@ begin
 {$ENDIF}
 
   case Src.DataType of
-    dtF32: Result := TQNNSingleOps.QNNMin(N, Src, Arg, Stride);
+    dtF32:
+      Result := TQNNSingleOps.QNNMin(N, Src, Arg, Stride);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1450,7 +1254,8 @@ begin
 {$ENDIF}
 
   case Src.DataType of
-    dtF32: Result := TQNNSingleOps.QNNMaxAbs(N, Src, Stride);
+    dtF32:
+      Result := TQNNSingleOps.QNNMaxAbs(N, Src, Stride);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1466,7 +1271,8 @@ begin
 {$ENDIF}
 
   case Src.DataType of
-    dtF32: Result := TQNNSingleOps.QNNMinAbs(N, Src, Stride);
+    dtF32:
+      Result := TQNNSingleOps.QNNMinAbs(N, Src, Stride);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1482,7 +1288,8 @@ begin
 {$ENDIF}
 
   case Src.DataType of
-    dtF32: Result := TQNNSingleOps.QNNArgMax(N, Src, Stride);
+    dtF32:
+      Result := TQNNSingleOps.QNNArgMax(N, Src, Stride);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1498,7 +1305,8 @@ begin
 {$ENDIF}
 
   case Src.DataType of
-    dtF32: Result := TQNNSingleOps.QNNArgMin(N, Src, Stride);
+    dtF32:
+      Result := TQNNSingleOps.QNNArgMin(N, Src, Stride);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1514,7 +1322,8 @@ begin
 {$ENDIF}
 
   case Src.DataType of
-    dtF32: Result := TQNNSingleOps.QNNSum(N, Src, Stride);
+    dtF32:
+      Result := TQNNSingleOps.QNNSum(N, Src, Stride);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1530,7 +1339,8 @@ begin
 {$ENDIF}
 
   case Src.DataType of
-    dtF32: Result := TQNNSingleOps.QNNSumSqr(N, Src, Stride);
+    dtF32:
+      Result := TQNNSingleOps.QNNSumSqr(N, Src, Stride);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1539,19 +1349,15 @@ begin
 {$ENDIF}
 end;
 
-function QNNSumSqrDiff(
-    const N: Integer;
-    const Src: TMemoryBlock;
-    const AMean: QNNFloat;
-    const Stride: Integer
-): QNNFloat;
+function QNNSumSqrDiff(const N: Integer; const Src: TMemoryBlock; const AMean: QNNFloat; const Stride: Integer): QNNFloat;
 begin
 {$IF defined(USE_PROFILING)}
   Metrics.Start(opSumSqrDiffScaler);
 {$ENDIF}
 
   case Src.DataType of
-    dtF32: Result := TQNNSingleOps.QNNSumSqrDiff(N, Src, AMean, Stride);
+    dtF32:
+      Result := TQNNSingleOps.QNNSumSqrDiff(N, Src, AMean, Stride);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1567,7 +1373,8 @@ begin
 {$ENDIF}
 
   case Src1.DataType of
-    dtF32: Result := TQNNSingleOps.QNNSqrDistance(N, Src1, Src2, Stride);
+    dtF32:
+      Result := TQNNSingleOps.QNNSqrDistance(N, Src1, Src2, Stride);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1576,19 +1383,15 @@ begin
 {$ENDIF}
 end;
 
-function QNNMaxAbsDiff2(
-    const N: Integer;
-    const Src1, Src2: TMemoryBlock;
-    out OutSrc1, OutSrc2: QNNFloat;
-    const Stride: Integer
-): QNNFloat;
+function QNNMaxAbsDiff2(const N: Integer; const Src1, Src2: TMemoryBlock; out OutSrc1, OutSrc2: QNNFloat; const Stride: Integer): QNNFloat;
 begin
 {$IF defined(USE_PROFILING)}
   Metrics.Start(opMaxAbsDiff);
 {$ENDIF}
 
   case Src1.DataType of
-    dtF32: Result := TQNNSingleOps.QNNMaxAbsDiff2(N, Src1, Src2, OutSrc1, OutSrc2, Stride);
+    dtF32:
+      Result := TQNNSingleOps.QNNMaxAbsDiff2(N, Src1, Src2, OutSrc1, OutSrc2, Stride);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1604,7 +1407,8 @@ begin
 {$ENDIF}
 
   case Src1.DataType of
-    dtF32: Result := TQNNSingleOps.QNNMaxAbsDiff(N, Src1, Src2, Stride);
+    dtF32:
+      Result := TQNNSingleOps.QNNMaxAbsDiff(N, Src1, Src2, Stride);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1620,7 +1424,8 @@ begin
 {$ENDIF}
 
   case Src1.DataType of
-    dtF32: Result := TQNNSingleOps.QNNSumAbsDiff(N, Src1, Src2, Stride);
+    dtF32:
+      Result := TQNNSingleOps.QNNSumAbsDiff(N, Src1, Src2, Stride);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1629,19 +1434,15 @@ begin
 {$ENDIF}
 end;
 
-function QNNSumAbsDiffScalar(
-    const N: Integer;
-    const Src: TMemoryBlock;
-    const AMean: QNNFloat;
-    const Stride: Integer
-): QNNFloat;
+function QNNSumAbsDiffScalar(const N: Integer; const Src: TMemoryBlock; const AMean: QNNFloat; const Stride: Integer): QNNFloat;
 begin
 {$IF defined(USE_PROFILING)}
   Metrics.Start(opAbsDiffScaler);
 {$ENDIF}
 
   case Src.DataType of
-    dtF32: Result := TQNNSingleOps.QNNSumAbsDiffScalar(N, Src, AMean, Stride);
+    dtF32:
+      Result := TQNNSingleOps.QNNSumAbsDiffScalar(N, Src, AMean, Stride);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1657,7 +1458,8 @@ begin
 {$ENDIF}
 
   case Src.DataType of
-    dtF32: Result := TQNNSingleOps.QNNMean(N, Src, Stride);
+    dtF32:
+      Result := TQNNSingleOps.QNNMean(N, Src, Stride);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1666,20 +1468,15 @@ begin
 {$ENDIF}
 end;
 
-function QNNVariance(
-    const N: Integer;
-    const Src: TMemoryBlock;
-    const AMean: QNNFloat;
-    const Stride: Integer;
-    const IsPopulation: Boolean
-): QNNFloat;
+function QNNVariance(const N: Integer; const Src: TMemoryBlock; const AMean: QNNFloat; const Stride: Integer; const IsPopulation: Boolean): QNNFloat;
 begin
 {$IF defined(USE_PROFILING)}
   Metrics.Start(opVariances);
 {$ENDIF}
 
   case Src.DataType of
-    dtF32: Result := TQNNSingleOps.QNNVariance(N, Src, AMean, Stride, IsPopulation);
+    dtF32:
+      Result := TQNNSingleOps.QNNVariance(N, Src, AMean, Stride, IsPopulation);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1695,7 +1492,8 @@ begin
 {$ENDIF}
 
   case X.DataType of
-    dtF32: TQNNSingleOps.QNNSigmoidInplace(X, N);
+    dtF32:
+      TQNNSingleOps.QNNSigmoidInplace(X, N);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1711,7 +1509,8 @@ begin
 {$ENDIF}
 
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNSigmoid(Dst, Src, N);
+    dtF32:
+      TQNNSingleOps.QNNSigmoid(Dst, Src, N);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1727,7 +1526,8 @@ begin
 {$ENDIF}
 
   case X.DataType of
-    dtF32: TQNNSingleOps.QNNSiluInplace(X, N);
+    dtF32:
+      TQNNSingleOps.QNNSiluInplace(X, N);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1743,7 +1543,8 @@ begin
 {$ENDIF}
 
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNSilu(Dst, Src, N);
+    dtF32:
+      TQNNSingleOps.QNNSilu(Dst, Src, N);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1759,7 +1560,8 @@ begin
 {$ENDIF}
 
   case Gate.DataType of
-    dtF32: TQNNSingleOps.QNNSiluMul(Gate, Up, N);
+    dtF32:
+      TQNNSingleOps.QNNSiluMul(Gate, Up, N);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1775,7 +1577,8 @@ begin
 {$ENDIF}
 
   case X.DataType of
-    dtF32: TQNNSingleOps.QNNSoftmax(X, N);
+    dtF32:
+      TQNNSingleOps.QNNSoftmax(X, N);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1807,18 +1610,15 @@ begin
 {$ENDIF}
 end;
 
-procedure QNNAttention(
-    const Dst, Q, K, V: TMemoryBlock;
-    const Batch, Heads, SeqQ, SeqK, HeadDim: LongInt;
-    const Scale: QNNFloat
-);
+procedure QNNAttention(const Dst, Q, K, V: TMemoryBlock; const Batch, Heads, SeqQ, SeqK, HeadDim: LongInt; const Scale: QNNFloat);
 begin
 {$IF defined(USE_PROFILING)}
   Metrics.Start(opAttention);
 {$ENDIF}
 
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNAttention(Dst, Q, K, V, Batch, Heads, SeqQ, SeqK, HeadDim, Scale);
+    dtF32:
+      TQNNSingleOps.QNNAttention(Dst, Q, K, V, Batch, Heads, SeqQ, SeqK, HeadDim, Scale);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1827,18 +1627,15 @@ begin
 {$ENDIF}
 end;
 
-procedure QNNFlashAttentionHead(
-    const Dst, Q, K, V: TMemoryBlock;
-    const SeqQ, SeqK, HeadDim: LongInt;
-    const Scale: QNNFloat
-);
+procedure QNNFlashAttentionHead(const Dst, Q, K, V: TMemoryBlock; const SeqQ, SeqK, HeadDim: LongInt; const Scale: QNNFloat);
 begin
 {$IF defined(USE_PROFILING)}
   Metrics.Start(opAttentionHead);
 {$ENDIF}
 
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNFlashAttentionHead(Dst, Q, K, V, SeqQ, SeqK, HeadDim, Scale);
+    dtF32:
+      TQNNSingleOps.QNNFlashAttentionHead(Dst, Q, K, V, SeqQ, SeqK, HeadDim, Scale);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1847,13 +1644,7 @@ begin
 {$ENDIF}
 end;
 
-procedure QNNFlashAttentionHeadTiled(
-    const Dst, Q, K, V: TMemoryBlock;
-    const SeqQ, SeqK, HeadDim: LongInt;
-    const Scale: QNNFloat;
-    const TileScores: TMemoryBlock;
-    const QTileSize, KTileSize: LongInt
-);
+procedure QNNFlashAttentionHeadTiled(const Dst, Q, K, V: TMemoryBlock; const SeqQ, SeqK, HeadDim: LongInt; const Scale: QNNFloat; const TileScores: TMemoryBlock; const QTileSize, KTileSize: LongInt);
 begin
 {$IF defined(USE_PROFILING)}
   Metrics.Start(opAttentionHeadTiled);
@@ -1862,7 +1653,7 @@ begin
   case Dst.DataType of
     dtF32:
       TQNNSingleOps
-          .QNNFlashAttentionHeadTiled(Dst, Q, K, V, SeqQ, SeqK, HeadDim, Scale, TileScores, QTileSize, KTileSize);
+        .QNNFlashAttentionHeadTiled(Dst, Q, K, V, SeqQ, SeqK, HeadDim, Scale, TileScores, QTileSize, KTileSize);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1871,18 +1662,15 @@ begin
 {$ENDIF}
 end;
 
-procedure QNNFlashAttention(
-    const Dst, Q, K, V: TMemoryBlock;
-    const SeqQ, SeqK, Heads, HeadDim: LongInt;
-    const Scale: QNNFloat
-);
+procedure QNNFlashAttention(const Dst, Q, K, V: TMemoryBlock; const SeqQ, SeqK, Heads, HeadDim: LongInt; const Scale: QNNFloat);
 begin
 {$IF defined(USE_PROFILING)}
   Metrics.Start(opFlashAttention);
 {$ENDIF}
 
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNFlashAttention(Dst, Q, K, V, SeqQ, SeqK, Heads, HeadDim, Scale);
+    dtF32:
+      TQNNSingleOps.QNNFlashAttention(Dst, Q, K, V, SeqQ, SeqK, Heads, HeadDim, Scale);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1898,7 +1686,8 @@ begin
 {$ENDIF}
 
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNUpSampleNearest(Dst, Src, Batch, Channels, H, W, ScaleH, ScaleW);
+    dtF32:
+      TQNNSingleOps.QNNUpSampleNearest(Dst, Src, Batch, Channels, H, W, ScaleH, ScaleW);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1907,19 +1696,15 @@ begin
 {$ENDIF}
 end;
 
-procedure QNNUpSample(
-    const Dst, Src: TMemoryBlock;
-    const Batch, Channels, H, W: LongInt;
-    const ScaleH, ScaleW: QNNFloat;
-    const Interpolation: TInterpolation
-);
+procedure QNNUpSample(const Dst, Src: TMemoryBlock; const Batch, Channels, H, W: LongInt; const ScaleH, ScaleW: QNNFloat; const Interpolation: TInterpolation);
 begin
 {$IF defined(USE_PROFILING)}
   Metrics.Start(opUpSample);
 {$ENDIF}
 
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNUpSample(Dst, Src, Batch, Channels, H, W, ScaleH, ScaleW, Interpolation);
+    dtF32:
+      TQNNSingleOps.QNNUpSample(Dst, Src, Batch, Channels, H, W, ScaleH, ScaleW, Interpolation);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1935,7 +1720,8 @@ begin
 {$ENDIF}
   Assert(Dst.Size = Src.Size, 'ERROR [QNNPatchify] : Source and Destination sizes mismatch.');
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNPatchify(Dst, Src, Batch, Channels, H, W, PatchSize);
+    dtF32:
+      TQNNSingleOps.QNNPatchify(Dst, Src, Batch, Channels, H, W, PatchSize);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1951,7 +1737,8 @@ begin
 {$ENDIF}
   Assert(Dst.Size = Src.Size, 'ERROR [QNNUnPatchify] : Source and Destination sizes mismatch.');
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNUnpatchify(Dst, Src, Batch, Channels, H, W, PatchSize);
+    dtF32:
+      TQNNSingleOps.QNNUnpatchify(Dst, Src, Batch, Channels, H, W, PatchSize);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -1970,8 +1757,8 @@ begin
 {$ENDIF}
   Dims := [];
   Assert(
-      Length(Axis) = Length(Src.Shape),
-      'ERROR [QNNPermute] : Axis and Source dimensions dimensions must be the same.'
+    Length(Axis) = Length(Src.Shape),
+    'ERROR [QNNPermute] : Axis and Source dimensions dimensions must be the same.'
   );
   if not Dst.IsAssigned() then
   begin
@@ -1980,16 +1767,16 @@ begin
   else
   begin
     Assert(
-        Dst.Size + Dst.Offset >= Src.Offset + Product(Src.Shape),
-        'ERROR [QNNPermute] : Destination or Source shapes out of bounds.'
+      Dst.Size + Dst.Offset >= Src.Offset + Product(Src.Shape),
+      'ERROR [QNNPermute] : Destination or Source shapes out of bounds.'
     );
   end;
 
   for I := 0 to High(Axis) do
   begin
     Assert(
-        not (Axis[I] in Dims) and (Axis[I] < Length(Axis)),
-        'ERROR [QNNPermute] : axis cannot be out of dimensions boundries or duplicated!'
+      not (Axis[I] in Dims) and (Axis[I] < Length(Axis)),
+      'ERROR [QNNPermute] : axis cannot be out of dimensions boundries or duplicated!'
     );
     Include(Dims, Axis[I]);
   end;
@@ -2019,7 +1806,8 @@ begin
   Assert(Src.Offset + N <= Src.Size, 'ERROR [QNNCopy] : N is out of source tesnor bounds');
   Assert(Dst.Offset + N <= Dst.Size, 'ERROR [QNNCopy] : N is out of destination tesnor bounds');
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNCopy(Dst, Src, N);
+    dtF32:
+      TQNNSingleOps.QNNCopy(Dst, Src, N);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -2028,13 +1816,7 @@ begin
 {$ENDIF}
 end;
 
-procedure QNNCopyStrided(
-    const Dst: TMemoryBlock;
-    const DstStride: Integer;
-    const Src: TMemoryBlock;
-    const SrcStride: Integer;
-    const N: Integer
-);
+procedure QNNCopyStrided(const Dst: TMemoryBlock; const DstStride: Integer; const Src: TMemoryBlock; const SrcStride: Integer; const N: Integer);
 begin
 {$IF defined(USE_PROFILING)}
   Metrics.Start(opCopyStrided);
@@ -2042,7 +1824,8 @@ begin
   Assert(Src.Offset + N * SrcStride <= Src.Size, 'ERROR [QNNCopyStrided] : N is out of source tesnor bounds');
   Assert(Dst.Offset + N * DstStride <= Dst.Size, 'ERROR [QNNCopyStrided] : N is out of destination tesnor bounds');
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNCopyStrided(Dst, DstStride, Src, SrcStride, N);
+    dtF32:
+      TQNNSingleOps.QNNCopyStrided(Dst, DstStride, Src, SrcStride, N);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -2058,7 +1841,8 @@ begin
 {$ENDIF}
   Assert(Dst.Offset + N * Stride <= Dst.Size, 'ERROR [QNNFill] : N is out of destination tesnor bounds');
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNFill(Dst, Val, N, Stride);
+    dtF32:
+      TQNNSingleOps.QNNFill(Dst, Val, N, Stride);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -2086,7 +1870,8 @@ begin
 {$ENDIF}
 
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNGatedAdd(Dst, Gate, Proj, Seq, Hidden);
+    dtF32:
+      TQNNSingleOps.QNNGatedAdd(Dst, Gate, Proj, Seq, Hidden);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -2102,7 +1887,8 @@ begin
 {$ENDIF}
 
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNComputeRoPE(Dst, MaxSeq, Dim, Theta);
+    dtF32:
+      TQNNSingleOps.QNNComputeRoPE(Dst, MaxSeq, Dim, Theta);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -2118,7 +1904,8 @@ begin
 {$ENDIF}
 
   case CosOut.DataType of
-    dtF32: TQNNSingleOps.QNNComputeRoPE(CosOut, SinOut, MaxSeqLen, HeadDim, Theta);
+    dtF32:
+      TQNNSingleOps.QNNComputeRoPE(CosOut, SinOut, MaxSeqLen, HeadDim, Theta);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -2127,18 +1914,15 @@ begin
 {$ENDIF}
 end;
 
-procedure QNNComputeRoPE2D(
-    const CosOut, SinDst: TMemoryBlock;
-    const PatchH, PatchW, Dim: LongInt;
-    const Theta: QNNFloat
-);
+procedure QNNComputeRoPE2D(const CosOut, SinDst: TMemoryBlock; const PatchH, PatchW, Dim: LongInt; const Theta: QNNFloat);
 begin
 {$IF defined(USE_PROFILING)}
   Metrics.Start(opROPE2D);
 {$ENDIF}
 
   case CosOut.DataType of
-    dtF32: TQNNSingleOps.QNNComputeRoPE2D(CosOut, SinDst, PatchH, PatchW, Dim, Theta);
+    dtF32:
+      TQNNSingleOps.QNNComputeRoPE2D(CosOut, SinDst, PatchH, PatchW, Dim, Theta);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -2147,19 +1931,15 @@ begin
 {$ENDIF}
 end;
 
-procedure QNNComputeRoPE2DOffset(
-    const CosOut, SinOut: TMemoryBlock;
-    const PatchH, PatchW, Dim: LongInt;
-    const Theta: QNNFloat;
-    const OffsetT: LongInt
-);
+procedure QNNComputeRoPE2DOffset(const CosOut, SinOut: TMemoryBlock; const PatchH, PatchW, Dim: LongInt; const Theta: QNNFloat; const OffsetT: LongInt);
 begin
 {$IF defined(USE_PROFILING)}
   Metrics.Start(opROPE2DOffset);
 {$ENDIF}
 
   case CosOut.DataType of
-    dtF32: TQNNSingleOps.QNNComputeRoPE2DOffset(CosOut, SinOut, PatchH, PatchW, Dim, Theta, OffsetT);
+    dtF32:
+      TQNNSingleOps.QNNComputeRoPE2DOffset(CosOut, SinOut, PatchH, PatchW, Dim, Theta, OffsetT);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -2175,7 +1955,8 @@ begin
 {$ENDIF}
 
   case CosOut.DataType of
-    dtF32: TQNNSingleOps.QNNComputeRoPEText(CosOut, SinOut, TxtSeq, AxisDim, Theta);
+    dtF32:
+      TQNNSingleOps.QNNComputeRoPEText(CosOut, SinOut, TxtSeq, AxisDim, Theta);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -2191,7 +1972,8 @@ begin
 {$ENDIF}
 
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNApplyRoPE(Dst, Freqs, Batch, Seq, Heads, HeadDim);
+    dtF32:
+      TQNNSingleOps.QNNApplyRoPE(Dst, Freqs, Batch, Seq, Heads, HeadDim);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -2207,7 +1989,8 @@ begin
 {$ENDIF}
 
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNApplyRoPE2(Dst, CosIn, SinIn, NumHeads, HeadDim);
+    dtF32:
+      TQNNSingleOps.QNNApplyRoPE2(Dst, CosIn, SinIn, NumHeads, HeadDim);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -2223,7 +2006,8 @@ begin
 {$ENDIF}
 
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNApplyRoPE3(Dst, CosIn, SinIn, SeqLen, NumHeads, HeadDim);
+    dtF32:
+      TQNNSingleOps.QNNApplyRoPE3(Dst, CosIn, SinIn, SeqLen, NumHeads, HeadDim);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -2232,17 +2016,15 @@ begin
 {$ENDIF}
 end;
 
-procedure QNNApplyRoPEQK(
-    const Q, K, CosCache, SinCache: TMemoryBlock;
-    const SeqLen, NumQHeads, NumKvHeads, HeadDim: LongInt
-);
+procedure QNNApplyRoPEQK(const Q, K, CosCache, SinCache: TMemoryBlock; const SeqLen, NumQHeads, NumKvHeads, HeadDim: LongInt);
 begin
 {$IF defined(USE_PROFILING)}
   Metrics.Start(opApplyROPEQK);
 {$ENDIF}
 
   case Q.DataType of
-    dtF32: TQNNSingleOps.QNNApplyRoPEQK(Q, K, CosCache, SinCache, SeqLen, NumQHeads, NumKvHeads, HeadDim);
+    dtF32:
+      TQNNSingleOps.QNNApplyRoPEQK(Q, K, CosCache, SinCache, SeqLen, NumQHeads, NumKvHeads, HeadDim);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -2258,7 +2040,8 @@ begin
 {$ENDIF}
 
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNApplyRoPE2D(Dst, CosFreq, SinFreq, Seq, Heads, HeadDim, Dim);
+    dtF32:
+      TQNNSingleOps.QNNApplyRoPE2D(Dst, CosFreq, SinFreq, Seq, Heads, HeadDim, Dim);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -2286,7 +2069,8 @@ begin
 {$ENDIF}
 
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNMatTriangularFill(Dim, Dst, Val, Mask);
+    dtF32:
+      TQNNSingleOps.QNNMatTriangularFill(Dim, Dst, Val, Mask);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -2302,7 +2086,8 @@ begin
 {$ENDIF}
 
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNMaskFill(Dst, Mask, Val, Rows, Cols);
+    dtF32:
+      TQNNSingleOps.QNNMaskFill(Dst, Mask, Val, Rows, Cols);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -2318,7 +2103,8 @@ begin
 {$ENDIF}
 
   case Dst.DataType of
-    dtF32: TQNNSingleOps.QNNAdaLN(Dst, Src, Bias, Scale, Seq, Hidden, Eps);
+    dtF32:
+      TQNNSingleOps.QNNAdaLN(Dst, Src, Bias, Scale, Seq, Hidden, Eps);
   else
     raise ENotSupportedException.Create(OP_NOT_IMPL)
   end;
@@ -2327,12 +2113,7 @@ begin
 {$ENDIF}
 end;
 
-procedure QNNLinearBF16OrF32(
-    const Dst, Src: System.PSingle;
-    const Weight: TMemoryBlock;
-    const WeightBF16: TMemoryBlock;
-    const Seq, SrcDim, DstDim: Integer
-);
+procedure QNNLinearBF16OrF32(const Dst, Src: System.PSingle; const Weight: TMemoryBlock; const WeightBF16: TMemoryBlock; const Seq, SrcDim, DstDim: Integer);
 begin
   if WeightBF16.IsAssigned then
   begin
@@ -2352,3 +2133,4 @@ begin
 end;
 
 end.
+

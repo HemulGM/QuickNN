@@ -10,96 +10,69 @@
   See LICENSE.QwenImage21.txt in the repository root. }
 {$POINTERMATH ON}
 interface
+
 uses
-  QuickNN.Common,
-  QuickNN.Vulkan;
+  QuickNN.Common, QuickNN.Vulkan;
+
 type
   TQwen21Status = reference to procedure(const Message: string);
-procedure Q21GPURMS(
-    const Ctx: TQNNGPUContext;
-    const Dst, Src: TQNNGPUTensor;
-    const Gamma: TMemoryBlock;
-    const Rows, Dim: Integer;
-    const ZeroCentered: Boolean = False;
-    const Chw: Boolean = False
-);
-procedure Q21GPUAffine(
-    const Ctx: TQNNGPUContext;
-    const Dst, Src: TQNNGPUTensor;
-    const Gamma, Beta: TMemoryBlock;
-    const Rows, Dim: Integer
-);
-procedure Q21GPUAdd(
-    const Ctx: TQNNGPUContext;
-    const Dst, Src: TQNNGPUTensor;
-    const Count: Integer;
-    const Scale: Single = 1
-);
-procedure Q21RMS(const Dst, Src, Gamma: TMemoryBlock; const Rows, Dim: Integer; const ZeroCentered: Boolean = False);
-procedure Q21HeadNorm(const Data, Gamma: TMemoryBlock; const Rows, Heads, Dim: Integer);
-procedure Q21TextRoPE(
-    const Data: TMemoryBlock;
-    const Rows, Heads, Dim: Integer;
-    const Theta: Double;
-    const PositionIds: TArray < Integer >= nil
-);
-procedure Q21ImageRoPE(
-    const Data: TMemoryBlock;
-    const Rows, Heads, TextRows, Height, Width: Integer;
-    const PositionIds: TArray < Single >= nil
-);
-procedure Q21Attention(
-    const Dst, Q, K, V: TMemoryBlock;
-    const Rows, Heads, KvHeads, HeadDim, CausalRows: Integer;
-    const KeyLimits: TArray < Integer >= nil
-);
-procedure Q21ModNorm(const Dst, Src, Scales: TMemoryBlock; const Rows, Dim, PrefixRows, ScaleOffset: Integer);
-procedure Q21GateAdd(const Dst, Src, Modulation: TMemoryBlock; const Rows, Dim, PrefixRows, GateOffset: Integer);
-procedure Q21Silu(const Data: TMemoryBlock; const Count: Integer);
-procedure Q21Gelu(const Data: TMemoryBlock; const Count: Integer);
-function Q21Schedule(const Steps, ImageTokens: Integer; const ConfigPath: string): TArray<Single>;
-implementation
-uses
-  System.SysUtils,
-  System.Math,
-  System.JSON,
-  System.IOUtils,
-  QuickNN.Quantization,
-  QuickNN.CPU;
 
-procedure Q21GPURMS(
-    const Ctx: TQNNGPUContext;
-    const Dst, Src: TQNNGPUTensor;
-    const Gamma: TMemoryBlock;
-    const Rows, Dim: Integer;
-    const ZeroCentered, Chw: Boolean
+procedure Q21GPURMS(const Ctx: TQNNGPUContext; const Dst, Src: TQNNGPUTensor; const Gamma: TMemoryBlock; const Rows, Dim: Integer; const ZeroCentered: Boolean = False; const Chw: Boolean = False
 );
+
+procedure Q21GPUAffine(const Ctx: TQNNGPUContext; const Dst, Src: TQNNGPUTensor; const Gamma, Beta: TMemoryBlock; const Rows, Dim: Integer);
+
+procedure Q21GPUAdd(const Ctx: TQNNGPUContext; const Dst, Src: TQNNGPUTensor; const Count: Integer; const Scale: Single = 1
+);
+
+procedure Q21RMS(const Dst, Src, Gamma: TMemoryBlock; const Rows, Dim: Integer; const ZeroCentered: Boolean = False);
+
+procedure Q21HeadNorm(const Data, Gamma: TMemoryBlock; const Rows, Heads, Dim: Integer);
+
+procedure Q21TextRoPE(const Data: TMemoryBlock; const Rows, Heads, Dim: Integer; const Theta: Double; const PositionIds: TArray<Integer> = nil
+);
+
+procedure Q21ImageRoPE(const Data: TMemoryBlock; const Rows, Heads, TextRows, Height, Width: Integer; const PositionIds: TArray<Single> = nil
+);
+
+procedure Q21Attention(const Dst, Q, K, V: TMemoryBlock; const Rows, Heads, KvHeads, HeadDim, CausalRows: Integer; const KeyLimits: TArray<Integer> = nil
+);
+
+procedure Q21ModNorm(const Dst, Src, Scales: TMemoryBlock; const Rows, Dim, PrefixRows, ScaleOffset: Integer);
+
+procedure Q21GateAdd(const Dst, Src, Modulation: TMemoryBlock; const Rows, Dim, PrefixRows, GateOffset: Integer);
+
+procedure Q21Silu(const Data: TMemoryBlock; const Count: Integer);
+
+procedure Q21Gelu(const Data: TMemoryBlock; const Count: Integer);
+
+function Q21Schedule(const Steps, ImageTokens: Integer; const ConfigPath: string): TArray<Single>;
+
+implementation
+
+uses
+  System.SysUtils, System.Math, System.JSON, System.IOUtils,
+  QuickNN.Quantization, QuickNN.CPU;
+
+procedure Q21GPURMS(const Ctx: TQNNGPUContext; const Dst, Src: TQNNGPUTensor; const Gamma: TMemoryBlock; const Rows, Dim: Integer; const ZeroCentered, Chw: Boolean);
 begin
   Ctx.KernelWeights(
-      GO_NORM,
-      Rows * Dim,
-      Dst,
-      Src,
-      Gamma,
-      Default(TMemoryBlock),
-      [Rows, Dim, Ord(Chw) * 2 + Ord(ZeroCentered) * 4, 0, 0, 0, Ord(not Gamma.IsAssigned)]
+    GO_NORM,
+    Rows * Dim,
+    Dst,
+    Src,
+    Gamma,
+    Default(TMemoryBlock),
+    [Rows, Dim, Ord(Chw) * 2 + Ord(ZeroCentered) * 4, 0, 0, 0, Ord(not Gamma.IsAssigned)]
   )
 end;
-procedure Q21GPUAffine(
-    const Ctx: TQNNGPUContext;
-    const Dst, Src: TQNNGPUTensor;
-    const Gamma, Beta: TMemoryBlock;
-    const Rows, Dim: Integer
-);
+
+procedure Q21GPUAffine(const Ctx: TQNNGPUContext; const Dst, Src: TQNNGPUTensor; const Gamma, Beta: TMemoryBlock; const Rows, Dim: Integer);
 begin
   Ctx.KernelWeights(GO_NORM, Rows * Dim, Dst, Src, Gamma, Beta, [Rows, Dim, 1, 0, 0, 0, 0])
 end;
-procedure Q21GPUAdd(
-    const Ctx: TQNNGPUContext;
-    const Dst, Src: TQNNGPUTensor;
-    const Count: Integer;
-    const Scale: Single
-);
+
+procedure Q21GPUAdd(const Ctx: TQNNGPUContext; const Dst, Src: TQNNGPUTensor; const Count: Integer; const Scale: Single);
 begin
   Ctx.Kernel(GO_ADD, Count, Dst, Src, nil, nil, [Count, Count, QNNGPUFloatBits(Scale), 0, 0])
 end;
@@ -132,12 +105,7 @@ begin
   Q21RMS(Data, Data, Gamma, Rows * Heads, Dim)
 end;
 
-procedure Q21TextRoPE(
-    const Data: TMemoryBlock;
-    const Rows, Heads, Dim: Integer;
-    const Theta: Double;
-    const PositionIds: TArray<Integer>
-);
+procedure Q21TextRoPE(const Data: TMemoryBlock; const Rows, Heads, Dim: Integer; const Theta: Double; const PositionIds: TArray<Integer>);
 var
   Angle, Cs, Sn: Double;
   A, B: Single;
@@ -171,11 +139,7 @@ begin
     end;
 end;
 
-procedure Q21ImageRoPE(
-    const Data: TMemoryBlock;
-    const Rows, Heads, TextRows, Height, Width: Integer;
-    const PositionIds: TArray<Single>
-);
+procedure Q21ImageRoPE(const Data: TMemoryBlock; const Rows, Heads, TextRows, Height, Width: Integer; const PositionIds: TArray<Single>);
 const
   DIMS: array[0..2] of Integer = (16, 56, 56);
 var
@@ -202,8 +166,10 @@ begin
         Position := R
       else
         case Axis of
-          0: Position := TextRows;
-          1: Position := (R - TextRows) div Width - (Height - Height div 2);
+          0:
+            Position := TextRows;
+          1:
+            Position := (R - TextRows) div Width - (Height - Height div 2);
         else
           Position := (R - TextRows) mod Width - (Width - Width div 2);
         end;
@@ -226,11 +192,7 @@ begin
   end;
 end;
 
-procedure Q21Attention(
-    const Dst, Q, K, V: TMemoryBlock;
-    const Rows, Heads, KvHeads, HeadDim, CausalRows: Integer;
-    const KeyLimits: TArray<Integer>
-);
+procedure Q21Attention(const Dst, Q, K, V: TMemoryBlock; const Rows, Heads, KvHeads, HeadDim, CausalRows: Integer; const KeyLimits: TArray<Integer>);
 var
   Scores: TMemoryBlock;
   Qp, Kp, Vp, Op, Sp: System.PSingle;
@@ -257,20 +219,20 @@ begin
       // Small per-head products stay on the native CPU BLAS path: forcing
       // strided views through Vulkan would upload unused neighbouring heads.
       TQNNSingleOps.CblasCPUGemm(
-          CblasRowMajor,
-          CblasNoTrans,
-          CblasTrans,
-          Rows,
-          Rows,
-          HeadDim,
-          1 / Sqrt(HeadDim),
-          Pointer(Qp),
-          Heads * HeadDim,
-          Pointer(Kp),
-          KvHeads * HeadDim,
-          0,
-          Pointer(Sp),
-          Rows
+        CblasRowMajor,
+        CblasNoTrans,
+        CblasTrans,
+        Rows,
+        Rows,
+        HeadDim,
+        1 / Sqrt(HeadDim),
+        Pointer(Qp),
+        Heads * HeadDim,
+        Pointer(Kp),
+        KvHeads * HeadDim,
+        0,
+        Pointer(Sp),
+        Rows
       );
       for var R := 0 to Rows - 1 do
       begin
@@ -300,20 +262,20 @@ begin
           Sp[NativeInt(R) * Rows + J] := Sp[NativeInt(R) * Rows + J] / Sum;
       end;
       TQNNSingleOps.CblasCPUGemm(
-          CblasRowMajor,
-          CblasNoTrans,
-          CblasNoTrans,
-          Rows,
-          HeadDim,
-          Rows,
-          1,
-          Pointer(Sp),
-          Rows,
-          Pointer(Vp),
-          KvHeads * HeadDim,
-          0,
-          Pointer(Op),
-          Heads * HeadDim
+        CblasRowMajor,
+        CblasNoTrans,
+        CblasNoTrans,
+        Rows,
+        HeadDim,
+        Rows,
+        1,
+        Pointer(Sp),
+        Rows,
+        Pointer(Vp),
+        KvHeads * HeadDim,
+        0,
+        Pointer(Op),
+        Heads * HeadDim
       );
     end;
   finally
@@ -403,6 +365,7 @@ begin
     end;
   end;
 end;
+
 procedure Q21Gelu(const Data: TMemoryBlock; const Count: Integer);
 var
   X: Single;
@@ -450,10 +413,13 @@ begin
     JSON.Free
   end;
 end;
+
 initialization
   for var I := 0 to High(SiluTable) do
   begin
     var X: Double := (I - 5120) / 256;
     SiluTable[I] := X / (1 + Exp(-X));
   end;
+
 end.
+

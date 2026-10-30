@@ -5,16 +5,11 @@
 interface
 
 uses
-  System.SysUtils,
-  System.Math,
-  QuickNN.Common,
-  QuickNN.Quantization.Int4
+  System.SysUtils, System.Math, QuickNN.Common, QuickNN.Quantization.Int4
 {$IF defined(MSWINDOWS) and defined(CPUX64)}
-  ,
-  QuickNN.Vulkan.Helpers,
-  System.Generics.Collections
+    , QuickNN.Vulkan.Helpers, System.Generics.Collections
 {$ENDIF}
-      ;
+;
 
 type
   TQNNGPUMode = (gpuOff, gpuAuto, gpuForce);
@@ -36,25 +31,9 @@ procedure QNNConfigureGPU(const Mode: TQNNGPUMode; const DeviceIndex: Integer = 
 
 function QNNGetGPUStatus: TQNNGPUStatus;
 
-function TryVulkanGemm(
-    const Order: TCBLASOrder;
-    const TransA, TransB: TCBLASTranspose;
-    const M, N, K: Int64;
-    const Alpha: Single;
-    const A: System.PSingle;
-    const Lda: Int64;
-    const B: System.PSingle;
-    const Ldb: Int64;
-    const Beta: Single;
-    const C: System.PSingle;
-    const Ldc: Int64
-): Boolean;
+function TryVulkanGemm(const Order: TCBLASOrder; const TransA, TransB: TCBLASTranspose; const M, N, K: Int64; const Alpha: Single; const A: System.PSingle; const Lda: Int64; const B: System.PSingle; const Ldb: Int64; const Beta: Single; const C: System.PSingle; const Ldc: Int64): Boolean;
 
-function TryVulkanLinearBF16(
-    const Dst, Src: System.PSingle;
-    const Weight: PBF16;
-    const Seq, SrcDim, DstDim: Integer
-): Boolean;
+function TryVulkanLinearBF16(const Dst, Src: System.PSingle; const Weight: PBF16; const Seq, SrcDim, DstDim: Integer): Boolean;
 
 // Only explicitly immutable weights are retained. Call invalidate after changing
 // their contents; cache keys never depend on a potentially reused CPU address.
@@ -64,23 +43,12 @@ procedure QNNGPUClearWeightCache;
 
 procedure QNNInvalidateGPUWeight(const Weight: TMemoryBlock);
 
-function TryVulkanLinear(
-    const Dst, Src: System.PSingle;
-    const Weight: TMemoryBlock;
-    const Seq, InputDim, OutputDim: Integer
-): Boolean;
+function TryVulkanLinear(const Dst, Src: System.PSingle; const Weight: TMemoryBlock; const Seq, InputDim, OutputDim: Integer): Boolean;
 
-function TryVulkanAttention(
-    const Dst, Q, K, V: TMemoryBlock;
-    const Rows, Heads, KvHeads, HeadDim, CausalRows: Integer;
-    const KeyLimits: TArray<Integer> = nil
-): Boolean;
+function TryVulkanAttention(const Dst, Q, K, V: TMemoryBlock; const Rows, Heads, KvHeads, HeadDim, CausalRows: Integer; const KeyLimits: TArray<Integer> = nil
+    ): Boolean;
 
-function TryVulkanInt8Linear(
-    const Dst, Src: System.PSingle;
-    const Weight, Scales: TMemoryBlock;
-    const Seq, InputDim, OutputDim: Integer
-): Boolean;
+function TryVulkanInt8Linear(const Dst, Src: System.PSingle; const Weight, Scales: TMemoryBlock; const Seq, InputDim, OutputDim: Integer): Boolean;
 
 function TryVulkanSwiGLU(const Dst, Src, Gate, Up, Down: TMemoryBlock; const Seq, Hidden, Mlp: Integer): Boolean;
 
@@ -117,17 +85,9 @@ type
     function EvictOne(const ReuseBytes: UInt64; out Reused: TVulkanMemory): Boolean; overload;
     function AcquireInt8Weight(const Weight, Scales: TMemoryBlock; const Rows, Cols: Integer): TGPUWeight;
     function WeightKey(const Weight: TMemoryBlock; const Rows, Cols: Integer): string;
-    function AcquireWeight(
-        const Weight: TMemoryBlock;
-        const Rows, Cols: Integer;
-        const AllowPackedInt4: Boolean = False
+    function AcquireWeight(const Weight: TMemoryBlock; const Rows, Cols: Integer; const AllowPackedInt4: Boolean = False
     ): TGPUWeight;
-    procedure RecordLinear(
-        const A, B, C: TVulkanMemory;
-        const Seq, InputDim, OutputDim: Integer;
-        const BF16: Boolean;
-        const Slot: Integer
-    );
+    procedure RecordLinear(const A, B, C: TVulkanMemory; const Seq, InputDim, OutputDim: Integer; const BF16: Boolean; const Slot: Integer);
     procedure BeginNetwork(const Src: System.PSingle; const Seq, Dim: Integer);
     procedure EndNetwork(const Dst: System.PSingle; const Seq, Dim: Integer);
     procedure EnsureBuffers(const ABytes, BBytes, CBytes: UInt64);
@@ -142,53 +102,15 @@ type
     procedure ClearWeights;
     procedure InvalidateWeight(const Identity: IInterface);
     procedure CopyCounters(var Status: TQNNGPUStatus);
-    procedure Attention(
-        const Dst, Q, K, V: TMemoryBlock;
-        const Rows, Heads, KvHeads, HeadDim, CausalRows: Integer;
-        const KeyLimits: TArray<Integer>
-    );
-    procedure CachedInt8Linear(
-        const Dst, Src: System.PSingle;
-        const Weight, Scales: TMemoryBlock;
-        const Seq, InputDim, OutputDim: Integer
-    );
-    procedure CachedLinear(
-        const Dst, Src: System.PSingle;
-        const Weight: TMemoryBlock;
-        const Seq, InputDim, OutputDim: Integer
-    );
-    procedure Swiglu(
-        const Dst, Src: System.PSingle;
-        const Gate, Up, Down: TMemoryBlock;
-        const Seq, Hidden, Mlp: Integer
-    );
-    procedure Sgemm(
-        const TransA, TransB: Boolean;
-        const M, N, K: Integer;
-        const Alpha: Single;
-        const A: System.PSingle;
-        const Lda: Integer;
-        const B: Pointer;
-        const Ldb: Integer;
-        const Beta: Single;
-        const C: System.PSingle;
-        const Ldc: Integer;
-        const BIsBF16: Boolean = False
+    procedure Attention(const Dst, Q, K, V: TMemoryBlock; const Rows, Heads, KvHeads, HeadDim, CausalRows: Integer; const KeyLimits: TArray<Integer>);
+    procedure CachedInt8Linear(const Dst, Src: System.PSingle; const Weight, Scales: TMemoryBlock; const Seq, InputDim, OutputDim: Integer);
+    procedure CachedLinear(const Dst, Src: System.PSingle; const Weight: TMemoryBlock; const Seq, InputDim, OutputDim: Integer);
+    procedure Swiglu(const Dst, Src: System.PSingle; const Gate, Up, Down: TMemoryBlock; const Seq, Hidden, Mlp: Integer);
+    procedure Sgemm(const TransA, TransB: Boolean; const M, N, K: Integer; const Alpha: Single; const A: System.PSingle; const Lda: Integer; const B: Pointer; const Ldb: Integer; const Beta: Single; const C: System.PSingle; const Ldc: Integer; const BIsBF16: Boolean = False
     );
     // Explicit resident-buffer path for later layer chaining. Synchronous: each
     // dispatch owns its descriptor update and completes before this method returns.
-    procedure Gemm(
-        const TransA, TransB: Boolean;
-        const M, N, K: Integer;
-        const Alpha: Single;
-        const A: TVulkanMemory;
-        const Lda: Integer;
-        const B: TVulkanMemory;
-        const Ldb: Integer;
-        const Beta: Single;
-        const C: TVulkanMemory;
-        const Ldc, OffsetA, OffsetB, OffsetC: Integer;
-        const BIsBF16: Boolean = False
+    procedure Gemm(const TransA, TransB: Boolean; const M, N, K: Integer; const Alpha: Single; const A: TVulkanMemory; const Lda: Integer; const B: TVulkanMemory; const Ldb: Integer; const Beta: Single; const C: TVulkanMemory; const Ldc, OffsetA, OffsetB, OffsetC: Integer; const BIsBF16: Boolean = False
     );
   end;
 {$ENDIF}
@@ -200,11 +122,9 @@ implementation
 uses
   System.SyncObjs
 {$IF defined(MSWINDOWS) and defined(CPUX64)}
-  ,
-  QuickNN.Vulkan.API,
-  Winapi.Windows
+    , QuickNN.Vulkan.API, Winapi.Windows
 {$ENDIF}
-      ;
+;
 
 const
   RESIDENT_DISPATCH_SLOTS = 1024;
@@ -248,9 +168,9 @@ begin
   try
     inherited Create(DeviceIndex);
     if (VulkanDevice.DeviceProperties.Limits.MaxComputeWorkGroupInvocations < 256)
-        or (VulkanDevice.DeviceProperties.Limits.MaxComputeWorkGroupSize[0] < 16)
-        or (VulkanDevice.DeviceProperties.Limits.MaxComputeWorkGroupSize[1] < 16)
-        or (VulkanDevice.DeviceProperties.Limits.MaxComputeSharedMemorySize < 16384) then
+      or (VulkanDevice.DeviceProperties.Limits.MaxComputeWorkGroupSize[0] < 16)
+      or (VulkanDevice.DeviceProperties.Limits.MaxComputeWorkGroupSize[1] < 16)
+      or (VulkanDevice.DeviceProperties.Limits.MaxComputeSharedMemorySize < 16384) then
       raise Exception.Create('Vulkan device does not support the GEMM tile');
     FWeights := TDictionary<string, TGPUWeight>.Create;
     for I := 0 to VulkanDevice.MemoryProperties.MemoryHeapCount - 1 do
@@ -264,11 +184,11 @@ begin
     Workload.Y := 16;
     Workload.Z := 1;
     PreparePipeline(
-        TKernelHandle(0),
-        CreateShader(@QNN_GEMM_SPIRV[0], SizeOf(QNN_GEMM_SPIRV)),
-        Workload,
-        3,
-        RESIDENT_DISPATCH_SLOTS
+      TKernelHandle(0),
+      CreateShader(@QNN_GEMM_SPIRV[0], SizeOf(QNN_GEMM_SPIRV)),
+      Workload,
+      3,
+      RESIDENT_DISPATCH_SLOTS
     );
     Workload.X := 128;
     Workload.Y := 1;
@@ -276,26 +196,26 @@ begin
     FAttentionAvailable := VulkanDevice.DeviceProperties.Limits.MaxComputeSharedMemorySize >= 32768;
     if FAttentionAvailable then
       PreparePipeline(
-          TKernelHandle(2),
-          CreateShader(@QNN_ATTENTION_SPIRV[0], SizeOf(QNN_ATTENTION_SPIRV)),
-          Workload,
-          3,
-          RESIDENT_DISPATCH_SLOTS
+        TKernelHandle(2),
+        CreateShader(@QNN_ATTENTION_SPIRV[0], SizeOf(QNN_ATTENTION_SPIRV)),
+        Workload,
+        3,
+        RESIDENT_DISPATCH_SLOTS
       );
     Workload.X := 256;
     PreparePipeline(
-        TKernelHandle(3),
-        CreateShader(@QNN_TENSOR_SPIRV[0], SizeOf(QNN_TENSOR_SPIRV)),
-        Workload,
-        4,
-        RESIDENT_DISPATCH_SLOTS
+      TKernelHandle(3),
+      CreateShader(@QNN_TENSOR_SPIRV[0], SizeOf(QNN_TENSOR_SPIRV)),
+      Workload,
+      4,
+      RESIDENT_DISPATCH_SLOTS
     );
     PreparePipeline(
-        TKernelHandle(4),
-        CreateShader(@QNN_MOE_SPIRV[0], SizeOf(QNN_MOE_SPIRV)),
-        Workload,
-        4,
-        RESIDENT_DISPATCH_SLOTS
+      TKernelHandle(4),
+      CreateShader(@QNN_MOE_SPIRV[0], SizeOf(QNN_MOE_SPIRV)),
+      Workload,
+      4,
+      RESIDENT_DISPATCH_SLOTS
     );
   finally
     SetExceptionMask(PreviousMask);
@@ -344,10 +264,10 @@ var
   Proposed: UInt64;
 begin
   Proposed :=
-      2 * (Max(ABytes, UInt64(FInputA.Size)) + Max(BBytes, UInt64(FInputB.Size)) + Max(CBytes, UInt64(FOutput.Size)))
-          + FGraphGate.Size
-          + FGraphUp.Size
-          + FWeightUpload.Size;
+    2 * (Max(ABytes, UInt64(FInputA.Size)) + Max(BBytes, UInt64(FInputB.Size)) + Max(CBytes, UInt64(FOutput.Size)))
+    + FGraphGate.Size
+    + FGraphUp.Size
+    + FWeightUpload.Size;
   if Proposed > MAX_WORKING_BYTES then
     ReleaseWorking;
   GrowWorking(FInputA, ABytes, False, False);
@@ -372,19 +292,7 @@ begin
   end;
 end;
 
-procedure TQNNVulkan.Sgemm(
-    const TransA, TransB: Boolean;
-    const M, N, K: Integer;
-    const Alpha: Single;
-    const A: System.PSingle;
-    const Lda: Integer;
-    const B: Pointer;
-    const Ldb: Integer;
-    const Beta: Single;
-    const C: System.PSingle;
-    const Ldc: Integer;
-    const BIsBF16: Boolean
-);
+procedure TQNNVulkan.Sgemm(const TransA, TransB: Boolean; const M, N, K: Integer; const Alpha: Single; const A: System.PSingle; const Lda: Integer; const B: Pointer; const Ldb: Integer; const Beta: Single; const C: System.PSingle; const Ldc: Integer; const BIsBF16: Boolean);
 var
   ABytes, BBytes, BPadded, CBytes: UInt64;
   Row, Flags: Integer;
@@ -407,7 +315,7 @@ begin
   CBytes := MatrixBytes(M, N, N, 4);
   MatrixBytes(M, N, Ldc, 4); // validate host output indexing too
   if (UInt64(N + 63) div 64 > VulkanDevice.DeviceProperties.Limits.MaxComputeWorkGroupCount[0])
-      or (UInt64(M + 63) div 64 > VulkanDevice.DeviceProperties.Limits.MaxComputeWorkGroupCount[1]) then
+    or (UInt64(M + 63) div 64 > VulkanDevice.DeviceProperties.Limits.MaxComputeWorkGroupCount[1]) then
     raise ERangeError.Create('Vulkan GEMM workgroup count exceeds device limit');
   EnsureBuffers(ABytes, BPadded, CBytes);
   PreviousMask := GetExceptionMask;
@@ -432,29 +340,29 @@ begin
     if Beta <> 0 then
       CopyBuffer(FReadback, FOutput, CBytes);
     MemoryBarrier(
-        LongWord(VK_PIPELINE_STAGE_TRANSFER_BIT),
-        LongWord(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
-        LongWord(VK_ACCESS_TRANSFER_WRITE_BIT),
-        LongWord(VK_ACCESS_SHADER_READ_BIT) or LongWord(VK_ACCESS_SHADER_WRITE_BIT)
+      LongWord(VK_PIPELINE_STAGE_TRANSFER_BIT),
+      LongWord(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
+      LongWord(VK_ACCESS_TRANSFER_WRITE_BIT),
+      LongWord(VK_ACCESS_SHADER_READ_BIT) or LongWord(VK_ACCESS_SHADER_WRITE_BIT)
     );
     DispatchPipeline(
-        TKernelHandle(0),
-        [M, N, K, Alpha, FInputA.Buffer, 0, Lda, FInputB.Buffer, 0, Ldb, Beta, FOutput.Buffer, 0, N, Flags],
-        (N + 63) div 64,
-        (M + 63) div 64
+      TKernelHandle(0),
+      [M, N, K, Alpha, FInputA.Buffer, 0, Lda, FInputB.Buffer, 0, Ldb, Beta, FOutput.Buffer, 0, N, Flags],
+      (N + 63) div 64,
+      (M + 63) div 64
     );
     MemoryBarrier(
-        LongWord(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
-        LongWord(VK_PIPELINE_STAGE_TRANSFER_BIT),
-        LongWord(VK_ACCESS_SHADER_WRITE_BIT),
-        LongWord(VK_ACCESS_TRANSFER_READ_BIT)
+      LongWord(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
+      LongWord(VK_PIPELINE_STAGE_TRANSFER_BIT),
+      LongWord(VK_ACCESS_SHADER_WRITE_BIT),
+      LongWord(VK_ACCESS_TRANSFER_READ_BIT)
     );
     CopyBuffer(FOutput, FReadback, CBytes);
     MemoryBarrier(
-        LongWord(VK_PIPELINE_STAGE_TRANSFER_BIT),
-        LongWord(VK_PIPELINE_STAGE_HOST_BIT),
-        LongWord(VK_ACCESS_TRANSFER_WRITE_BIT),
-        LongWord(VK_ACCESS_HOST_READ_BIT)
+      LongWord(VK_PIPELINE_STAGE_TRANSFER_BIT),
+      LongWord(VK_PIPELINE_STAGE_HOST_BIT),
+      LongWord(VK_ACCESS_TRANSFER_WRITE_BIT),
+      LongWord(VK_ACCESS_HOST_READ_BIT)
     );
     EndCommandBuffer;
     Finish;
@@ -477,19 +385,7 @@ begin
   end;
 end;
 
-procedure TQNNVulkan.Gemm(
-    const TransA, TransB: Boolean;
-    const M, N, K: Integer;
-    const Alpha: Single;
-    const A: TVulkanMemory;
-    const Lda: Integer;
-    const B: TVulkanMemory;
-    const Ldb: Integer;
-    const Beta: Single;
-    const C: TVulkanMemory;
-    const Ldc, OffsetA, OffsetB, OffsetC: Integer;
-    const BIsBF16: Boolean
-);
+procedure TQNNVulkan.Gemm(const TransA, TransB: Boolean; const M, N, K: Integer; const Alpha: Single; const A: TVulkanMemory; const Lda: Integer; const B: TVulkanMemory; const Ldb: Integer; const Beta: Single; const C: TVulkanMemory; const Ldc, OffsetA, OffsetB, OffsetC: Integer; const BIsBF16: Boolean);
 var
   ABytes, BBytes, CBytes: UInt64;
   Flags: Integer;
@@ -508,18 +404,18 @@ begin
     BBytes := MatrixBytes(K, N, Ldb, 4 - 2 * Ord(BIsBF16));
   CBytes := MatrixBytes(M, N, Ldc, 4);
   if (UInt64(N + 63) div 64 > VulkanDevice.DeviceProperties.Limits.MaxComputeWorkGroupCount[0])
-      or (UInt64(M + 63) div 64 > VulkanDevice.DeviceProperties.Limits.MaxComputeWorkGroupCount[1]) then
+    or (UInt64(M + 63) div 64 > VulkanDevice.DeviceProperties.Limits.MaxComputeWorkGroupCount[1]) then
     raise ERangeError.Create('Resident GEMM workgroup count exceeds device limit');
   if (ABytes + UInt64(OffsetA) * 4 > A.Size)
-      or (((BBytes + UInt64(OffsetB) * UInt64(4 - 2 * Ord(BIsBF16)) + 3) and not UInt64(3)) > B.Size)
-      or (CBytes + UInt64(OffsetC) * 4 > C.Size) then
+    or (((BBytes + UInt64(OffsetB) * UInt64(4 - 2 * Ord(BIsBF16)) + 3) and not UInt64(3)) > B.Size)
+    or (CBytes + UInt64(OffsetC) * 4 > C.Size) then
     raise ERangeError.Create('Vulkan GEMM buffer too small');
   if (A.Buffer = nil)
-      or (B.Buffer = nil)
-      or (C.Buffer = nil)
-      or (A.Size > VulkanDevice.DeviceProperties.Limits.MaxStorageBufferRange)
-      or (B.Size > VulkanDevice.DeviceProperties.Limits.MaxStorageBufferRange)
-      or (C.Size > VulkanDevice.DeviceProperties.Limits.MaxStorageBufferRange) then
+    or (B.Buffer = nil)
+    or (C.Buffer = nil)
+    or (A.Size > VulkanDevice.DeviceProperties.Limits.MaxStorageBufferRange)
+    or (B.Size > VulkanDevice.DeviceProperties.Limits.MaxStorageBufferRange)
+    or (C.Size > VulkanDevice.DeviceProperties.Limits.MaxStorageBufferRange) then
     raise ERangeError.Create('Invalid resident buffer or storage range');
   if (C.Buffer = A.Buffer) or (C.Buffer = B.Buffer) then
     raise EArgumentException.Create('Resident GEMM output must not alias its inputs');
@@ -528,22 +424,22 @@ begin
   Flags := Ord(TransA) or (Ord(TransB) shl 1) or (Ord(BIsBF16) shl 2);
   BeginCommadBuffer;
   MemoryBarrier(
-      LongWord(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT),
-      LongWord(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
-      LongWord(VK_ACCESS_MEMORY_WRITE_BIT),
-      LongWord(VK_ACCESS_SHADER_READ_BIT) or LongWord(VK_ACCESS_SHADER_WRITE_BIT)
+    LongWord(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT),
+    LongWord(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
+    LongWord(VK_ACCESS_MEMORY_WRITE_BIT),
+    LongWord(VK_ACCESS_SHADER_READ_BIT) or LongWord(VK_ACCESS_SHADER_WRITE_BIT)
   );
   DispatchPipeline(
-      TKernelHandle(0),
-      [M, N, K, Alpha, A.Buffer, OffsetA, Lda, B.Buffer, OffsetB, Ldb, Beta, C.Buffer, OffsetC, Ldc, Flags],
-      (N + 63) div 64,
-      (M + 63) div 64
+    TKernelHandle(0),
+    [M, N, K, Alpha, A.Buffer, OffsetA, Lda, B.Buffer, OffsetB, Ldb, Beta, C.Buffer, OffsetC, Ldc, Flags],
+    (N + 63) div 64,
+    (M + 63) div 64
   );
   MemoryBarrier(
-      LongWord(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
-      LongWord(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT),
-      LongWord(VK_ACCESS_SHADER_WRITE_BIT),
-      LongWord(VK_ACCESS_MEMORY_READ_BIT)
+    LongWord(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
+    LongWord(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT),
+    LongWord(VK_ACCESS_SHADER_WRITE_BIT),
+    LongWord(VK_ACCESS_MEMORY_READ_BIT)
   );
   EndCommandBuffer;
   Finish;
@@ -552,15 +448,15 @@ end;
 function TQNNVulkan.WorkingBytes: UInt64;
 begin
   Result :=
-      FInputA.Size
-          + FInputB.Size
-          + FOutput.Size
-          + FUploadA.Size
-          + FUploadB.Size
-          + FReadback.Size
-          + FGraphGate.Size
-          + FGraphUp.Size
-          + FWeightUpload.Size;
+    FInputA.Size
+    + FInputB.Size
+    + FOutput.Size
+    + FUploadA.Size
+    + FUploadB.Size
+    + FReadback.Size
+    + FGraphGate.Size
+    + FGraphUp.Size
+    + FWeightUpload.Size;
 end;
 
 procedure TQNNVulkan.GrowWorking(var Buffer: TVulkanMemory; const Size: UInt64; const Staging, Cached: Boolean);
@@ -609,15 +505,15 @@ begin
   if MlpDim > 0 then
     GBytes := MatrixBytes(Seq, MlpDim, MlpDim, 4);
   if (UInt64(Seq + 63) div 64 > VulkanDevice.DeviceProperties.Limits.MaxComputeWorkGroupCount[1])
-      or (UInt64(OutputDim + 63) div 64 > VulkanDevice.DeviceProperties.Limits.MaxComputeWorkGroupCount[0])
-      or ((MlpDim > 0)
-          and (UInt64(MlpDim + 63) div 64 > VulkanDevice.DeviceProperties.Limits.MaxComputeWorkGroupCount[0])) then
+    or (UInt64(OutputDim + 63) div 64 > VulkanDevice.DeviceProperties.Limits.MaxComputeWorkGroupCount[0])
+    or ((MlpDim > 0)
+    and (UInt64(MlpDim + 63) div 64 > VulkanDevice.DeviceProperties.Limits.MaxComputeWorkGroupCount[0])) then
     raise ERangeError.Create('Network exceeds Vulkan dispatch limits');
   Proposed :=
-      2 * Max(ABytes, UInt64(FInputA.Size))
-          + 2 * Max(CBytes, UInt64(FOutput.Size))
-          + 2 * Max(GBytes, UInt64(FGraphGate.Size))
-          + WEIGHT_UPLOAD_CHUNK;
+    2 * Max(ABytes, UInt64(FInputA.Size))
+    + 2 * Max(CBytes, UInt64(FOutput.Size))
+    + 2 * Max(GBytes, UInt64(FGraphGate.Size))
+    + WEIGHT_UPLOAD_CHUNK;
   if Proposed > MAX_WORKING_BYTES then
     ReleaseWorking;
   // Raw GEMM's B buffers are not used when weights are resident.
@@ -738,35 +634,31 @@ var
   ByteCount: UInt64;
 begin
   if (Weight.WeightIdentity = nil)
-      or not (Weight.DataType in [dtF32, dtBF16, dtU8])
-      or not Weight.IsAssigned
-      or (Int64(Rows) * Cols > Int64(Weight.Size) - Weight.Offset) then
+    or not (Weight.DataType in [dtF32, dtBF16, dtU8])
+    or not Weight.IsAssigned
+    or (Int64(Rows) * Cols > Int64(Weight.Size) - Weight.Offset) then
     raise EArgumentException.Create('Weight must have immutable identity and sufficient native or packed storage');
   ByteCount := MatrixBytes(Rows, Cols, Cols, DATATYPE_BITS[Weight.DataType] div 8);
   Result :=
-      IntToHex(NativeUInt(Pointer(Weight.WeightIdentity)), SizeOf(Pointer) * 2)
-          + '/'
-          + IntToStr(Ord(Weight.DataType))
-          + '/'
-          + IntToStr(Weight.Offset)
-          + '/'
-          + UIntToStr(ByteCount);
+    IntToHex(NativeUInt(Pointer(Weight.WeightIdentity)), SizeOf(Pointer) * 2)
+    + '/'
+    + IntToStr(Ord(Weight.DataType))
+    + '/'
+    + IntToStr(Weight.Offset)
+    + '/'
+    + UIntToStr(ByteCount);
 end;
 
-function TQNNVulkan.AcquireWeight(
-    const Weight: TMemoryBlock;
-    const Rows, Cols: Integer;
-    const AllowPackedInt4: Boolean
-): TGPUWeight;
+function TQNNVulkan.AcquireWeight(const Weight: TMemoryBlock; const Rows, Cols: Integer; const AllowPackedInt4: Boolean): TGPUWeight;
 var
   Key: string;
   ByteCount, Padded, Offset, Chunk, Actual: UInt64;
   Source: Pointer;
 begin
   if (Weight.WeightIdentity = nil)
-      or (not (Weight.DataType in [dtF32, dtBF16]) and not (AllowPackedInt4 and (Weight.DataType = dtU8)))
-      or not Weight.IsAssigned
-      or (Int64(Rows) * Cols > Int64(Weight.Size) - Weight.Offset) then
+    or (not (Weight.DataType in [dtF32, dtBF16]) and not (AllowPackedInt4 and (Weight.DataType = dtU8)))
+    or not Weight.IsAssigned
+    or (Int64(Rows) * Cols > Int64(Weight.Size) - Weight.Offset) then
     raise EArgumentException.Create('Weight must have immutable identity and sufficient native or packed storage');
   ByteCount := MatrixBytes(Rows, Cols, Cols, DATATYPE_BITS[Weight.DataType] div 8);
   Padded := (ByteCount + 3) and not UInt64(3);
@@ -810,10 +702,10 @@ begin
       BeginCommadBuffer;
       CopyBuffer(FWeightUpload, Result.Memory, Chunk, 0, Offset);
       MemoryBarrier(
-          LongWord(VK_PIPELINE_STAGE_TRANSFER_BIT),
-          LongWord(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
-          LongWord(VK_ACCESS_TRANSFER_WRITE_BIT),
-          LongWord(VK_ACCESS_SHADER_READ_BIT)
+        LongWord(VK_PIPELINE_STAGE_TRANSFER_BIT),
+        LongWord(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
+        LongWord(VK_ACCESS_TRANSFER_WRITE_BIT),
+        LongWord(VK_ACCESS_SHADER_READ_BIT)
       );
       EndCommandBuffer;
       Finish;
@@ -830,11 +722,7 @@ begin
   end;
 end;
 
-procedure TQNNVulkan.Attention(
-    const Dst, Q, K, V: TMemoryBlock;
-    const Rows, Heads, KvHeads, HeadDim, CausalRows: Integer;
-    const KeyLimits: TArray<Integer>
-);
+procedure TQNNVulkan.Attention(const Dst, Q, K, V: TMemoryBlock; const Rows, Heads, KvHeads, HeadDim, CausalRows: Integer; const KeyLimits: TArray<Integer>);
 var
   PackedKV: TMemoryBlock;
   IndexK, IndexV, BaseV, SourceIndex: NativeInt;
@@ -844,15 +732,15 @@ begin
     raise EArgumentException.Create('GPU needs 32 KiB shared memory for attention');
   ABytes := MatrixBytes(Rows, Heads * HeadDim, Heads * HeadDim, 4);
   BBytes :=
-      MatrixBytes(
-          Rows,
-          KvHeads * HeadDim * 2 + Ord(Length(KeyLimits) > 0),
-          KvHeads * HeadDim * 2 + Ord(Length(KeyLimits) > 0),
-          4
-      );
+    MatrixBytes(
+    Rows,
+    KvHeads * HeadDim * 2 + Ord(Length(KeyLimits) > 0),
+    KvHeads * HeadDim * 2 + Ord(Length(KeyLimits) > 0),
+    4
+  );
   EnsureBuffers(ABytes, BBytes, ABytes);
   PackedKV :=
-      TMemoryBlock.Create([NativeInt(2) * KvHeads * HeadDim * Rows + Length(KeyLimits)], 'attention-kv-packedKV');
+    TMemoryBlock.Create([NativeInt(2) * KvHeads * HeadDim * Rows + Length(KeyLimits)], 'attention-kv-packedKV');
   try
     BaseV := NativeInt(Rows) * KvHeads * HeadDim;
     for var H := 0 to KvHeads - 1 do
@@ -873,27 +761,27 @@ begin
     CopyBuffer(FUploadA, FInputA, ABytes);
     CopyBuffer(FUploadB, FInputB, BBytes);
     MemoryBarrier(
-        LongWord(VK_PIPELINE_STAGE_TRANSFER_BIT),
-        LongWord(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
-        LongWord(VK_ACCESS_TRANSFER_WRITE_BIT),
-        LongWord(VK_ACCESS_SHADER_READ_BIT)
+      LongWord(VK_PIPELINE_STAGE_TRANSFER_BIT),
+      LongWord(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
+      LongWord(VK_ACCESS_TRANSFER_WRITE_BIT),
+      LongWord(VK_ACCESS_SHADER_READ_BIT)
     );
     DispatchPipeline(
-        TKernelHandle(2),
-        [
-            Rows,
-            Heads,
-            KvHeads,
-            HeadDim,
-            CausalRows,
-            Ord(Length(KeyLimits) > 0),
-            FInputA.Buffer,
-            FInputB.Buffer,
-            FOutput.Buffer
-        ],
+      TKernelHandle(2),
+      [
         Rows,
         Heads,
-        1
+        KvHeads,
+        HeadDim,
+        CausalRows,
+        Ord(Length(KeyLimits) > 0),
+        FInputA.Buffer,
+        FInputB.Buffer,
+        FOutput.Buffer
+      ],
+      Rows,
+      Heads,
+      1
     );
     Inc(FCounters.ActivationUploadBytes, ABytes + BBytes);
     EndNetwork(Dst, Rows, Heads * HeadDim);
@@ -919,10 +807,10 @@ var
       BeginCommadBuffer;
       CopyBuffer(FWeightUpload, Result.Memory, (Chunk + 3) and not UInt64(3), 0, DestOffset + Off);
       MemoryBarrier(
-          LongWord(VK_PIPELINE_STAGE_TRANSFER_BIT),
-          LongWord(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
-          LongWord(VK_ACCESS_TRANSFER_WRITE_BIT),
-          LongWord(VK_ACCESS_SHADER_READ_BIT)
+        LongWord(VK_PIPELINE_STAGE_TRANSFER_BIT),
+        LongWord(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
+        LongWord(VK_ACCESS_TRANSFER_WRITE_BIT),
+        LongWord(VK_ACCESS_SHADER_READ_BIT)
       );
       EndCommandBuffer;
       Finish;
@@ -933,13 +821,13 @@ var
 
 begin
   if (Weight.WeightIdentity = nil)
-      or (Scales.WeightIdentity = nil)
-      or (Weight.DataType <> DT_I8)
-      or (Scales.DataType <> dtF32)
-      or (Int64(Rows) * Cols > Int64(Weight.Size) - Weight.Offset)
-      or (Int64(Rows) > Int64(Scales.Size) - Scales.Offset)
-      or not Weight.IsAssigned
-      or not Scales.IsAssigned then
+    or (Scales.WeightIdentity = nil)
+    or (Weight.DataType <> DT_I8)
+    or (Scales.DataType <> dtF32)
+    or (Int64(Rows) * Cols > Int64(Weight.Size) - Weight.Offset)
+    or (Int64(Rows) > Int64(Scales.Size) - Scales.Offset)
+    or not Weight.IsAssigned
+    or not Scales.IsAssigned then
     raise EArgumentException.Create('Invalid immutable INT8 matrix or per-row F32 scales');
   RawBytes := MatrixBytes(Rows, Cols, Cols, 1);
   ScaleStart := (RawBytes + 3) and not UInt64(3);
@@ -948,18 +836,18 @@ begin
   if Total > VulkanDevice.DeviceProperties.Limits.MaxStorageBufferRange then
     raise ERangeError.Create('Packed INT8 matrix and scales exceed maxStorageBufferRange');
   Key :=
-      'i8/'
-          + IntToHex(NativeUInt(Pointer(Weight.WeightIdentity)), SizeOf(Pointer) * 2)
-          + '/'
-          + IntToHex(NativeUInt(Pointer(Scales.WeightIdentity)), SizeOf(Pointer) * 2)
-          + '/'
-          + IntToStr(Weight.Offset)
-          + '/'
-          + IntToStr(Scales.Offset)
-          + '/'
-          + IntToStr(Rows)
-          + '/'
-          + IntToStr(Cols);
+    'i8/'
+    + IntToHex(NativeUInt(Pointer(Weight.WeightIdentity)), SizeOf(Pointer) * 2)
+    + '/'
+    + IntToHex(NativeUInt(Pointer(Scales.WeightIdentity)), SizeOf(Pointer) * 2)
+    + '/'
+    + IntToStr(Weight.Offset)
+    + '/'
+    + IntToStr(Scales.Offset)
+    + '/'
+    + IntToStr(Rows)
+    + '/'
+    + IntToStr(Cols);
   Inc(FWeightClock);
   if FWeights.TryGetValue(Key, Result) then
   begin
@@ -999,11 +887,7 @@ begin
   end;
 end;
 
-procedure TQNNVulkan.CachedInt8Linear(
-    const Dst, Src: System.PSingle;
-    const Weight, Scales: TMemoryBlock;
-    const Seq, InputDim, OutputDim: Integer
-);
+procedure TQNNVulkan.CachedInt8Linear(const Dst, Src: System.PSingle; const Weight, Scales: TMemoryBlock; const Seq, InputDim, OutputDim: Integer);
 var
   Entry: TGPUWeight;
 begin
@@ -1012,28 +896,28 @@ begin
   try
     BeginNetwork(Src, Seq, InputDim);
     DispatchPipeline(
-        TKernelHandle(0),
-        [
-            Seq,
-            OutputDim,
-            InputDim,
-            Single(1),
-            FInputA.Buffer,
-            0,
-            InputDim,
-            Entry.Memory.Buffer,
-            0,
-            InputDim,
-            Single(0),
-            FOutput.Buffer,
-            0,
-            OutputDim,
-            10
-        ],
-        (OutputDim + 63) div 64,
-        (Seq + 63) div 64,
-        1,
-        0
+      TKernelHandle(0),
+      [
+        Seq,
+        OutputDim,
+        InputDim,
+        Single(1),
+        FInputA.Buffer,
+        0,
+        InputDim,
+        Entry.Memory.Buffer,
+        0,
+        InputDim,
+        Single(0),
+        FOutput.Buffer,
+        0,
+        OutputDim,
+        10
+      ],
+      (OutputDim + 63) div 64,
+      (Seq + 63) div 64,
+      1,
+      0
     );
     EndNetwork(Dst, Seq, OutputDim);
   finally
@@ -1041,36 +925,31 @@ begin
   end;
 end;
 
-procedure TQNNVulkan.RecordLinear(
-    const A, B, C: TVulkanMemory;
-    const Seq, InputDim, OutputDim: Integer;
-    const BF16: Boolean;
-    const Slot: Integer
-);
+procedure TQNNVulkan.RecordLinear(const A, B, C: TVulkanMemory; const Seq, InputDim, OutputDim: Integer; const BF16: Boolean; const Slot: Integer);
 begin
   DispatchPipeline(
-      TKernelHandle(0),
-      [
-          Seq,
-          OutputDim,
-          InputDim,
-          Single(1),
-          A.Buffer,
-          0,
-          InputDim,
-          B.Buffer,
-          0,
-          InputDim,
-          Single(0),
-          C.Buffer,
-          0,
-          OutputDim,
-          2 or (Ord(BF16) shl 2)
-      ],
-      (OutputDim + 63) div 64,
-      (Seq + 63) div 64,
-      1,
-      Slot
+    TKernelHandle(0),
+    [
+      Seq,
+      OutputDim,
+      InputDim,
+      Single(1),
+      A.Buffer,
+      0,
+      InputDim,
+      B.Buffer,
+      0,
+      InputDim,
+      Single(0),
+      C.Buffer,
+      0,
+      OutputDim,
+      2 or (Ord(BF16) shl 2)
+    ],
+    (OutputDim + 63) div 64,
+    (Seq + 63) div 64,
+    1,
+    Slot
   );
 end;
 
@@ -1083,10 +962,10 @@ begin
   BeginCommadBuffer;
   CopyBuffer(FUploadA, FInputA, Bytes);
   MemoryBarrier(
-      LongWord(VK_PIPELINE_STAGE_TRANSFER_BIT),
-      LongWord(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
-      LongWord(VK_ACCESS_TRANSFER_WRITE_BIT),
-      LongWord(VK_ACCESS_SHADER_READ_BIT)
+    LongWord(VK_PIPELINE_STAGE_TRANSFER_BIT),
+    LongWord(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
+    LongWord(VK_ACCESS_TRANSFER_WRITE_BIT),
+    LongWord(VK_ACCESS_SHADER_READ_BIT)
   );
   Inc(FCounters.ActivationUploadBytes, Bytes);
 end;
@@ -1098,17 +977,17 @@ var
 begin
   Bytes := UInt64(Seq) * UInt64(Dim) * 4;
   MemoryBarrier(
-      LongWord(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
-      LongWord(VK_PIPELINE_STAGE_TRANSFER_BIT),
-      LongWord(VK_ACCESS_SHADER_WRITE_BIT),
-      LongWord(VK_ACCESS_TRANSFER_READ_BIT)
+    LongWord(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
+    LongWord(VK_PIPELINE_STAGE_TRANSFER_BIT),
+    LongWord(VK_ACCESS_SHADER_WRITE_BIT),
+    LongWord(VK_ACCESS_TRANSFER_READ_BIT)
   );
   CopyBuffer(FOutput, FReadback, Bytes);
   MemoryBarrier(
-      LongWord(VK_PIPELINE_STAGE_TRANSFER_BIT),
-      LongWord(VK_PIPELINE_STAGE_HOST_BIT),
-      LongWord(VK_ACCESS_TRANSFER_WRITE_BIT),
-      LongWord(VK_ACCESS_HOST_READ_BIT)
+    LongWord(VK_PIPELINE_STAGE_TRANSFER_BIT),
+    LongWord(VK_PIPELINE_STAGE_HOST_BIT),
+    LongWord(VK_ACCESS_TRANSFER_WRITE_BIT),
+    LongWord(VK_ACCESS_HOST_READ_BIT)
   );
   EndCommandBuffer;
   Finish;
@@ -1123,11 +1002,7 @@ begin
   Inc(FCounters.ActivationDownloadBytes, Bytes);
 end;
 
-procedure TQNNVulkan.CachedLinear(
-    const Dst, Src: System.PSingle;
-    const Weight: TMemoryBlock;
-    const Seq, InputDim, OutputDim: Integer
-);
+procedure TQNNVulkan.CachedLinear(const Dst, Src: System.PSingle; const Weight: TMemoryBlock; const Seq, InputDim, OutputDim: Integer);
 var
   Entry: TGPUWeight;
 begin
@@ -1142,11 +1017,7 @@ begin
   end;
 end;
 
-procedure TQNNVulkan.Swiglu(
-    const Dst, Src: System.PSingle;
-    const Gate, Up, Down: TMemoryBlock;
-    const Seq, Hidden, Mlp: Integer
-);
+procedure TQNNVulkan.Swiglu(const Dst, Src: System.PSingle; const Gate, Up, Down: TMemoryBlock; const Seq, Hidden, Mlp: Integer);
 var
   GateEntry, UpEntry, DownEntry: TGPUWeight;
   Count, Groups, GroupsX, GroupsY: UInt64;
@@ -1169,22 +1040,22 @@ begin
     RecordLinear(FInputA, GateEntry.Memory, FGraphGate, Seq, Hidden, Mlp, Gate.DataType = dtBF16, 0);
     RecordLinear(FInputA, UpEntry.Memory, FGraphUp, Seq, Hidden, Mlp, Up.DataType = dtBF16, 1);
     MemoryBarrier(
-        LongWord(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
-        LongWord(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
-        LongWord(VK_ACCESS_SHADER_WRITE_BIT),
-        LongWord(VK_ACCESS_SHADER_READ_BIT) or LongWord(VK_ACCESS_SHADER_WRITE_BIT)
+      LongWord(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
+      LongWord(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
+      LongWord(VK_ACCESS_SHADER_WRITE_BIT),
+      LongWord(VK_ACCESS_SHADER_READ_BIT) or LongWord(VK_ACCESS_SHADER_WRITE_BIT)
     );
     DispatchPipeline(
-        TKernelHandle(1),
-        [FGraphGate.Buffer, FGraphUp.Buffer, FGraphGate.Buffer, Integer(Count)],
-        GroupsX,
-        GroupsY
+      TKernelHandle(1),
+      [FGraphGate.Buffer, FGraphUp.Buffer, FGraphGate.Buffer, Integer(Count)],
+      GroupsX,
+      GroupsY
     );
     MemoryBarrier(
-        LongWord(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
-        LongWord(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
-        LongWord(VK_ACCESS_SHADER_WRITE_BIT),
-        LongWord(VK_ACCESS_SHADER_READ_BIT)
+      LongWord(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
+      LongWord(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
+      LongWord(VK_ACCESS_SHADER_WRITE_BIT),
+      LongWord(VK_ACCESS_SHADER_READ_BIT)
     );
     RecordLinear(FGraphGate, DownEntry.Memory, FOutput, Seq, Mlp, Hidden, Down.DataType = dtBF16, 2);
     EndNetwork(Dst, Seq, Hidden);
@@ -1326,21 +1197,17 @@ end;
 function UseNetworkGPU(const Seq, InputDim, OutputDim: Integer; const Products: Double): Boolean;
 begin
   Result :=
-      (GPUMode <> gpuOff)
-          and (Seq > 0)
-          and (InputDim > 0)
-          and (OutputDim > 0)
-          and (InputDim <= High(Integer) - 63)
-          and (OutputDim <= High(Integer) - 63);
+    (GPUMode <> gpuOff)
+    and (Seq > 0)
+    and (InputDim > 0)
+    and (OutputDim > 0)
+    and (InputDim <= High(Integer) - 63)
+    and (OutputDim <= High(Integer) - 63);
   if (GPUMode = gpuAuto) and ((Seq < 8) or (Products < AUTO_MIN_PRODUCTS)) then
     Result := False;
 end;
 
-function TryVulkanLinear(
-    const Dst, Src: System.PSingle;
-    const Weight: TMemoryBlock;
-    const Seq, InputDim, OutputDim: Integer
-): Boolean;
+function TryVulkanLinear(const Dst, Src: System.PSingle; const Weight: TMemoryBlock; const Seq, InputDim, OutputDim: Integer): Boolean;
 {$IF defined(MSWINDOWS) and defined(CPUX64)}
 var
   PreviousMask: TFPUExceptionMask;
@@ -1348,9 +1215,9 @@ var
 begin
   Result := False;
   if (Weight.WeightIdentity = nil)
-      or (Dst = nil)
-      or (Src = nil)
-      or not UseNetworkGPU(Seq, InputDim, OutputDim, Double(Seq) * InputDim * OutputDim) then
+    or (Dst = nil)
+    or (Src = nil)
+    or not UseNetworkGPU(Seq, InputDim, OutputDim, Double(Seq) * InputDim * OutputDim) then
     Exit;
   GPULock.Acquire;
   try
@@ -1386,11 +1253,7 @@ begin
   end;
 end;
 
-function TryVulkanAttention(
-    const Dst, Q, K, V: TMemoryBlock;
-    const Rows, Heads, KvHeads, HeadDim, CausalRows: Integer;
-    const KeyLimits: TArray<Integer>
-): Boolean;
+function TryVulkanAttention(const Dst, Q, K, V: TMemoryBlock; const Rows, Heads, KvHeads, HeadDim, CausalRows: Integer; const KeyLimits: TArray<Integer>): Boolean;
 {$IF defined(MSWINDOWS) and defined(CPUX64)}
 var
   PreviousMask: TFPUExceptionMask;
@@ -1398,28 +1261,28 @@ var
 begin
   Result := False;
   if (GPUMode = gpuOff)
-      or (Rows <= 0)
-      or (Rows > 6144)
-      or (Heads <= 0)
-      or (Heads > 128)
-      or (KvHeads <= 0)
-      or (Heads mod KvHeads <> 0)
-      or (HeadDim <= 0)
-      or (HeadDim > 128)
-      or (CausalRows < 0)
-      or (CausalRows > Rows)
-      or (Dst.DataType <> dtF32)
-      or (Q.DataType <> dtF32)
-      or (K.DataType <> dtF32)
-      or (V.DataType <> dtF32)
-      or (Int64(Rows) * Heads * HeadDim > Dst.Size - Dst.Offset)
-      or (Int64(Rows) * Heads * HeadDim > Q.Size - Q.Offset)
-      or (Int64(Rows) * KvHeads * HeadDim > K.Size - K.Offset)
-      or (Int64(Rows) * KvHeads * HeadDim > V.Size - V.Offset)
-      or not Dst.IsAssigned
-      or not Q.IsAssigned
-      or not K.IsAssigned
-      or not V.IsAssigned then
+    or (Rows <= 0)
+    or (Rows > 6144)
+    or (Heads <= 0)
+    or (Heads > 128)
+    or (KvHeads <= 0)
+    or (Heads mod KvHeads <> 0)
+    or (HeadDim <= 0)
+    or (HeadDim > 128)
+    or (CausalRows < 0)
+    or (CausalRows > Rows)
+    or (Dst.DataType <> dtF32)
+    or (Q.DataType <> dtF32)
+    or (K.DataType <> dtF32)
+    or (V.DataType <> dtF32)
+    or (Int64(Rows) * Heads * HeadDim > Dst.Size - Dst.Offset)
+    or (Int64(Rows) * Heads * HeadDim > Q.Size - Q.Offset)
+    or (Int64(Rows) * KvHeads * HeadDim > K.Size - K.Offset)
+    or (Int64(Rows) * KvHeads * HeadDim > V.Size - V.Offset)
+    or not Dst.IsAssigned
+    or not Q.IsAssigned
+    or not K.IsAssigned
+    or not V.IsAssigned then
     Exit;
   if (Length(KeyLimits) <> 0) and (Length(KeyLimits) <> Rows) then
     Exit;
@@ -1452,11 +1315,7 @@ begin
   end;
 end;
 
-function TryVulkanInt8Linear(
-    const Dst, Src: System.PSingle;
-    const Weight, Scales: TMemoryBlock;
-    const Seq, InputDim, OutputDim: Integer
-): Boolean;
+function TryVulkanInt8Linear(const Dst, Src: System.PSingle; const Weight, Scales: TMemoryBlock; const Seq, InputDim, OutputDim: Integer): Boolean;
 {$IF defined(MSWINDOWS) and defined(CPUX64)}
 var
   PreviousMask: TFPUExceptionMask;
@@ -1499,15 +1358,15 @@ var
 begin
   Result := False;
   if (Dst.DataType <> dtF32)
-      or (Src.DataType <> dtF32)
-      or (Gate.WeightIdentity = nil)
-      or (Up.WeightIdentity = nil)
-      or (Down.WeightIdentity = nil)
-      or not UseNetworkGPU(Seq, Hidden, Mlp, Double(Seq) * Hidden * Mlp * 3)
-      or (Int64(Seq) * Hidden > Src.Size - Src.Offset)
-      or (Int64(Seq) * Hidden > Dst.Size - Dst.Offset)
-      or not Src.IsAssigned
-      or not Dst.IsAssigned then
+    or (Src.DataType <> dtF32)
+    or (Gate.WeightIdentity = nil)
+    or (Up.WeightIdentity = nil)
+    or (Down.WeightIdentity = nil)
+    or not UseNetworkGPU(Seq, Hidden, Mlp, Double(Seq) * Hidden * Mlp * 3)
+    or (Int64(Seq) * Hidden > Src.Size - Src.Offset)
+    or (Int64(Seq) * Hidden > Dst.Size - Dst.Offset)
+    or not Src.IsAssigned
+    or not Dst.IsAssigned then
     Exit;
   GPULock.Acquire;
   try
@@ -1542,32 +1401,20 @@ begin
   end;
 end;
 
-function TryProduct(
-    const TransA, TransB: Boolean;
-    const M, N, K: Int64;
-    const Alpha: Single;
-    const A: System.PSingle;
-    const Lda: Int64;
-    const B: Pointer;
-    const Ldb: Int64;
-    const Beta: Single;
-    const C: System.PSingle;
-    const Ldc: Int64;
-    const BIsBF16: Boolean
-): Boolean;
+function TryProduct(const TransA, TransB: Boolean; const M, N, K: Int64; const Alpha: Single; const A: System.PSingle; const Lda: Int64; const B: Pointer; const Ldb: Int64; const Beta: Single; const C: System.PSingle; const Ldc: Int64; const BIsBF16: Boolean): Boolean;
 begin
   Result := False;
   if (GPUMode = gpuOff)
-      or (M <= 0)
-      or (N <= 0)
-      or (K <= 0)
-      or (Alpha = 0)
-      or (M > High(Integer) - 63)
-      or (N > High(Integer) - 63)
-      or (K > High(Integer))
-      or (Lda > High(Integer))
-      or (Ldb > High(Integer))
-      or (Ldc > High(Integer)) then
+    or (M <= 0)
+    or (N <= 0)
+    or (K <= 0)
+    or (Alpha = 0)
+    or (M > High(Integer) - 63)
+    or (N > High(Integer) - 63)
+    or (K > High(Integer))
+    or (Lda > High(Integer))
+    or (Ldb > High(Integer))
+    or (Ldc > High(Integer)) then
     Exit;
   if (GPUMode = gpuAuto) and ((M < 8) or (Double(M) * N * K < AUTO_MIN_PRODUCTS)) then
     Exit;
@@ -1600,64 +1447,48 @@ begin
   end;
 end;
 
-function TryVulkanGemm(
-    const Order: TCBLASOrder;
-    const TransA, TransB: TCBLASTranspose;
-    const M, N, K: Int64;
-    const Alpha: Single;
-    const A: System.PSingle;
-    const Lda: Int64;
-    const B: System.PSingle;
-    const Ldb: Int64;
-    const Beta: Single;
-    const C: System.PSingle;
-    const Ldc: Int64
-): Boolean;
+function TryVulkanGemm(const Order: TCBLASOrder; const TransA, TransB: TCBLASTranspose; const M, N, K: Int64; const Alpha: Single; const A: System.PSingle; const Lda: Int64; const B: System.PSingle; const Ldb: Int64; const Beta: Single; const C: System.PSingle; const Ldc: Int64): Boolean;
 begin
   // For real-valued matrices conjugate transpose is just transpose.
   if Order = CblasColMajor then
     Result :=
-        TryProduct(
-            TransB in [CblasTrans, CblasConjTrans],
-            TransA in [CblasTrans, CblasConjTrans],
-            N,
-            M,
-            K,
-            Alpha,
-            B,
-            Ldb,
-            A,
-            Lda,
-            Beta,
-            C,
-            Ldc,
-            False
-        )
+      TryProduct(
+      TransB in [CblasTrans, CblasConjTrans],
+      TransA in [CblasTrans, CblasConjTrans],
+      N,
+      M,
+      K,
+      Alpha,
+      B,
+      Ldb,
+      A,
+      Lda,
+      Beta,
+      C,
+      Ldc,
+      False
+    )
   else
     Result :=
-        TryProduct(
-            TransA in [CblasTrans, CblasConjTrans],
-            TransB in [CblasTrans, CblasConjTrans],
-            M,
-            N,
-            K,
-            Alpha,
-            A,
-            Lda,
-            B,
-            Ldb,
-            Beta,
-            C,
-            Ldc,
-            False
-        );
+      TryProduct(
+      TransA in [CblasTrans, CblasConjTrans],
+      TransB in [CblasTrans, CblasConjTrans],
+      M,
+      N,
+      K,
+      Alpha,
+      A,
+      Lda,
+      B,
+      Ldb,
+      Beta,
+      C,
+      Ldc,
+      False
+    );
 end;
 
-function TryVulkanLinearBF16(
-    const Dst, Src: System.PSingle;
-    const Weight: PBF16;
-    const Seq, SrcDim, DstDim: Integer
-): Boolean;
+function TryVulkanLinearBF16(const Dst, Src: System.PSingle; const Weight: PBF16; const Seq, SrcDim, DstDim: Integer): Boolean;
 begin
   Result := TryProduct(False, True, Seq, DstDim, SrcDim, 1, Src, SrcDim, Weight, SrcDim, 0, Dst, DstDim, True);
 end;
@@ -1678,3 +1509,4 @@ finalization
   GPULock.Free;
 
 end.
+

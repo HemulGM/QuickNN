@@ -1081,12 +1081,12 @@ begin
   // todo simdify SumSqr
   Result := 0;
   if Stride = 1 then
-{$IF defined(CPUX64) and defined(USE_AVX2)}
-    Exit(SSumSqrAVX2(N, Src))
-{$ELSE}
-    for I := 0 to N - 1 do
-      Result := Result + Sqr(Src[I])
-{$ENDIF}
+  {$IF defined(CPUX64) and defined(USE_AVX2)}
+      Exit(SSumSqrAVX2(N, Src))
+  {$ELSE}
+      for I := 0 to N - 1 do
+        Result := Result + Sqr(Src[I])
+  {$ENDIF}
   else
     for I := 0 to N - 1 do
       Result := Result + Sqr(Src[I * Stride]);

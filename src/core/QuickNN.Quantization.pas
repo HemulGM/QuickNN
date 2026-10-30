@@ -14,26 +14,22 @@
 interface
 
 uses
-  System.SysUtils,
-  QuickNN.Common,
-  QuickNN.SafeTensors,
-  QuickNN.Vulkan;
+  System.SysUtils, QuickNN.Common, QuickNN.SafeTensors, QuickNN.Vulkan;
 
 type
   IQNNLinearAdapter = interface
     procedure Apply(const Dst, Src: TMemoryBlock; const Rows, InputDim, OutputDim: Integer);
   end;
+
   IQNNGPULinearAdapter = interface
     ['{33991D61-2403-4C69-A08D-18F0AC329D1A}']
-    procedure ApplyGPU(
-        const Context: TQNNGPUContext;
-        const Dst, Src: TQNNGPUTensor;
-        const Rows, InputDim, OutputDim: Integer
-    );
+    procedure ApplyGPU(const Context: TQNNGPUContext; const Dst, Src: TQNNGPUTensor; const Rows, InputDim, OutputDim: Integer);
   end;
+
   PQNNLinearWeight = ^TQNNLinearWeight;
   // ComfyUI int8_tensorwise / ConvRot storage. Activations stay F32; weights
   // remain packed INT8 in host mappings and the Vulkan cache (W8A32 execution).
+
   TQNNLinearWeight = record
     Weight, Scales, Bias: TMemoryBlock;
     InputDim, OutputDim, RotationGroup: Integer;
@@ -41,23 +37,24 @@ type
     procedure AddAdapter(const Adapter: IQNNLinearAdapter);
     function HasAdapters: Boolean;
     procedure Load(const Files: TSafeTensorFiles; const Prefix: string);
-    procedure Forward(const Dst, Src: TMemoryBlock; const Rows: Integer);
+    procedure forward(const Dst, Src: TMemoryBlock; const Rows: Integer);
     procedure ForwardGPU(const Context: TQNNGPUContext; const Dst, Src: TQNNGPUTensor; const Rows: Integer);
     procedure Gather(const Dst: TMemoryBlock; const Ids: TArray<Integer>);
     procedure Free;
   end;
 
 function QNNRequiredTensor(const Files: TSafeTensorFiles; const Name: string): PSafeTensor;
+
 procedure QNNRegularHadamard(const Data: System.PSingle; const Count, GroupSize: Integer);
+
 function QNNWeightValue(const Data: TMemoryBlock; const Index: NativeInt): Single;
+
 procedure QNNCheckFinite(const Data: TMemoryBlock; const Count: NativeInt; const Context: string);
 
 implementation
 
 uses
-  System.Math,
-  System.JSON,
-  QuickNN.Kernels;
+  System.Math, System.JSON, QuickNN.Kernels;
 
 function QNNRequiredTensor(const Files: TSafeTensorFiles; const Name: string): PSafeTensor;
 begin
@@ -72,11 +69,12 @@ var
 begin
   case Data.DataType of
     dtBF16:
-    begin
-      Bits := UInt32(PBF16(Data)[Index]) shl 16;
-      Move(Bits, Result, 4)
-    end;
-    dtF32: Result := System.PSingle(Data)[Index];
+      begin
+        Bits := UInt32(PBF16(Data)[Index]) shl 16;
+        Move(Bits, Result, 4)
+      end;
+    dtF32:
+      Result := System.PSingle(Data)[Index];
   else
     raise EArgumentException.Create('Expected a BF16/F32 weight');
   end;
@@ -146,11 +144,11 @@ begin
   Self := Default(TQNNLinearWeight);
   Tensor := Files.GetTensor(Prefix + '.weight');
   if (Tensor = nil)
-      or (Tensor.Ndim <> 2)
-      or (Tensor.Shape[0] <= 0)
-      or (Tensor.Shape[1] <= 0)
-      or (Tensor.Shape[0] > MaxInt)
-      or (Tensor.Shape[1] > MaxInt) then
+    or (Tensor.Ndim <> 2)
+    or (Tensor.Shape[0] <= 0)
+    or (Tensor.Shape[1] <= 0)
+    or (Tensor.Shape[0] > MaxInt)
+    or (Tensor.Shape[1] > MaxInt) then
     raise ESafeTensorError.Create('Missing or invalid linear matrix: ' + Prefix);
   OutputDim := Tensor.Shape[0];
   InputDim := Tensor.Shape[1];
@@ -159,10 +157,10 @@ begin
     Marker := Files.GetTensor(Prefix + '.comfy_quant');
     ScaleTensor := Files.GetTensor(Prefix + '.weight_scale');
     if (Marker = nil)
-        or (Marker.DType <> StU8)
-        or (Marker.DataSize > 16384)
-        or (ScaleTensor = nil)
-        or (ScaleTensor.DType <> StF32) then
+      or (Marker.DType <> StU8)
+      or (Marker.DataSize > 16384)
+      or (ScaleTensor = nil)
+      or (ScaleTensor.DType <> StF32) then
       raise ESafeTensorError.Create('INT8 matrix requires quantization metadata and F32 scales: ' + Prefix);
     SetString(Text, PAnsiChar(Marker.AsMappedPtr), Marker.DataSize);
     JSON := TJSONValue.ParseJSONValue(string(Text));
@@ -221,7 +219,7 @@ begin
   end;
 end;
 
-procedure TQNNLinearWeight.Forward(const Dst, Src: TMemoryBlock; const Rows: Integer);
+procedure TQNNLinearWeight.forward(const Dst, Src: TMemoryBlock; const Rows: Integer);
 var
   Rotated, Original, Source: TMemoryBlock;
   Input: System.PSingle;
@@ -229,17 +227,17 @@ var
   Start, BatchRows: Integer;
 begin
   if (Rows <= 0)
-      or (Src.DataType <> dtF32)
-      or (Dst.DataType <> dtF32)
-      or (Int64(Rows) * InputDim > Src.Size - Src.Offset)
-      or (Int64(Rows) * OutputDim > Dst.Size - Dst.Offset) then
+    or (Src.DataType <> dtF32)
+    or (Dst.DataType <> dtF32)
+    or (Int64(Rows) * InputDim > Src.Size - Src.Offset)
+    or (Int64(Rows) * OutputDim > Dst.Size - Dst.Offset) then
     raise EArgumentException.Create('Invalid linear input/output span');
   Source := Src;
   try
     if HasAdapters
-        and (NativeUInt(System.PSingle(Src)) < NativeUInt(System.PSingle(Dst)) + UInt64(Rows) * UInt64(OutputDim) * 4)
-        and (NativeUInt(System.PSingle(Dst))
-            < NativeUInt(System.PSingle(Src)) + UInt64(Rows) * UInt64(InputDim) * 4) then
+      and (NativeUInt(System.PSingle(Src)) < NativeUInt(System.PSingle(Dst)) + UInt64(Rows) * UInt64(OutputDim) * 4)
+      and (NativeUInt(System.PSingle(Dst))
+      < NativeUInt(System.PSingle(Src)) + UInt64(Rows) * UInt64(InputDim) * 4) then
     begin
       Original := TMemoryBlock.Create([Rows, InputDim], 'lora-original-input');
       Move(System.PSingle(Src)^, System.PSingle(Original)^, NativeInt(Rows) * InputDim * 4);
@@ -265,13 +263,13 @@ begin
           // 1024px images and fused 24576-column gate/up projections.
           BatchRows := Min(512, Rows - Start);
           if not TryVulkanInt8Linear(
-              System.PSingle(Dst) + NativeInt(Start) * OutputDim,
-              Input + NativeInt(Start) * InputDim,
-              Weight,
-              Scales,
-              BatchRows,
-              InputDim,
-              OutputDim) then
+            System.PSingle(Dst) + NativeInt(Start) * OutputDim,
+            Input + NativeInt(Start) * InputDim,
+            Weight,
+            Scales,
+            BatchRows,
+            InputDim,
+            OutputDim) then
           begin
             for var R := Start to Start + BatchRows - 1 do
               for var O := 0 to OutputDim - 1 do
@@ -279,7 +277,7 @@ begin
                 Sum := 0;
                 for var K := 0 to InputDim - 1 do
                   Sum :=
-                      Sum + Double(Input[NativeInt(R) * InputDim + K]) * PShortInt(Weight)[NativeInt(O) * InputDim + K];
+                    Sum + Double(Input[NativeInt(R) * InputDim + K]) * PShortInt(Weight)[NativeInt(O) * InputDim + K];
                 System.PSingle(Dst)[NativeInt(R) * OutputDim + O] := Sum * System.PSingle(Scales)[O];
               end;
           end;
@@ -293,7 +291,7 @@ begin
       for var R := 0 to Rows - 1 do
         for var O := 0 to OutputDim - 1 do
           System.PSingle(Dst)[NativeInt(R) * OutputDim + O] :=
-              System.PSingle(Dst)[NativeInt(R) * OutputDim + O] + System.PSingle(Bias)[O];
+            System.PSingle(Dst)[NativeInt(R) * OutputDim + O] + System.PSingle(Bias)[O];
     for var Adapter in Adapters do
       Adapter.Apply(Dst, Source, Rows, InputDim, OutputDim);
   finally
@@ -301,11 +299,7 @@ begin
   end;
 end;
 
-procedure TQNNLinearWeight.ForwardGPU(
-    const Context: TQNNGPUContext;
-    const Dst, Src: TQNNGPUTensor;
-    const Rows: Integer
-);
+procedure TQNNLinearWeight.ForwardGPU(const Context: TQNNGPUContext; const Dst, Src: TQNNGPUTensor; const Rows: Integer);
 var
   gpuAdapter: IQNNGPULinearAdapter;
 begin
@@ -353,6 +347,7 @@ begin
   SetLength(Adapters, Length(Adapters) + 1);
   Adapters[High(Adapters)] := Adapter;
 end;
+
 function TQNNLinearWeight.HasAdapters: Boolean;
 begin
   Result := Length(Adapters) <> 0
@@ -370,3 +365,4 @@ begin
 end;
 
 end.
+

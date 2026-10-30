@@ -7,8 +7,7 @@
 interface
 
 uses
-  System.SysUtils,
-  QuickNN.Common;
+  System.SysUtils, QuickNN.Common;
 
 type
   TQNNBPEMerge = record
@@ -52,19 +51,13 @@ begin
   while I <= Length(Str) do
   begin
     case Str[I] of
-      TAB,
-      LF,
-      CR,
-      SP, // skip white spaces
-      '!'..'/',
-      ':'..'@',
-      '['..'`',
-      '{'..'~': // insert punctuation
-      begin
-        Inc(I);
-        Insert(Copy(Str, Start, I - Start), Result, Length(Result));
-        Start := I;
-      end;
+      TAB, LF, CR, SP, // skip white spaces
+        '!'..'/', ':'..'@', '['..'`', '{'..'~': // insert punctuation
+        begin
+          Inc(I);
+          Insert(Copy(Str, Start, I - Start), Result, Length(Result));
+          Start := I;
+        end;
 
       // TAB, LF, CR, SP : // skip white spaces
       //  begin
@@ -80,7 +73,6 @@ begin
       end;
     end;
   end;
-
 end;
 
 { TQNNTokenizer }
@@ -131,9 +123,7 @@ begin
       Merges[I].Right := Merge[1];
       Merges[I].&Result := Merge[2];
       Merges[I].Priority := I;
-
     end;
-
   finally
     CloseFile(F);
   end
@@ -242,7 +232,6 @@ begin
 
   if AddEos and (EosId >= 0) and (Length(Result) < MaxLen) then
     AppendToken(EosId);
-
 end;
 
 function TQNNTokenizer.DeTokenize(const Tokens: TArray<LongInt>): RawByteString;
@@ -323,7 +312,6 @@ begin
   Result.VocabsDic.TryAdd('<unk>', 257);
   Result.VocabsDic.TryAdd('<bos>', 258);
   Result.VocabsDic.TryAdd('<eos>', 259);
-
 end;
 
 // const
@@ -342,6 +330,9 @@ initialization
   // writeln(s);
   // readln
 
+
+
 finalization
 
 end.
+

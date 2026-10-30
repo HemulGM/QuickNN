@@ -5,9 +5,7 @@
 interface
 
 uses
-  System.SysUtils,
-  QuickNN.Common,
-  QuickNN.SafeTensors;
+  System.SysUtils, QuickNN.Common, QuickNN.SafeTensors;
 
 type
   TMoEInt4Cache = class
@@ -17,11 +15,8 @@ type
     procedure Build(const Sources: TSafeTensorFiles; const Progress: TProc<Integer, Integer>);
     procedure ValidateIndex;
   public
-    constructor Create(
-        const Sources: TSafeTensorFiles;
-        const Directory: string;
-        const Progress: TProc<Integer, Integer> = nil
-    );
+    constructor Create(const Sources: TSafeTensorFiles; const Directory: string; const Progress: TProc<Integer, Integer> = nil
+);
     destructor Destroy; override;
     function Weight(const Name: string; const Rows, Columns: Integer): TMemoryBlock;
     function MappedBytes: UInt64;
@@ -32,13 +27,8 @@ type
 implementation
 
 uses
-  System.Classes,
-  System.IOUtils,
-  System.JSON,
-  System.Hash,
-  System.Math,
-  System.Generics.Collections,
-  QuickNN.Quantization.Int4;
+  System.Classes, System.IOUtils, System.JSON, System.Hash, System.Math,
+  System.Generics.Collections, QuickNN.Quantization.Int4;
 
 const
   CACHE_FORMAT = 'quicknn-moe-int4-g32-ls-v1';
@@ -49,10 +39,10 @@ const
 function IsExpert(const Name: string): Boolean;
 begin
   Result :=
-      (Pos('.mlp.experts.', Name) <> 0)
-          and (Name.EndsWith('.gate_proj.weight')
-              or Name.EndsWith('.up_proj.weight')
-              or Name.EndsWith('.down_proj.weight'));
+    (Pos('.mlp.experts.', Name) <> 0)
+    and (Name.EndsWith('.gate_proj.weight')
+    or Name.EndsWith('.up_proj.weight')
+    or Name.EndsWith('.down_proj.weight'));
 end;
 
 function FingerprintForFormat(const Sources: TSafeTensorFiles; const Format: string): string;
@@ -76,11 +66,7 @@ begin
   Result := FingerprintForFormat(Sources, CACHE_FORMAT);
 end;
 
-constructor TMoEInt4Cache.Create(
-    const Sources: TSafeTensorFiles;
-    const Directory: string;
-    const Progress: TProc<Integer, Integer>
-);
+constructor TMoEInt4Cache.Create(const Sources: TSafeTensorFiles; const Directory: string; const Progress: TProc<Integer, Integer>);
 var
   Lock: TFileStream;
   LegacyRoot, LegacyDirectory, LegacyFingerprint: string;
@@ -124,7 +110,7 @@ begin
   FFiles := LoadSafeTensorShards(FDirectory, CACHE_INDEX, '');
   for var FileInfo in FFiles do
     if (FileInfo.JSON.GetValue<string>('__metadata__.format', '') <> FFormat)
-        or (FileInfo.JSON.GetValue<string>('__metadata__.source_fingerprint', '') <> FFingerprint) then
+      or (FileInfo.JSON.GetValue<string>('__metadata__.source_fingerprint', '') <> FFingerprint) then
       raise ESafeTensorError.Create('Invalid INT4 shard format');
 end;
 
@@ -143,19 +129,19 @@ begin
   Index := TJSONValue.ParseJSONValue(TFile.ReadAllText(TPath.Combine(FDirectory, CACHE_INDEX), TEncoding.UTF8));
   try
     if not (Index is TJSONObject)
-        or (Index.GetValue<string>('metadata.format', '') <> FFormat)
-        or (Index.GetValue<string>('metadata.source_fingerprint', '') <> FFingerprint) then
+      or (Index.GetValue<string>('metadata.format', '') <> FFormat)
+      or (Index.GetValue<string>('metadata.source_fingerprint', '') <> FFingerprint) then
       raise ESafeTensorError.Create('Invalid or stale MoE INT4 cache index');
     if not (Index.FindValue('weight_map') is TJSONObject) then
       raise ESafeTensorError.Create('Missing INT4 weight map');
     Map := TJSONObject(Index.FindValue('weight_map'));
     for var Pair in Map do
       if not (Pair.JsonValue is TJSONString)
-          or (Pair.JsonValue.Value = '')
-          or (ExtractFileName(Pair.JsonValue.Value) <> Pair.JsonValue.Value)
-          or Pair.JsonValue.Value.Contains(':')
-          or Pair.JsonValue.Value.Contains('/')
-          or Pair.JsonValue.Value.Contains('\') then
+        or (Pair.JsonValue.Value = '')
+        or (ExtractFileName(Pair.JsonValue.Value) <> Pair.JsonValue.Value)
+        or Pair.JsonValue.Value.Contains(':')
+        or Pair.JsonValue.Value.Contains('/')
+        or Pair.JsonValue.Value.Contains('\') then
         raise ESafeTensorError.Create('Invalid INT4 shard path');
   finally
     Index.Free;
@@ -184,11 +170,11 @@ begin
         begin
           var Tensor: PSafeTensor := @Sources[F].Tensors[I];
           if (Tensor.Ndim <> 2)
-              or not (Tensor.DType in [StF32, StBF16])
-              or (Tensor.Shape[0] < 1)
-              or (Tensor.Shape[0] > High(Integer))
-              or (Tensor.Shape[1] < 1)
-              or (Tensor.Shape[1] > High(Integer)) then
+            or not (Tensor.DType in [StF32, StBF16])
+            or (Tensor.Shape[0] < 1)
+            or (Tensor.Shape[0] > High(Integer))
+            or (Tensor.Shape[1] < 1)
+            or (Tensor.Shape[1] > High(Integer)) then
             raise EArgumentException.Create('Invalid native MoE expert: ' + Tensor.Name);
           Tensors.Add(Tensor);
         end;
@@ -225,12 +211,12 @@ begin
           Header.AddPair(Tensor.Name, Item);
           Item.AddPair('dtype', 'U8');
           Item.AddPair(
-              'shape',
-              TJSONArray.Create(TJSONNumber.Create(Tensor.Shape[0]), TJSONNumber.Create(Int4RowBytes(Tensor.Shape[1])))
+            'shape',
+            TJSONArray.Create(TJSONNumber.Create(Tensor.Shape[0]), TJSONNumber.Create(Int4RowBytes(Tensor.Shape[1])))
           );
           Item.AddPair(
-              'data_offsets',
-              TJSONArray.Create(TJSONNumber.Create(Offset), TJSONNumber.Create(Offset + Bytes))
+            'data_offsets',
+            TJSONArray.Create(TJSONNumber.Create(Offset), TJSONNumber.Create(Offset + Bytes))
           );
           Inc(Offset, Bytes);
           Map.AddPair(Tensor.Name, Name);
@@ -291,10 +277,10 @@ var
 begin
   Tensor := FFiles.GetTensor(Name);
   if (Tensor = nil)
-      or (Tensor.DType <> StU8)
-      or (Tensor.Ndim <> 2)
-      or (Tensor.Shape[0] <> Rows)
-      or (Tensor.Shape[1] <> Int4RowBytes(Columns)) then
+    or (Tensor.DType <> StU8)
+    or (Tensor.Ndim <> 2)
+    or (Tensor.Shape[0] <> Rows)
+    or (Tensor.Shape[1] <> Int4RowBytes(Columns)) then
     raise ESafeTensorError.Create('Missing or invalid packed INT4 expert: ' + Name);
   Result := Default(TMemoryBlock);
   Result.Name := Name;
@@ -313,3 +299,4 @@ begin
 end;
 
 end.
+

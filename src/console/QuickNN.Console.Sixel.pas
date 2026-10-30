@@ -5,29 +5,16 @@
 interface
 
 uses
-  System.Classes,
-  System.SysUtils,
-  System.Math,
-  System.Generics.Collections;
+  System.Classes, System.SysUtils, System.Math, System.Generics.Collections;
 
 type
   TPixelOrder = (poHWC, poCHW);
 
-function EncodeSixel(
-    const Buf: Pointer;
-    const Width, Height: NativeInt;
-    const Dither: Boolean = False;
-    const MonoChrome: Boolean = False;
-    const PixelOrder: TPixelOrder = poHWC
-): RawByteString;
+function EncodeSixel(const Buf: Pointer; const Width, Height: NativeInt; const Dither: Boolean = False; const MonoChrome: Boolean = False; const PixelOrder: TPixelOrder = poHWC
+    ): RawByteString;
 
-procedure PrintSixel(
-    const Buf: Pointer;
-    const Width, Height: NativeInt;
-    const Dither: Boolean = False;
-    const MonoChrome: Boolean = False;
-    const PixelOrder: TPixelOrder = poHWC
-);
+procedure PrintSixel(const Buf: Pointer; const Width, Height: NativeInt; const Dither: Boolean = False; const MonoChrome: Boolean = False; const PixelOrder: TPixelOrder = poHWC
+    );
 
 implementation
 
@@ -51,7 +38,7 @@ type
   end;
 
   TSixelS = packed record
-  R, G, B: Single
+    R, G, B: Single
   end;
 
   PSixel = ^TSixel;
@@ -73,13 +60,7 @@ begin
   Result := AnsiString(System.SysUtils.IntToStr(Int))
 end;
 
-function EncodeSixel(
-    const Buf: Pointer;
-    const Width, Height: NativeInt;
-    const Dither: Boolean;
-    const MonoChrome: Boolean;
-    const PixelOrder: TPixelOrder
-): RawByteString;
+function EncodeSixel(const Buf: Pointer; const Width, Height: NativeInt; const Dither: Boolean; const MonoChrome: Boolean; const PixelOrder: TPixelOrder): RawByteString;
 const
   PIXEL = 1;
   PIXEL_COUNT = 6 div PIXEL;
@@ -205,15 +186,15 @@ var
     else
       case PixelOrder of
         poHWC:
-        begin
-          Mi := P[0];
-          Ma := P[0];
-        end;
+          begin
+            Mi := P[0];
+            Ma := P[0];
+          end;
         poCHW:
-        begin
-          Mi := GetSixelCHW(Bytes, 0, 0, Height, Width);
-          Ma := Mi;
-        end;
+          begin
+            Mi := GetSixelCHW(Bytes, 0, 0, Height, Width);
+            Ma := Mi;
+          end;
       end;
     // mi.r := p[0].r;
     // mi.g := p[0].g;
@@ -232,8 +213,10 @@ var
       for I := 1 to Height * Width - 1 do
       begin
         case PixelOrder of
-          poHWC: Sx := P[I];
-          poCHW: Sx := GetSixelCHW(Bytes, 0, I, 1, Height * Width);
+          poHWC:
+            Sx := P[I];
+          poCHW:
+            Sx := GetSixelCHW(Bytes, 0, I, 1, Height * Width);
         end;
         Mi.R := System.Math.Min(Sx.R, Mi.R);
         Mi.G := System.Math.Min(Sx.G, Mi.G);
@@ -295,7 +278,6 @@ var
   // clrCount,
   Reg: LongInt;
   I, Idx, X, Y: NativeInt;
-
 label
   Done;
 begin
@@ -312,6 +294,7 @@ begin
   ReCalcPalette(SxlMin, SxlMax, SxlScaler);
 
   if MonoChrome then
+
   else
     case PixelOrder of
       poHWC:
@@ -338,10 +321,10 @@ begin
         P3 := @P[Idx + Width];
         P4 := @P[Idx + Width + 1];
 
-        P1^ := P1^+QErr * (7 / 16);
-        P2^ := P2^+QErr * (3 / 16);
-        P3^ := P3^+QErr * (5 / 16);
-        P4^ := P4^+QErr * (1 / 16);
+        P1^ := P1^ + QErr * (7 / 16);
+        P2^ := P2^ + QErr * (3 / 16);
+        P3^ := P3^ + QErr * (5 / 16);
+        P4^ := P4^ + QErr * (1 / 16);
       end;
 
   //  setLength(bitPix, width);
@@ -406,7 +389,7 @@ begin
     Plt[Pos] := '-';
     Inc(Pos) // draw in new line
   end;
-  Done:
+Done:
   FreeAndNil(ColorPal);
   // writeln((GetTickCount64-t)/1000:1:3,'ms');
 
@@ -443,12 +426,7 @@ begin
   // write(plt)
 end;
 
-procedure PrintSixel(
-    const Buf: Pointer;
-    const Width, Height: NativeInt;
-    const Dither, MonoChrome: Boolean;
-    const PixelOrder: TPixelOrder
-);
+procedure PrintSixel(const Buf: Pointer; const Width, Height: NativeInt; const Dither, MonoChrome: Boolean; const PixelOrder: TPixelOrder);
 begin
   Write(EncodeSixel(Buf, Width, Height, Dither, MonoChrome, PixelOrder));
 end;
@@ -526,3 +504,4 @@ begin
 end;
 
 end.
+

@@ -8,12 +8,8 @@
 interface
 
 uses
-  System.SysUtils,
-  System.Generics.Collections,
-  QuickNN.SafeTensors,
-  QuickNN.Common,
-  QuickNN.Quantization,
-  QuickNN.Vulkan;
+  System.SysUtils, System.Generics.Collections, QuickNN.SafeTensors,
+  QuickNN.Common, QuickNN.Quantization, QuickNN.Vulkan;
 
 type
   TQNNLoRASpec = record
@@ -48,9 +44,7 @@ type
 implementation
 
 uses
-  System.Math,
-  System.IOUtils,
-  QuickNN.Kernels;
+  System.Math, System.IOUtils, QuickNN.Kernels;
 
 type
   TQNNLoRAModule = class(TInterfacedObject, IQNNLinearAdapter, IQNNLoRAModule, IQNNGPULinearAdapter)
@@ -62,16 +56,8 @@ type
     FInput, FOutput, FRank, FOffset: Integer;
     FBound: Boolean;
   public
-    procedure ApplyGPU(
-        const Context: TQNNGPUContext;
-        const Dst, Src: TQNNGPUTensor;
-        const Rows, InputDim, OutputDim: Integer
-    );
-    constructor Create(
-        const FileData: TSafeTensorFile;
-        const Target, DownName, UpName, AlphaName: string;
-        const Strength: Single
-    );
+    procedure ApplyGPU(const Context: TQNNGPUContext; const Dst, Src: TQNNGPUTensor; const Rows, InputDim, OutputDim: Integer);
+    constructor Create(const FileData: TSafeTensorFile; const Target, DownName, UpName, AlphaName: string; const Strength: Single);
     destructor Destroy; override;
     procedure Apply(const Dst, Src: TMemoryBlock; const Rows, InputDim, OutputDim: Integer);
     function Target: string;
@@ -87,11 +73,7 @@ begin
   Result.Strength := Strength
 end;
 
-constructor TQNNLoRAModule.Create(
-    const FileData: TSafeTensorFile;
-    const Target, DownName, UpName, AlphaName: string;
-    const Strength: Single
-);
+constructor TQNNLoRAModule.Create(const FileData: TSafeTensorFile; const Target, DownName, UpName, AlphaName: string; const Strength: Single);
 var
   DownTensor, UpTensor, AlphaTensor: PSafeTensor;
   AlphaMemory: TMemoryBlock;
@@ -106,17 +88,17 @@ begin
   if (DownTensor = nil) or (UpTensor = nil) then
     raise ESafeTensorError.Create('Incomplete LoRA A/B pair: ' + FDescription);
   if (DownTensor.Ndim <> 2)
-      or (UpTensor.Ndim <> 2)
-      or not (DownTensor.DType in [StBF16, StF16, StF32])
-      or not (UpTensor.DType in [StBF16, StF16, StF32]) then
+    or (UpTensor.Ndim <> 2)
+    or not (DownTensor.DType in [StBF16, StF16, StF32])
+    or not (UpTensor.DType in [StBF16, StF16, StF32]) then
     raise ESafeTensorError.Create('LoRA requires rank-two BF16/F16/F32 matrices: ' + FDescription);
   if (DownTensor.Shape[0] <= 0)
-      or (DownTensor.Shape[0] > 4096)
-      or (DownTensor.Shape[1] <= 0)
-      or (DownTensor.Shape[1] > MaxInt)
-      or (UpTensor.Shape[0] <= 0)
-      or (UpTensor.Shape[0] > MaxInt)
-      or (UpTensor.Shape[1] <> DownTensor.Shape[0]) then
+    or (DownTensor.Shape[0] > 4096)
+    or (DownTensor.Shape[1] <= 0)
+    or (DownTensor.Shape[1] > MaxInt)
+    or (UpTensor.Shape[0] <= 0)
+    or (UpTensor.Shape[0] > MaxInt)
+    or (UpTensor.Shape[1] <> DownTensor.Shape[0]) then
     raise ESafeTensorError.Create('Invalid LoRA rank or matrix shape: ' + FDescription);
   FRank := DownTensor.Shape[0];
   FInput := DownTensor.Shape[1];
@@ -223,7 +205,7 @@ begin
         Destination := Dst + NativeInt(Start + Row) * OutputDim + FOffset;
         for var J := 0 to FOutput - 1 do
           System.PSingle(Destination)[J] :=
-              System.PSingle(Destination)[J] + FScale * System.PSingle(Delta)[NativeInt(Row) * FOutput + J];
+            System.PSingle(Destination)[J] + FScale * System.PSingle(Delta)[NativeInt(Row) * FOutput + J];
       end;
       Inc(Start, Count);
     end;
@@ -233,11 +215,7 @@ begin
   end;
 end;
 
-procedure TQNNLoRAModule.ApplyGPU(
-    const Context: TQNNGPUContext;
-    const Dst, Src: TQNNGPUTensor;
-    const Rows, InputDim, OutputDim: Integer
-);
+procedure TQNNLoRAModule.ApplyGPU(const Context: TQNNGPUContext; const Dst, Src: TQNNGPUTensor; const Rows, InputDim, OutputDim: Integer);
 var
   Hidden, Delta: TQNNGPUTensor;
 begin
@@ -250,7 +228,7 @@ begin
   Context.Linear(Hidden, Src, FDown, Default(TMemoryBlock), Default(TMemoryBlock), Rows, FInput, FRank);
   Context.Linear(Delta, Hidden, FUp, Default(TMemoryBlock), Default(TMemoryBlock), Rows, FRank, FOutput);
   Context
-      .Kernel(GO_ADD, Rows * FOutput, Dst, Delta, nil, nil, [FOutput, OutputDim, QNNGPUFloatBits(FScale), FOffset, 0]);
+    .Kernel(GO_ADD, Rows * FOutput, Dst, Delta, nil, nil, [FOutput, OutputDim, QNNGPUFloatBits(FScale), FOffset, 0]);
 end;
 
 function CanonicalTarget(const Name: string): string;
@@ -381,3 +359,4 @@ begin
 end;
 
 end.
+

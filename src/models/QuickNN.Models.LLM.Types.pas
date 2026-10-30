@@ -7,12 +7,15 @@ uses
 
 type
   TLLMRole = (lrSystem, lrUser, lrAssistant);
+
   TLLMMessage = record
     Role: TLLMRole;
     Content: string;
     class function Create(const Role: TLLMRole; const Content: string): TLLMMessage; static;
   end;
+
   TLLMMessages = TArray<TLLMMessage>;
+
   TLLMGenerationOptions = record
     // MaxNewTokens is a soft boundary when AutoContinue is enabled.
     // Each explicit Generate/ContinueGeneration call gets its own hard budget.
@@ -23,7 +26,9 @@ type
     EnableThinking: Boolean;
     class function Defaults: TLLMGenerationOptions; static;
   end;
+
   TLLMExpertQuantization = (eqNative, eqInt4);
+
   TLLMMemoryOptions = record
     // Zero GPU limit preserves the caller's current global weight budget.
     GPUWeightLimitBytes, RAMCacheLimitBytes: UInt64;
@@ -34,6 +39,7 @@ type
     OnExpertCacheProgress: TProc<Integer, Integer>;
     class function Defaults: TLLMMemoryOptions; static;
   end;
+
   TLLMMemoryStatus = record
     IsMoE: Boolean;
     ExpertQuantization: TLLMExpertQuantization;
@@ -44,9 +50,11 @@ type
     RAMCacheBytes, RAMCacheLimitBytes, RAMCacheHits, RAMCacheMisses, RAMCacheEvictions: UInt64;
     MappedWeightBytes, RouterReadbacks, RouterReadbackBytes, DispatchUploadBytes: UInt64;
   end;
+
   TLLMFinishReason = (lfEOS, lfMaxTokens, lfCancelled, lfContextFull, lfHardLimit);
   // Token IDs and sampler/UTF-8 state only. GPU weights and KV never enter this record.
   // Immutable once published; it can rebuild a session after unloading the model.
+
   TLLMContinuationState = record
     ModelKey, Text, PromptSignature: string;
     Tokens: TArray<LongInt>;
@@ -56,6 +64,7 @@ type
     DecodeSeconds, TotalSeconds, TimeToFirstTokenSeconds: Double;
     function Available: Boolean;
   end;
+
   TLLMGenerationResult = record
     Text: string;
     PromptTokens, GeneratedTokens, ReusedTokens, PrefillTokens, AutomaticContinuations: Integer;
@@ -64,6 +73,7 @@ type
     TimeToFirstTokenSeconds, DecodeSeconds, TotalSeconds: Double;
     function DecodeTokensPerSecond: Double;
   end;
+
   TLLMTokenCallback = reference to procedure(const Text: string; var Cancel: Boolean);
 
 implementation
@@ -71,10 +81,10 @@ implementation
 function TLLMContinuationState.Available: Boolean;
 begin
   Result :=
-      (ModelKey <> '')
-          and (PromptTokens > 0)
-          and (GeneratedTokens > 0)
-          and (Int64(PromptTokens) + GeneratedTokens = Length(Tokens));
+    (ModelKey <> '')
+    and (PromptTokens > 0)
+    and (GeneratedTokens > 0)
+    and (Int64(PromptTokens) + GeneratedTokens = Length(Tokens));
 end;
 
 class function TLLMMemoryOptions.Defaults: TLLMMemoryOptions;
@@ -112,3 +122,4 @@ begin
 end;
 
 end.
+

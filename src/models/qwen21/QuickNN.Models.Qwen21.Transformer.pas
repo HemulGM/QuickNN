@@ -10,15 +10,12 @@
   See LICENSE.QwenImage21.txt in the repository root. }
 {$POINTERMATH ON}
 interface
+
 uses
-  System.SysUtils,
-  QuickNN.Common,
-  QuickNN.Quantization,
-  QuickNN.SafeTensors,
-  QuickNN.Vulkan,
-  QuickNN.Models.Qwen21.Math,
-  QuickNN.LoRA,
+  System.SysUtils, QuickNN.Common, QuickNN.Quantization, QuickNN.SafeTensors,
+  QuickNN.Vulkan, QuickNN.Models.Qwen21.Math, QuickNN.LoRA,
   QuickNN.Models.Qwen21.Conditioning;
+
 type
   TQwen21GPUCondition = record
     Text, Positions, Limits: TQNNGPUTensor;
@@ -26,11 +23,13 @@ type
     Layout: TQwen21SequenceLayout;
     procedure Free(const Ctx: TQNNGPUContext);
   end;
+
   TQwen21GPUWork = record
     X, N, Q, K, V, A, Y, G, Active, T, T1, TEmb, Modulation, OutScale: TQNNGPUTensor;
     procedure Ensure(const Ctx: TQNNGPUContext; const Rows: Integer);
     procedure Free(const Ctx: TQNNGPUContext);
   end;
+
 type
   TQwen21Block = record
     QNorm, KNorm: TMemoryBlock;
@@ -38,6 +37,7 @@ type
     procedure Load(const Files: TSafeTensorFiles; const Index: Integer);
     procedure Free;
   end;
+
   TQwen21Transformer = class
   private
     FFiles: TSafeTensorFiles;
@@ -52,37 +52,19 @@ type
   public
     constructor Create(const Checkpoint: string; const Status: TQwen21Status = nil);
     destructor Destroy; override;
-    function ConditionGPU(
-        const Ctx: TQNNGPUContext;
-        const Text: TQNNGPUTensor;
-        const Rows: Integer;
-        const Images: TQwen21ImageConditions;
-        const Resident: TQwen21GPUImageConditions;
-        const Slots: TArray<Integer>;
-        const Height, Width: Integer
-    ): TQwen21GPUCondition;
-    procedure ForwardGPU(
-        const Ctx: TQNNGPUContext;
-        const Dst, Latents: TQNNGPUTensor;
-        const Condition: TQwen21GPUCondition;
-        const Height, Width: Integer;
-        const Sigma: Single;
-        var Work: TQwen21GPUWork
-    );
+    function ConditionGPU(const Ctx: TQNNGPUContext; const Text: TQNNGPUTensor; const Rows: Integer; const Images: TQwen21ImageConditions; const resident: TQwen21GPUImageConditions; const Slots: TArray<Integer>; const Height, Width: Integer): TQwen21GPUCondition;
+    procedure ForwardGPU(const Ctx: TQNNGPUContext; const Dst, Latents: TQNNGPUTensor; const Condition: TQwen21GPUCondition; const Height, Width: Integer; const Sigma: Single; var Work: TQwen21GPUWork);
     procedure AttachLoRAs(const Adapters: TQNNLoRASet);
     procedure SetText(const Text: TMemoryBlock; const Rows: Integer);
-    procedure SetConditioning(
-        const Text: TMemoryBlock;
-        const Rows: Integer;
-        const Images: TQwen21ImageConditions;
-        const Slots: TArray<Integer>
-    );
-    function Forward(const Latents: TMemoryBlock; const Height, Width: Integer; const Sigma: Single): TMemoryBlock;
+    procedure SetConditioning(const Text: TMemoryBlock; const Rows: Integer; const Images: TQwen21ImageConditions; const Slots: TArray<Integer>);
+    function forward(const Latents: TMemoryBlock; const Height, Width: Integer; const Sigma: Single): TMemoryBlock;
   end;
+
 implementation
+
 uses
-  System.Math,
-  QuickNN.Kernels;
+  System.Math, QuickNN.Kernels;
+
 const
   HIDDEN = 4096;
   MLP = 12288;
@@ -103,19 +85,20 @@ begin
   GateUp.Load(Files, P + 'img_mlp.gate_up');
   Down.Load(Files, P + 'img_mlp.out');
   if (Q.InputDim <> HIDDEN)
-      or (Q.OutputDim <> HIDDEN)
-      or (K.InputDim <> HIDDEN)
-      or (K.OutputDim <> HIDDEN)
-      or (V.InputDim <> HIDDEN)
-      or (V.OutputDim <> HIDDEN)
-      or (O.InputDim <> HIDDEN)
-      or (O.OutputDim <> HIDDEN)
-      or (GateUp.InputDim <> HIDDEN)
-      or (GateUp.OutputDim <> 2 * MLP)
-      or (Down.InputDim <> MLP)
-      or (Down.OutputDim <> HIDDEN) then
+    or (Q.OutputDim <> HIDDEN)
+    or (K.InputDim <> HIDDEN)
+    or (K.OutputDim <> HIDDEN)
+    or (V.InputDim <> HIDDEN)
+    or (V.OutputDim <> HIDDEN)
+    or (O.InputDim <> HIDDEN)
+    or (O.OutputDim <> HIDDEN)
+    or (GateUp.InputDim <> HIDDEN)
+    or (GateUp.OutputDim <> 2 * MLP)
+    or (Down.InputDim <> MLP)
+    or (Down.OutputDim <> HIDDEN) then
     raise EArgumentException.Create('Invalid Qwen-Image 2.1 block dimensions');
 end;
+
 procedure TQwen21Block.Free;
 begin
   QNorm.Free;
@@ -144,13 +127,13 @@ begin
   FNormOut.Load(FFiles, 'norm_out.linear');
   FOut.Load(FFiles, 'proj_out');
   if (FTextNorm.Count <> HIDDEN)
-      or (FImageIn.InputDim <> 64)
-      or (FImageIn.OutputDim <> HIDDEN)
-      or (FOut.InputDim <> HIDDEN)
-      or (FOut.OutputDim <> 64)
-      or (FTime1.InputDim <> 256)
-      or (FTime1.OutputDim <> HIDDEN)
-      or (FModulation.OutputDim <> 4 * HIDDEN) then
+    or (FImageIn.InputDim <> 64)
+    or (FImageIn.OutputDim <> HIDDEN)
+    or (FOut.InputDim <> HIDDEN)
+    or (FOut.OutputDim <> 64)
+    or (FTime1.InputDim <> 256)
+    or (FTime1.OutputDim <> HIDDEN)
+    or (FModulation.OutputDim <> 4 * HIDDEN) then
     raise EArgumentException.Create('Expected Qwen-Image 2.1 diffusion architecture');
   SetLength(FBlocks, 32);
   for var I := 0 to High(FBlocks) do
@@ -205,10 +188,10 @@ begin
     Exit(@FOut);
   Parts := Target.Split(['.']);
   if (Length(Parts) < 4)
-      or (Parts[0] <> 'transformer_blocks')
-      or not TryStrToInt(Parts[1], Index)
-      or (Index < 0)
-      or (Index >= Length(FBlocks)) then
+    or (Parts[0] <> 'transformer_blocks')
+    or not TryStrToInt(Parts[1], Index)
+    or (Index < 0)
+    or (Index >= Length(FBlocks)) then
     Exit;
   Name := string.Join('.', Parts, 2, Length(Parts) - 2);
   if Name = 'attn.to_q' then
@@ -237,11 +220,10 @@ begin
   if Adapters = nil then
     Exit;
   Adapters.Attach(
-      function(const Target: string; out OutputOffset: Integer): PQNNLinearWeight
-      begin
-        Result := ResolveLinear(Target, OutputOffset)
-      end
-  );
+    function(const Target: string; out OutputOffset: Integer): PQNNLinearWeight
+    begin
+      Result := ResolveLinear(Target, OutputOffset)
+    end);
 end;
 
 procedure TQwen21Transformer.SetText(const Text: TMemoryBlock; const Rows: Integer);
@@ -261,9 +243,9 @@ begin
     Projected := TMemoryBlock.Create([Rows, HIDDEN], 'qwen21-text-projected');
     FText := TMemoryBlock.Create([Rows, HIDDEN], 'qwen21-text');
     Q21RMS(Norm, Text, FTextNorm, Rows, HIDDEN, True);
-    FTextIn.Forward(Projected, Norm, Rows);
+    FTextIn.forward(Projected, Norm, Rows);
     Q21Gelu(Projected, Rows * HIDDEN);
-    FTextOut.Forward(FText, Projected, Rows);
+    FTextOut.forward(FText, Projected, Rows);
     QNNCheckFinite(FText, Rows * HIDDEN, 'Projected text');
   finally
     Norm.Free;
@@ -271,12 +253,7 @@ begin
   end;
 end;
 
-procedure TQwen21Transformer.SetConditioning(
-    const Text: TMemoryBlock;
-    const Rows: Integer;
-    const Images: TQwen21ImageConditions;
-    const Slots: TArray<Integer>
-);
+procedure TQwen21Transformer.SetConditioning(const Text: TMemoryBlock; const Rows: Integer; const Images: TQwen21ImageConditions; const Slots: TArray<Integer>);
 var
   Previous, RefRows: Integer;
 begin
@@ -300,15 +277,11 @@ begin
   begin
     RefRows := Images[I].Latents.Count div 64;
     FReferenceProjected[I] := TMemoryBlock.Create([RefRows, HIDDEN], 'qwen21-reference-projection');
-    FImageIn.Forward(FReferenceProjected[I], Images[I].Latents, RefRows);
+    FImageIn.forward(FReferenceProjected[I], Images[I].Latents, RefRows);
   end;
 end;
 
-function TQwen21Transformer.Forward(
-    const Latents: TMemoryBlock;
-    const Height, Width: Integer;
-    const Sigma: Single
-): TMemoryBlock;
+function TQwen21Transformer.forward(const Latents: TMemoryBlock; const Height, Width: Integer; const Sigma: Single): TMemoryBlock;
 var
   Layout: TQwen21SequenceLayout;
   TextRows, ImageRows, Rows, PrefixRows: Integer;
@@ -342,17 +315,17 @@ begin
     for var Segment in Layout.Segments do
       if not Segment.IsImage then
         Move(
-            System.PSingle(FText)[NativeInt(Segment.SourceStart) * HIDDEN],
-            System.PSingle(X)[NativeInt(Segment.JointStart) * HIDDEN],
-            NativeInt(Segment.Count) * HIDDEN * 4
+          System.PSingle(FText)[NativeInt(Segment.SourceStart) * HIDDEN],
+          System.PSingle(X)[NativeInt(Segment.JointStart) * HIDDEN],
+          NativeInt(Segment.Count) * HIDDEN * 4
         )
       else if Segment.SourceIndex < 0 then
-        FImageIn.Forward(X + NativeInt(Segment.JointStart) * HIDDEN, Latents, ImageRows)
+        FImageIn.forward(X + NativeInt(Segment.JointStart) * HIDDEN, Latents, ImageRows)
       else
         Move(
-            System.PSingle(FReferenceProjected[Segment.SourceIndex])^,
-            System.PSingle(X)[NativeInt(Segment.JointStart) * HIDDEN],
-            NativeInt(Segment.Count) * HIDDEN * 4
+          System.PSingle(FReferenceProjected[Segment.SourceIndex])^,
+          System.PSingle(X)[NativeInt(Segment.JointStart) * HIDDEN],
+          NativeInt(Segment.Count) * HIDDEN * 4
         );
     for var R := 0 to 1 do
       for var J := 0 to 127 do
@@ -364,32 +337,32 @@ begin
         System.PSingle(T)[R * 256 + J] := Cos(Angle);
         System.PSingle(T)[R * 256 + J + 128] := Sin(Angle);
       end;
-    FTime1.Forward(T1, T, 2);
+    FTime1.forward(T1, T, 2);
     Q21Silu(T1, 2 * HIDDEN);
-    FTime2.Forward(TEmb, T1, 2);
+    FTime2.forward(TEmb, T1, 2);
     QNNCopy(T1, TEmb, 2 * HIDDEN);
     Q21Silu(T1, 2 * HIDDEN);
-    FModulation.Forward(Modulation, T1, 2);
+    FModulation.forward(Modulation, T1, 2);
     for var I := 0 to High(FBlocks) do
     begin
       Block := @FBlocks[I];
       Q21ModNorm(N, X, Modulation, Rows, HIDDEN, PrefixRows, 0);
-      Block.Q.Forward(Q, N, Rows);
-      Block.K.Forward(K, N, Rows);
-      Block.V.Forward(V, N, Rows);
+      Block.Q.forward(Q, N, Rows);
+      Block.K.forward(K, N, Rows);
+      Block.V.forward(V, N, Rows);
       Q21HeadNorm(Q, Block.QNorm, Rows, HEADS, HEAD_DIM);
       Q21HeadNorm(K, Block.KNorm, Rows, HEADS, HEAD_DIM);
       Q21ImageRoPE(Q, Rows, HEADS, TextRows, Height, Width, Layout.Positions);
       Q21ImageRoPE(K, Rows, HEADS, TextRows, Height, Width, Layout.Positions);
       Q21Attention(A, Q, K, V, Rows, HEADS, HEADS, HEAD_DIM, PrefixRows, Layout.KeyLimits);
-      Block.O.Forward(Y, A, Rows);
+      Block.O.forward(Y, A, Rows);
       Q21GateAdd(X, Y, Modulation, Rows, HIDDEN, PrefixRows, HIDDEN);
       Q21ModNorm(N, X, Modulation, Rows, HIDDEN, PrefixRows, 2 * HIDDEN);
       Used := False;
       if not Block.GateUp.HasAdapters
-          and not Block.Down.HasAdapters
-          and (Block.GateUp.Weight.DataType <> DT_I8)
-          and (Block.Down.Weight.DataType <> DT_I8) then
+        and not Block.Down.HasAdapters
+        and (Block.GateUp.Weight.DataType <> DT_I8)
+        and (Block.Down.Weight.DataType <> DT_I8) then
       begin
         GateView := Block.GateUp.Weight;
         UpView := Block.GateUp.Weight + Int64(MLP) * HIDDEN;
@@ -404,16 +377,16 @@ begin
           G := TMemoryBlock.Create([Rows, 2 * MLP], 'qwen21-gate-up');
           Active := TMemoryBlock.Create([Rows, MLP], 'qwen21-swiglu');
         end;
-        Block.GateUp.Forward(G, N, Rows);
+        Block.GateUp.forward(G, N, Rows);
         for var R := 0 to Rows - 1 do
         begin
           Offset := NativeInt(R) * 2 * MLP;
           Q21Silu(G + Offset, MLP);
           for var J := 0 to MLP - 1 do
             System.PSingle(Active)[NativeInt(R) * MLP + J] :=
-                System.PSingle(G)[Offset + J] * System.PSingle(G)[Offset + MLP + J];
+              System.PSingle(G)[Offset + J] * System.PSingle(G)[Offset + MLP + J];
         end;
-        Block.Down.Forward(Y, Active, Rows);
+        Block.Down.forward(Y, Active, Rows);
       end;
       Q21GateAdd(X, Y, Modulation, Rows, HIDDEN, PrefixRows, 3 * HIDDEN);
       QNNCheckFinite(X, Rows * HIDDEN, 'Diffusion block ' + IntToStr(I));
@@ -421,10 +394,10 @@ begin
         FStatus(Format('Diffusion block %d/32', [I + 1]));
     end;
     // Final scale is from the sampled timestep, never the text's zero row.
-    FNormOut.Forward(OutScale, T1, 1);
+    FNormOut.forward(OutScale, T1, 1);
     Q21ModNorm(N, X + NativeInt(PrefixRows) * HIDDEN, OutScale, ImageRows, HIDDEN, 0, 0);
     Result := TMemoryBlock.Create([ImageRows, 64], 'qwen21-noise-prediction');
-    FOut.Forward(Result, N, ImageRows);
+    FOut.forward(Result, N, ImageRows);
     QNNCheckFinite(Result, ImageRows * 64, 'Noise prediction');
   finally
     X.Free;
@@ -444,4 +417,6 @@ begin
   end;
 end;
 {$I QuickNN.Models.Qwen21.Transformer.GPU.inc}
+
 end.
+

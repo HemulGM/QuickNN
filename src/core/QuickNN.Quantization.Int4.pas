@@ -14,14 +14,13 @@ const
 function Int4RowBytes(const Columns: Integer): Integer;
 // Row-major groups: FP32 scale, then 32 offset-binary signed nibbles.
 // The scale is fitted once by least squares after the initial max-abs pass.
+
 function QuantizeInt4(const Weight: TMemoryBlock): TMemoryBlock;
 
 implementation
 
 uses
-  System.SysUtils,
-  System.Math,
-  System.Threading;
+  System.SysUtils, System.Math, System.Threading;
 
 function Int4RowBytes(const Columns: Integer): Integer;
 var
@@ -33,12 +32,7 @@ begin
   Result := Bytes;
 end;
 
-procedure PackInt4Row(
-    const SourceF32: System.PSingle;
-    const SourceBF16: PBF16;
-    const Destination: PByte;
-    const Row, Columns, RowBytes: Integer
-);
+procedure PackInt4Row(const SourceF32: System.PSingle; const SourceBF16: PBF16; const Destination: PByte; const Row, Columns, RowBytes: Integer);
 var
   Values: array[0..QNN_INT4_GROUP_SIZE - 1] of Single;
   Maximum, Scale: Single;
@@ -105,18 +99,17 @@ var
   Destination: PByte;
   SourceF32: System.PSingle;
   SourceBF16: PBF16;
-
 begin
   Result := Default(TMemoryBlock);
   if not (Weight.DataType in [dtF32, dtBF16])
-      or not Weight.IsAssigned
-      or (Weight.Offset <> 0)
-      or (Length(Weight.Shape) <> 2)
-      or (Weight.Shape[0] < 1)
-      or (Weight.Shape[0] > High(Integer))
-      or (Weight.Shape[1] < 1)
-      or (Weight.Shape[1] > High(Integer))
-      or (Weight.Size <> Weight.Shape[0] * Weight.Shape[1]) then
+    or not Weight.IsAssigned
+    or (Weight.Offset <> 0)
+    or (Length(Weight.Shape) <> 2)
+    or (Weight.Shape[0] < 1)
+    or (Weight.Shape[0] > High(Integer))
+    or (Weight.Shape[1] < 1)
+    or (Weight.Shape[1] > High(Integer))
+    or (Weight.Size <> Weight.Shape[0] * Weight.Shape[1]) then
     raise EArgumentException.Create('INT4 conversion requires a complete native matrix');
   Rows := Weight.Shape[0];
   Columns := Weight.Shape[1];
@@ -133,11 +126,13 @@ begin
     else
       SourceF32 := System.PSingle(Weight);
     if (Rows >= 64) and (Weight.Size >= 32768) then
-      TParallel.For(
-          0,
-          Rows - 1,
-          procedure(Row: Integer) begin PackInt4Row(SourceF32, SourceBF16, Destination, Row, Columns, RowBytes); end
-      )
+      TParallel.for (
+        0,
+        Rows - 1,
+        procedure(Row: Integer)
+        begin
+          PackInt4Row(SourceF32, SourceBF16, Destination, Row, Columns, RowBytes);
+        end)
     else
       for var Row := 0 to Rows - 1 do
         PackInt4Row(SourceF32, SourceBF16, Destination, Row, Columns, RowBytes);
@@ -149,3 +144,4 @@ begin
 end;
 
 end.
+

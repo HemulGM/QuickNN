@@ -12,10 +12,7 @@
 interface
 
 uses
-  System.SysUtils,
-  QuickNN.Common,
-  QuickNN.Models.Qwen21.Math,
-  QuickNN.LoRA,
+  System.SysUtils, QuickNN.Common, QuickNN.Models.Qwen21.Math, QuickNN.LoRA,
   QuickNN.Models.Qwen21.Conditioning;
 
 type
@@ -51,28 +48,18 @@ type
     function GenerateLegacy(const Params: TQwen21Params; const Inputs: TGenerationInputs): TQNNImage;
     function GenerateResident(const Params: TQwen21Params; const Inputs: TGenerationInputs): TQNNImage;
   public
-    constructor Create(
-        const ModelRoot, AssetsRoot: string;
-        const UseInt8: Boolean = True;
-        const Status: TQwen21Status = nil
-    );
+    constructor Create(const ModelRoot, AssetsRoot: string; const UseInt8: Boolean = True; const Status: TQwen21Status = nil
+);
     function Generate(const Params: TQwen21Params): TQNNImage;
   end;
 
 implementation
 
 uses
-  System.Math,
-  System.IOUtils,
-  System.Diagnostics,
-  QuickNN.Quantization,
-  QuickNN.Models.Qwen21.Tokenizer,
-  QuickNN.Models.Qwen21.Text,
-  QuickNN.Models.Qwen21.Transformer,
-  QuickNN.Models.Qwen21.VAE,
-  QuickNN.Sampling,
-  QuickNN.Vulkan,
-  QuickNN.Models.Qwen21.Vision;
+  System.Math, System.IOUtils, System.Diagnostics, QuickNN.Quantization,
+  QuickNN.Models.Qwen21.Tokenizer, QuickNN.Models.Qwen21.Text,
+  QuickNN.Models.Qwen21.Transformer, QuickNN.Models.Qwen21.VAE, QuickNN.Sampling,
+  QuickNN.Vulkan, QuickNN.Models.Qwen21.Vision;
 
 class function TQwen21Params.Defaults: TQwen21Params;
 begin
@@ -87,11 +74,7 @@ begin
   Result.Prompt := 'A red apple on a wooden table, soft daylight, realistic photograph.';
 end;
 
-constructor TQwen21Pipeline.Create(
-    const ModelRoot, AssetsRoot: string;
-    const UseInt8: Boolean;
-    const Status: TQwen21Status
-);
+constructor TQwen21Pipeline.Create(const ModelRoot, AssetsRoot: string; const UseInt8: Boolean; const Status: TQwen21Status);
 begin
   inherited Create;
   FModels := ExcludeTrailingPathDelimiter(ModelRoot);
@@ -122,21 +105,21 @@ begin
   raise ENotSupportedException.Create('Qwen-Image 2.1 generation requires a Win64 build');
 {$ENDIF}
   if (Params.Width < 64)
-      or (Params.Height < 64)
-      or (Params.Width > 1024)
-      or (Params.Height > 1024)
-      or (Params.Width mod 32 <> 0)
-      or (Params.Height mod 32 <> 0) then
+    or (Params.Height < 64)
+    or (Params.Width > 1024)
+    or (Params.Height > 1024)
+    or (Params.Width mod 32 <> 0)
+    or (Params.Height mod 32 <> 0) then
     raise EArgumentException.Create('Width/height must be multiples of 32 between 64 and 1024');
   if (Params.Steps < 1)
-      or (Params.Steps > 1000)
-      or IsNan(Params.Guidance)
-      or IsInfinite(Params.Guidance)
-      or (Params.Guidance < 1)
-      or (Params.Guidance > 20) then
+    or (Params.Steps > 1000)
+    or IsNan(Params.Guidance)
+    or IsInfinite(Params.Guidance)
+    or (Params.Guidance < 1)
+    or (Params.Guidance > 20) then
     raise EArgumentException.Create('Invalid steps or CFG');
   if (Length(Params.ReferenceImages) > 0)
-      and ((Params.ReferenceSize < 64) or (Params.ReferenceSize > 1024) or (Params.ReferenceSize mod 32 <> 0)) then
+    and ((Params.ReferenceSize < 64) or (Params.ReferenceSize > 1024) or (Params.ReferenceSize mod 32 <> 0)) then
     raise EArgumentException.Create('Reference size must be 64..1024 divisible by 32');
 
   if FInt8 then
@@ -149,8 +132,7 @@ begin
   RequireFile(Inputs.TextFile);
   RequireFile(Inputs.DiffusionFile);
   RequireFile(Inputs.VAEFile);
-  for var FileName
-      in TArray<string>.Create('tokenizer.json', 'encoder_config.json', 'vae_config.json', 'scheduler_config.json') do
+  for var FileName in TArray<string>.Create('tokenizer.json', 'encoder_config.json', 'vae_config.json', 'scheduler_config.json') do
     RequireFile(TPath.Combine(FAssets, FileName));
 
   Inputs.LoRAs := Copy(Params.LoRAs);
@@ -164,11 +146,11 @@ begin
   Inputs.LatentHeight := Params.Height div 16;
   Inputs.LatentWidth := Params.Width div 16;
   Inputs.Sigmas :=
-      Q21Schedule(
-          Params.Steps,
-          Inputs.LatentHeight * Inputs.LatentWidth,
-          TPath.Combine(FAssets, 'scheduler_config.json')
-      );
+    Q21Schedule(
+    Params.Steps,
+    Inputs.LatentHeight * Inputs.LatentWidth,
+    TPath.Combine(FAssets, 'scheduler_config.json')
+  );
   SetLength(Inputs.Images, Length(Params.ReferenceImages));
   MinimumJointRows := Int64(Inputs.LatentHeight) * Inputs.LatentWidth;
   for var I := 0 to High(Inputs.Images) do
@@ -177,8 +159,7 @@ begin
     Inputs.Images[I].Pixels := Q21LoadReference(Params.ReferenceImages[I], Params.ReferenceSize);
     Inc(MinimumJointRows, Int64(Inputs.Images[I].Pixels.Width div 16) * (Inputs.Images[I].Pixels.Height div 16));
     if MinimumJointRows >= 6144 then
-      raise EArgumentException.Create(
-          'Reference/target images exceed the 6144-token joint budget; reduce image/reference sizes');
+      raise EArgumentException.Create('Reference/target images exceed the 6144-token joint budget; reduce image/reference sizes');
   end;
 end;
 
@@ -216,7 +197,6 @@ var
   Timer: TStopwatch;
   UseCFG: Boolean;
   Delta: Single;
-
 begin
   Images := Inputs.Images;
   Specs := Inputs.LoRAs;
@@ -232,10 +212,10 @@ begin
     Transformer.AttachLoRAs(Adapters);
     if Length(Specs) > 0 then
       Notify(
-          Format(
-              'LoRA stack: %d files, %d modules, %d enabled',
-              [Length(Specs), Adapters.ModuleCount, Adapters.EnabledModuleCount]
-          )
+        Format(
+          'LoRA stack: %d files, %d modules, %d enabled',
+          [Length(Specs), Adapters.ModuleCount, Adapters.EnabledModuleCount]
+        )
       );
     if Length(Images) > 0 then
     begin
@@ -287,15 +267,15 @@ begin
         Timer := TStopwatch.StartNew;
         if UseCFG then
           Transformer.SetConditioning(Text, Text.Count div 4096, Images, PositiveSlots);
-        Noise := Transformer.Forward(Latents, Lh, Lw, Sigmas[Step]);
+        Noise := Transformer.forward(Latents, Lh, Lw, Sigmas[Step]);
         if UseCFG then
         begin
           Transformer.SetConditioning(Negative, Negative.Count div 4096, Images, NegativeSlots);
-          NegNoise := Transformer.Forward(Latents, Lh, Lw, Sigmas[Step]);
+          NegNoise := Transformer.forward(Latents, Lh, Lw, Sigmas[Step]);
           for var I: NativeInt := 0 to Noise.Count - 1 do
             System.PSingle(Noise)[I] :=
-                System.PSingle(NegNoise)[I]
-                    + Params.Guidance * (System.PSingle(Noise)[I] - System.PSingle(NegNoise)[I]);
+              System.PSingle(NegNoise)[I]
+              + Params.Guidance * (System.PSingle(Noise)[I] - System.PSingle(NegNoise)[I]);
           NegNoise.Free;
         end;
         Delta := Sigmas[Step + 1] - Sigmas[Step];
@@ -304,10 +284,10 @@ begin
         Noise.Free;
         QNNCheckFinite(Latents, Latents.Count, 'Euler sampler');
         Notify(
-            Format(
-                'Step %d/%d, sigma %.6f -> %.6f, %.2f s',
-                [Step + 1, Params.Steps, Sigmas[Step], Sigmas[Step + 1], Timer.Elapsed.TotalSeconds]
-            )
+          Format(
+            'Step %d/%d, sigma %.6f -> %.6f, %.2f s',
+            [Step + 1, Params.Steps, Sigmas[Step], Sigmas[Step + 1], Timer.Elapsed.TotalSeconds]
+          )
         );
       end;
     finally
@@ -337,3 +317,4 @@ end;
 {$I QuickNN.Models.Qwen21.Pipeline.GPU.inc}
 
 end.
+

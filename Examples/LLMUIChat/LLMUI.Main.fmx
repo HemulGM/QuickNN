@@ -1,4 +1,4 @@
-﻿object FormMain: TFormMain
+object FormMain: TFormMain
   Left = 0
   Top = 0
   Caption = 'QuickNN '#8212' '#1083#1086#1082#1072#1083#1100#1085#1099#1081' '#1095#1072#1090
