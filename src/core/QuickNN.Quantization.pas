@@ -54,7 +54,7 @@ procedure QNNCheckFinite(const Data: TMemoryBlock; const Count: NativeInt; const
 implementation
 
 uses
-  System.Math, System.JSON, QuickNN.Kernels;
+  System.Math, System.JSON, QuickNN.Kernels, QuickNN.GGUF.Quantization;
 
 function QNNRequiredTensor(const Files: TSafeTensorFiles; const Name: string): PSafeTensor;
 begin
@@ -67,6 +67,7 @@ function QNNWeightValue(const Data: TMemoryBlock; const Index: NativeInt): Singl
 var
   Bits: UInt32;
 begin
+  if Data.Encoding <> weNative then Exit(GGUFValue(Data.DataPtr, Data.Encoding, Data.Offset + Index));
   case Data.DataType of
     dtBF16:
       begin
@@ -243,7 +244,20 @@ begin
       Move(System.PSingle(Src)^, System.PSingle(Original)^, NativeInt(Rows) * InputDim * 4);
       Source := Original;
     end;
-    if Weight.DataType <> DT_I8 then
+    if Weight.Encoding <> weNative then
+    begin
+      if not TryVulkanLinear(System.PSingle(Dst), System.PSingle(Source), Weight, Rows, InputDim, OutputDim) then
+        for var R := 0 to Rows - 1 do
+          for var O := 0 to OutputDim - 1 do
+          begin
+            Sum := 0;
+            for var K := 0 to InputDim - 1 do
+              Sum := Sum + Double(System.PSingle(Source)[NativeInt(R) * InputDim + K]) *
+                QNNWeightValue(Weight, NativeInt(O) * InputDim + K);
+            System.PSingle(Dst)[NativeInt(R) * OutputDim + O] := Sum;
+          end;
+    end
+    else if Weight.DataType <> DT_I8 then
       QNNLinearNoBias(Dst, Source, Weight, Rows, InputDim, OutputDim)
     else
     begin

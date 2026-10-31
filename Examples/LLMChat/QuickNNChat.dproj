@@ -1,4 +1,4 @@
-﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
     <PropertyGroup>
         <ProjectGuid>{F93B41C0-0E4A-4208-84A9-78968817E74B}</ProjectGuid>
         <ProjectVersion>20.4</ProjectVersion>
@@ -85,6 +85,8 @@
         </DelphiCompile>
         <DCCReference Include="QuickNN.LLMChat.Settings.pas"/>
         <DCCReference Include="QuickNN.LLMChat.Console.pas"/>
+        <DCCReference Include="..\..\src\models\QuickNN.Models.QwenHybrid.pas"/>
+        <DCCReference Include="..\..\src\models\QuickNN.Models.LLM.Vision.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

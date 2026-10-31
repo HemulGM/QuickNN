@@ -5,7 +5,7 @@
 interface
 
 uses
-  System.SysUtils, System.Math, QuickNN.Common, QuickNN.Quantization.Int4
+  System.SysUtils, System.Math, QuickNN.Common, QuickNN.Quantization.Int4, QuickNN.GGUF.Quantization
 {$IF defined(MSWINDOWS) and defined(CPUX64)}
     , QuickNN.Vulkan.Helpers, System.Generics.Collections
 {$ENDIF}
@@ -18,7 +18,7 @@ type
     Available: Boolean;
     DeviceName, LastError: string;
     GemmCalls, BF16Calls, AllocatedBytes, AttentionCalls: UInt64;
-    TensorCalls, ConvRotCalls, Int4Calls, ResidentPeakBytes: UInt64;
+    TensorCalls, ConvRotCalls, Int4Calls, GGUFCalls, ResidentPeakBytes: UInt64;
     WeightCacheBytes, WeightCacheLimit, WeightCacheHits, WeightCacheMisses: UInt64;
     WeightUploads, WeightUploadBytes, WeightEvictions: UInt64;
     PipelineCalls, Submissions, Readbacks: UInt64;
@@ -87,7 +87,7 @@ type
     function WeightKey(const Weight: TMemoryBlock; const Rows, Cols: Integer): string;
     function AcquireWeight(const Weight: TMemoryBlock; const Rows, Cols: Integer; const AllowPackedInt4: Boolean = False
     ): TGPUWeight;
-    procedure RecordLinear(const A, B, C: TVulkanMemory; const Seq, InputDim, OutputDim: Integer; const BF16: Boolean; const Slot: Integer);
+    procedure RecordLinear(const A, B, C: TVulkanMemory; const Seq, InputDim, OutputDim: Integer; const BF16: Boolean; const Slot: Integer; const Encoding: TQNNWeightEncoding = weNative);
     procedure BeginNetwork(const Src: System.PSingle; const Seq, Dim: Integer);
     procedure EndNetwork(const Dst: System.PSingle; const Seq, Dim: Integer);
     procedure EnsureBuffers(const ABytes, BBytes, CBytes: UInt64);
@@ -148,6 +148,7 @@ var
 {$I generated/QuickNN.Vulkan.Attention.SPIRV.inc}
 {$I generated/QuickNN.Vulkan.Tensor.SPIRV.inc}
 {$I generated/QuickNN.Vulkan.Moe.SPIRV.inc}
+{$I generated/QuickNN.Vulkan.Hybrid.SPIRV.inc}
 
 destructor TGPUWeight.Destroy;
 begin
@@ -217,6 +218,8 @@ begin
       4,
       RESIDENT_DISPATCH_SLOTS
     );
+    PreparePipeline(TKernelHandle(5), CreateShader(@QNN_HYBRID_SPIRV[0], SizeOf(QNN_HYBRID_SPIRV)),
+      Workload, 4, RESIDENT_DISPATCH_SLOTS);
   finally
     SetExceptionMask(PreviousMask);
   end;
@@ -638,11 +641,14 @@ begin
     or not Weight.IsAssigned
     or (Int64(Rows) * Cols > Int64(Weight.Size) - Weight.Offset) then
     raise EArgumentException.Create('Weight must have immutable identity and sufficient native or packed storage');
-  ByteCount := MatrixBytes(Rows, Cols, Cols, DATATYPE_BITS[Weight.DataType] div 8);
+  if Weight.Encoding <> weNative then
+    ByteCount := GGUFWeightBytes(Weight, Rows, Cols)
+  else
+    ByteCount := MatrixBytes(Rows, Cols, Cols, DATATYPE_BITS[Weight.DataType] div 8);
   Result :=
     IntToHex(NativeUInt(Pointer(Weight.WeightIdentity)), SizeOf(Pointer) * 2)
     + '/'
-    + IntToStr(Ord(Weight.DataType))
+    + IntToStr(Ord(Weight.DataType)) + ':' + IntToStr(Ord(Weight.Encoding))
     + '/'
     + IntToStr(Weight.Offset)
     + '/'
@@ -656,11 +662,14 @@ var
   Source: Pointer;
 begin
   if (Weight.WeightIdentity = nil)
-    or (not (Weight.DataType in [dtF32, dtBF16]) and not (AllowPackedInt4 and (Weight.DataType = dtU8)))
+    or (not (Weight.DataType in [dtF32, dtBF16]) and not ((AllowPackedInt4 or (Weight.Encoding <> weNative)) and (Weight.DataType = dtU8)))
     or not Weight.IsAssigned
     or (Int64(Rows) * Cols > Int64(Weight.Size) - Weight.Offset) then
     raise EArgumentException.Create('Weight must have immutable identity and sufficient native or packed storage');
-  ByteCount := MatrixBytes(Rows, Cols, Cols, DATATYPE_BITS[Weight.DataType] div 8);
+  if Weight.Encoding <> weNative then
+    ByteCount := GGUFWeightBytes(Weight, Rows, Cols)
+  else
+    ByteCount := MatrixBytes(Rows, Cols, Cols, DATATYPE_BITS[Weight.DataType] div 8);
   Padded := (ByteCount + 3) and not UInt64(3);
   Key := WeightKey(Weight, Rows, Cols);
   Inc(FWeightClock);
@@ -685,7 +694,9 @@ begin
   Result.Identity := Weight.WeightIdentity; // Keeps identity unique, not host storage alive.
   Result.LastUse := FWeightClock;
   Result.Pins := 1;
-  if Weight.DataType = dtU8 then
+  if Weight.Encoding <> weNative then
+    Source := GGUFWeightPointer(Weight)
+  else if Weight.DataType = dtU8 then
     Source := PByte(Weight)
   else if Weight.DataType = dtBF16 then
     Source := PBF16(Weight)
@@ -925,7 +936,7 @@ begin
   end;
 end;
 
-procedure TQNNVulkan.RecordLinear(const A, B, C: TVulkanMemory; const Seq, InputDim, OutputDim: Integer; const BF16: Boolean; const Slot: Integer);
+procedure TQNNVulkan.RecordLinear(const A, B, C: TVulkanMemory; const Seq, InputDim, OutputDim: Integer; const BF16: Boolean; const Slot: Integer; const Encoding: TQNNWeightEncoding);
 begin
   DispatchPipeline(
     TKernelHandle(0),
@@ -944,7 +955,7 @@ begin
       C.Buffer,
       0,
       OutputDim,
-      2 or (Ord(BF16) shl 2)
+      2 or (Ord(BF16) shl 2) or (Ord(Encoding) shl 4)
     ],
     (OutputDim + 63) div 64,
     (Seq + 63) div 64,
@@ -1010,7 +1021,7 @@ begin
   Entry := AcquireWeight(Weight, OutputDim, InputDim);
   try
     BeginNetwork(Src, Seq, InputDim);
-    RecordLinear(FInputA, Entry.Memory, FOutput, Seq, InputDim, OutputDim, Weight.DataType = dtBF16, 0);
+    RecordLinear(FInputA, Entry.Memory, FOutput, Seq, InputDim, OutputDim, Weight.DataType = dtBF16, 0, Weight.Encoding);
     EndNetwork(Dst, Seq, OutputDim);
   finally
     Dec(Entry.Pins)
@@ -1037,8 +1048,8 @@ begin
     UpEntry := AcquireWeight(Up, Mlp, Hidden);
     DownEntry := AcquireWeight(Down, Hidden, Mlp);
     BeginNetwork(Src, Seq, Hidden);
-    RecordLinear(FInputA, GateEntry.Memory, FGraphGate, Seq, Hidden, Mlp, Gate.DataType = dtBF16, 0);
-    RecordLinear(FInputA, UpEntry.Memory, FGraphUp, Seq, Hidden, Mlp, Up.DataType = dtBF16, 1);
+    RecordLinear(FInputA, GateEntry.Memory, FGraphGate, Seq, Hidden, Mlp, Gate.DataType = dtBF16, 0, Gate.Encoding);
+    RecordLinear(FInputA, UpEntry.Memory, FGraphUp, Seq, Hidden, Mlp, Up.DataType = dtBF16, 1, Up.Encoding);
     MemoryBarrier(
       LongWord(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
       LongWord(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT),
@@ -1057,7 +1068,7 @@ begin
       LongWord(VK_ACCESS_SHADER_WRITE_BIT),
       LongWord(VK_ACCESS_SHADER_READ_BIT)
     );
-    RecordLinear(FGraphGate, DownEntry.Memory, FOutput, Seq, Mlp, Hidden, Down.DataType = dtBF16, 2);
+    RecordLinear(FGraphGate, DownEntry.Memory, FOutput, Seq, Mlp, Hidden, Down.DataType = dtBF16, 2, Down.Encoding);
     EndNetwork(Dst, Seq, Hidden);
     Inc(FCounters.PipelineCalls);
   finally
@@ -1230,6 +1241,7 @@ begin
       try
         GPU.CachedLinear(Dst, Src, Weight, Seq, InputDim, OutputDim);
         Inc(GPUStatus.GemmCalls);
+        if Weight.Encoding <> weNative then Inc(GPUStatus.GGUFCalls);
         if Weight.DataType = dtBF16 then
           Inc(GPUStatus.BF16Calls);
         Result := True;

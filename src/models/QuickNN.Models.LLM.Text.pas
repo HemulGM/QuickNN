@@ -17,9 +17,9 @@ type
     property PendingBytes: RawByteString read FPending write FPending;
   end;
 
-function LLMEncodePlain(var Tokenizer: TQNNTokenizer; const Text: string): TArray<LongInt>;
+function LLMEncodePlain(var Tokenizer: TQNNTokenizer; const Text: string; const Hybrid: Boolean = False): TArray<LongInt>;
 
-function LLMChatTokens(var Tokenizer: TQNNTokenizer; const Messages: TLLMMessages; const EnableThinking: Boolean; const PlainTemplate: Boolean = False
+function LLMChatTokens(var Tokenizer: TQNNTokenizer; const Messages: TLLMMessages; const EnableThinking: Boolean; const PlainTemplate: Boolean = False; const Hybrid: Boolean = False
 ): TArray<LongInt>;
 
 function LLMTokenBytes(var Tokenizer: TQNNTokenizer; const Token: Integer): RawByteString;
@@ -27,7 +27,8 @@ function LLMTokenBytes(var Tokenizer: TQNNTokenizer; const Token: Integer): RawB
 implementation
 
 uses
-  System.SysUtils, System.RegularExpressions, System.Generics.Collections;
+  System.SysUtils, System.RegularExpressions, System.Generics.Collections,
+  Winapi.Windows;
 
 const
   // Qwen3 tokenizer.json Split.Regex; UCP gives \s the Unicode semantics of the source tokenizer.
@@ -60,21 +61,42 @@ begin
   end;
 end;
 
-function LLMEncodePlain(var Tokenizer: TQNNTokenizer; const Text: string): TArray<LongInt>;
+function LLMEncodePlain(var Tokenizer: TQNNTokenizer; const Text: string; const Hybrid: Boolean): TArray<LongInt>;
 var
   Regex: TRegEx;
   Tokens: TList<LongInt>;
   Bytes: UTF8String;
   Encoded: string;
   Id, Covered: Integer;
+  Input, Pattern: string;
 begin
   if not Assigned(Tokenizer.VocabsDic) then
     raise EInvalidOp.Create('Load the Qwen3 tokenizer before encoding text');
   Tokens := TList<LongInt>.Create;
   try
-    Regex := TRegEx.Create(QWEN3_SPLIT_PATTERN);
+    Input := Text;
+    Pattern := QWEN3_SPLIT_PATTERN;
+    if Hybrid then
+    begin
+      var Needed := NormalizeString(NormalizationC, PChar(Input), Length(Input), nil, 0);
+      if Needed < 0 then
+        raise EArgumentException.Create('Cannot normalize Qwen hybrid input');
+      var Normalized: string;
+      SetLength(Normalized, Needed);
+      if Needed > 0 then
+      begin
+        Needed := NormalizeString(NormalizationC, PChar(Input), Length(Input), PChar(Normalized), Needed);
+        if Needed < 0 then
+          raise EArgumentException.Create('Cannot normalize Qwen hybrid input');
+        SetLength(Normalized, Needed);
+      end;
+      Input := Normalized;
+      Pattern := StringReplace(Pattern, '\p{L}+', '[\p{L}\p{M}]+', []);
+      Pattern := StringReplace(Pattern, '[^\s\p{L}\p{N}]', '[^\s\p{L}\p{M}\p{N}]', []);
+    end;
+    Regex := TRegEx.Create(Pattern);
     Covered := 1;
-    for var Match in Regex.Matches(Text) do
+    for var Match in Regex.Matches(Input) do
     begin
       if Match.Index <> Covered then
         raise EArgumentException.Create('Qwen3 pre-tokenizer did not cover the input text');
@@ -91,7 +113,7 @@ begin
         Tokens.Add(Id);
       end;
     end;
-    if Covered <> Length(Text) + 1 then
+    if Covered <> Length(Input) + 1 then
       raise EArgumentException.Create('Qwen3 pre-tokenizer did not cover the input text');
     Result := Tokens.ToArray;
   finally
@@ -99,13 +121,13 @@ begin
   end;
 end;
 
-function LLMChatTokens(var Tokenizer: TQNNTokenizer; const Messages: TLLMMessages; const EnableThinking: Boolean; const PlainTemplate: Boolean): TArray<LongInt>;
+function LLMChatTokens(var Tokenizer: TQNNTokenizer; const Messages: TLLMMessages; const EnableThinking: Boolean; const PlainTemplate: Boolean; const Hybrid: Boolean): TArray<LongInt>;
 const
   ROLE_NAMES: array[TLLMRole] of string = ('system', 'user', 'assistant');
 var
   Tokens: TList<LongInt>;
   LastUser, ClosingThink: Integer;
-  Content: string;
+  Content, Reasoning: string;
 
   procedure Special(const Text: RawByteString);
   var
@@ -119,7 +141,7 @@ var
 
   procedure Plain(const Text: string);
   begin
-    Tokens.AddRange(LLMEncodePlain(Tokenizer, Text));
+    Tokens.AddRange(LLMEncodePlain(Tokenizer, Text, Hybrid));
   end;
 
 begin
@@ -131,15 +153,36 @@ begin
     for var I := 0 to High(Messages) do
       if Messages[I].Role = lrUser then
         LastUser := I;
+    if Hybrid and (LastUser < 0) then
+      raise EArgumentException.Create('A Qwen hybrid chat needs a user query');
+    if Hybrid and EnableThinking then
+    begin
+      Special('<|im_start|>');
+      Plain('system'#10 + 'Reasoning effort is set to xhigh. Please think carefully through the task, validate key assumptions, '
+        + 'consider plausible alternatives, and prioritize correctness, consistency, and clarity in the final answer.');
+      if (Messages[0].Role = lrSystem) and (Trim(Messages[0].Content) <> '') then
+        Plain(#10#10 + Trim(Messages[0].Content));
+      Special('<|im_end|>');
+      Plain(#10);
+    end;
     for var MessageIndex := 0 to High(Messages) do
     begin
       var Message := Messages[MessageIndex];
+      if (Length(Message.Images) > 0) and (Message.Role <> lrUser) then
+        raise EArgumentException.Create('Image inputs require a user observation message');
+      if Hybrid and (Message.Role = lrSystem) then
+      begin
+        if MessageIndex > 0 then
+          raise EArgumentException.Create('The hybrid system message must be first');
+        if EnableThinking or (Trim(Message.Content) = '') then
+          Continue;
+      end;
       if (Ord(Message.Role) < Ord(Low(TLLMRole))) or (Ord(Message.Role) > Ord(High(TLLMRole))) then
         raise EArgumentException.Create('Unknown chat message role');
       Special('<|im_start|>');
       Content := Message.Content;
       // The official Qwen3 template omits old assistant reasoning before a new user query.
-      if not PlainTemplate and (Message.Role = lrAssistant) and (MessageIndex < LastUser) then
+      if not Hybrid and not PlainTemplate and (Message.Role = lrAssistant) and (MessageIndex < LastUser) then
       begin
         if Pos('</think>', Content) > 0 then
         begin
@@ -149,9 +192,47 @@ begin
             Delete(Content, 1, 1);
         end;
       end;
-      // Ordinary role/content text is tokenized together so leading newlines keep BPE semantics.
-      // Special control IDs are inserted only by this framing code.
-      Plain(ROLE_NAMES[Message.Role] + #10 + Content);
+      if Hybrid then
+        Content := Trim(Content);
+      if Hybrid and (Message.Role = lrAssistant) then
+      begin
+        Reasoning := '';
+        if Content.StartsWith('<think>') then
+        begin
+          ClosingThink := Pos('</think>', Content);
+          if ClosingThink > 0 then
+          begin
+            Reasoning := Trim(Copy(Content, 8, ClosingThink - 8));
+            Content := Trim(Copy(Content, ClosingThink + 8, MaxInt));
+          end
+          else
+          begin
+            Reasoning := Trim(Copy(Content, 8, MaxInt));
+            Content := '';
+          end;
+        end;
+        Plain('assistant'#10);
+        Special('<think>');
+        Plain(#10 + Reasoning + #10);
+        Special('</think>');
+        Plain(#10#10 + Content);
+      end
+      else
+      begin
+        Plain(ROLE_NAMES[Message.Role] + #10);
+        for var Image in Message.Images do
+        begin
+          if not Hybrid then
+            raise ENotSupportedException.Create('This LLM has no vision encoder; choose a vision analysis model');
+          if (Message.Role <> lrUser) or (Image.TokenCount < 1) then
+            raise EArgumentException.Create('Images require a user message and a prepared visual grid');
+          Special('<|vision_start|>');
+          for var J := 1 to Image.TokenCount do
+            Special('<|image_pad|>');
+          Special('<|vision_end|>');
+        end;
+        Plain(Content);
+      end;
       Special('<|im_end|>');
       Plain(#10);
     end;
@@ -163,6 +244,11 @@ begin
       Plain(#10#10);
       Special('</think>');
       Plain(#10#10);
+    end;
+    if Hybrid and EnableThinking then
+    begin
+      Special('<think>');
+      Plain(#10);
     end;
     Result := Tokens.ToArray;
   finally

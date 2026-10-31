@@ -158,8 +158,17 @@ begin
         nil,
         [Rows, HIDDEN, 1, Prefix, 2 * HIDDEN, 0]
     );
-    Block.GateUp.ForwardGPU(Ctx, Work.G, Work.N, Rows);
-    Ctx.Kernel(GO_SWIGLU, Rows * MLP, Work.Active, Work.G, nil, nil, [MLP, 1]);
+    if Block.Gate.Weight.IsAssigned then
+    begin
+      Block.Gate.ForwardGPU(Ctx, Work.G, Work.N, Rows);
+      Block.Up.ForwardGPU(Ctx, Work.Active, Work.N, Rows);
+      Ctx.Kernel(GO_SWIGLU, Rows * MLP, Work.Active, Work.G, Work.Active, nil, [MLP, 0]);
+    end
+    else
+    begin
+      Block.GateUp.ForwardGPU(Ctx, Work.G, Work.N, Rows);
+      Ctx.Kernel(GO_SWIGLU, Rows * MLP, Work.Active, Work.G, nil, nil, [MLP, 1]);
+    end;
     Block.Down.ForwardGPU(Ctx, Work.Y, Work.Active, Rows);
     Ctx.Kernel(GO_GATE_ADD, Rows * HIDDEN, Work.X, Work.Y, Work.Modulation, nil, [HIDDEN, Prefix, 3 * HIDDEN]);
     Ctx.CheckFinite(Work.X, Rows * HIDDEN);

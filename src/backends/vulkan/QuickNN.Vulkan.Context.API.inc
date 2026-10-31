@@ -24,7 +24,7 @@ private
   FThread: Cardinal;
   FLocked: Boolean;
   FPending: Integer;
-  FSlots: array[0..4] of Integer;
+  FSlots: array[0..5] of Integer;
 {$ENDIF}
 {$IF defined(MSWINDOWS) and defined(CPUX64)}
   FDevice: TQNNVulkan;
@@ -172,3 +172,12 @@ const
   GO_MOE_SCATTER = 54;
   GO_MOE_INT4_MATVEC = 55;
   GO_MOE_INT4_GEMM = 56;
+
+  GO_HYBRID_INT4_GATHER = 57;
+  GO_HYBRID_CONV_SCAN = 58;
+  GO_HYBRID_QK_L2 = 59;
+  GO_HYBRID_DELTA_GATES = 60;
+  GO_HYBRID_DELTA_SCAN = 61;
+  GO_HYBRID_GATED_NORM = 62;
+  GO_HYBRID_ATTN_GATE = 63;
+  GO_HYBRID_ROPE = 64;

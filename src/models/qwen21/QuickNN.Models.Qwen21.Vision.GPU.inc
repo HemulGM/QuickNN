@@ -17,7 +17,7 @@ begin
       Q21GPUAffine(Ctx, Normalized, Src, Norm, NormBias, Rows, HIDDEN);
     FC1.ForwardGPU(Ctx, Projected, Normalized, Rows div 4);
     Ctx.Kernel(GO_UNARY, Rows div 4 * 4608, Projected, Projected, nil, nil, [2]);
-    Result := Ctx.NewTensor(Rows div 4 * 4096);
+    Result := Ctx.NewTensor(Rows div 4 * FC2.OutputDim);
     FC2.ForwardGPU(Ctx, Result, Projected, Rows div 4);
     Ctx.CheckFinite(Result);
   finally
@@ -87,7 +87,7 @@ begin
       Block.FC2.ForwardGPU(Ctx, Y, Mlp, Rows);
       Q21GPUAdd(Ctx, X, Y, Rows * HIDDEN);
       Ctx.CheckFinite(X);
-      case I of
+      if not FHybrid then case I of
         8: Resident.DeepStack[0] := FDeep[0].ForwardGPU(Ctx, X, Rows);
         16: Resident.DeepStack[1] := FDeep[1].ForwardGPU(Ctx, X, Rows);
         24: Resident.DeepStack[2] := FDeep[2].ForwardGPU(Ctx, X, Rows)

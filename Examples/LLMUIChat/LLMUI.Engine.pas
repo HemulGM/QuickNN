@@ -4,13 +4,14 @@ interface
 
 uses
   System.Classes, System.SysUtils, System.SyncObjs, QuickNN.Models.LLM,
-  QuickNN.Models.LLM.Types, LLMUI.Data, LLMUI.Context.Types;
+  QuickNN.Models.LLM.Types, LLMUI.Data, LLMUI.Context.Types, LLMUI.Images;
 
 type
   TInferenceRequest = record
     JobId, ChatId, MessageId: string;
     ModelName, Directory, TokenizerDirectory: string;
-    IsMoE, ContinueResponse: Boolean;
+    IsMoE, ContinueResponse, GenerateImage: Boolean;
+    Image: TChatImage;
     Continuation: TLLMContinuationState;
     Preferences: TChatPreferences;
     Messages: TLLMMessages;
@@ -20,7 +21,9 @@ type
 
   TInferenceSnapshot = record
     JobId, ChatId, MessageId, Phase, Delta, ErrorText, LoadedModel: string;
-    Busy, Finished, MemoryUpdated: Boolean;
+    Busy, Finished, MemoryUpdated, ImageReady: Boolean;
+    Image: TChatImage;
+    ImageDescriptions: TArray<TImageDescription>;
     ContextMemory: TChatContextMemory;
     Result: TLLMGenerationResult;
     Continuation: TLLMContinuationState;
@@ -42,7 +45,7 @@ type
     FSessionKey, FSessionChat: string;
     procedure SetPhase(const Text: string);
     procedure UpdateMemory;
-    procedure RunRequest(const Request: TInferenceRequest);
+    procedure RunRequest(const OriginalRequest: TInferenceRequest);
     procedure RunConversation(const Request: TInferenceRequest; var Response: TLLMGenerationResult; var Checkpoint: TLLMContinuationState);
     procedure ReleaseModel;
   protected
@@ -61,7 +64,7 @@ type
 implementation
 
 uses
-  QuickNN.Vulkan, System.Math, LLMUI.Context;
+  QuickNN.Vulkan, System.Math, LLMUI.Context, QuickNN.Models.LLM.Vision;
 
 constructor TInferenceWorker.Create;
 begin
@@ -167,6 +170,8 @@ begin
     FSnapshot.Delta := '';
     FSnapshot.Finished := False;
     FSnapshot.MemoryUpdated := False;
+    FSnapshot.ImageReady := False;
+    FSnapshot.ImageDescriptions := nil;
   finally
     FLock.Release;
   end;
@@ -378,13 +383,53 @@ begin
   end;
 end;
 
-procedure TInferenceWorker.RunRequest(const Request: TInferenceRequest);
+procedure TInferenceWorker.RunRequest(const OriginalRequest: TInferenceRequest);
 var
+  Request: TInferenceRequest;
   Memory: TLLMMemoryOptions;
   Response: TLLMGenerationResult;
   ErrorText, Key: string;
   Checkpoint: TLLMContinuationState;
+
+  procedure PrepareMessage(var Message: TLLMMessage; const GeneratedImage: Boolean = False);
+  begin
+    if Length(Message.Images) = 0 then
+      Exit;
+    Message.Images := Copy(Message.Images);
+    if LLMVisionAvailable(Request.Directory) then
+      for var I := 0 to High(Message.Images) do
+        LLMPrepareImage(Request.Directory, Message.Images[I],
+          procedure
+          begin
+            ReleaseModel
+          end,
+          procedure(const Text: string)
+          begin
+            SetPhase(Text)
+          end,
+          function: Boolean
+          begin
+            Result := TInterlocked.CompareExchange(FCancel, 0, 0) <> 0
+          end)
+    else
+    begin
+      for var Image in Message.Images do
+      begin
+        if Image.Description <> '' then
+          Message.Content := Message.Content + #10 + '[Описание изображения: ' + Image.Description + ']'
+        else if GeneratedImage then
+          Message.Content := Message.Content + #10 + '[Изображение сохранено. Его содержимое ещё не анализировалось.]'
+        else
+          raise ENotSupportedException.Create('У изображения пока нет описания. Выберите vision-модель.');
+      end;
+      Message.Images := nil;
+    end;
+  end;
+
 begin
+  Request := OriginalRequest;
+  Request.History := Copy(OriginalRequest.History);
+  Request.Messages := Copy(OriginalRequest.Messages);
   Response := Default(TLLMGenerationResult);
   Response.FinishReason := lfCancelled;
   if Request.ContinueResponse then
@@ -401,66 +446,105 @@ begin
   try
     if TInterlocked.CompareExchange(FCancel, 0, 0) <> 0 then
       raise EAbort.Create('Отменено');
-    Key :=
-      Request.Directory
-      + #1
-      + Request.TokenizerDirectory
-      + #1
-      + Request.Preferences.Context.ToString
-      + '/'
-      + Request.Preferences.GPUCacheGiB.ToString
-      + '/'
-      + Request.Preferences.RAMCacheGiB.ToString
-      + '/'
-      + BoolToStr(Request.IsMoE and Request.Preferences.Int4Experts, True);
-    if (FModel = nil) or (FSessionKey <> Key) then
+    if Request.GenerateImage then
     begin
       ReleaseModel;
-      QNNConfigureGPU(gpuForce);
-      SetPhase('Загрузка модели ' + Request.ModelName + '…');
-      Memory := TLLMMemoryOptions.Defaults;
-      Memory.GPUWeightLimitBytes := UInt64(Request.Preferences.GPUCacheGiB) * 1024 * 1024 * 1024;
-      Memory.RAMCacheLimitBytes := UInt64(Request.Preferences.RAMCacheGiB) * 1024 * 1024 * 1024;
-      if Request.IsMoE and Request.Preferences.Int4Experts then
-        Memory.ExpertQuantization := eqInt4;
-      Memory.OnExpertCacheProgress :=
-        procedure(Done, Total: Integer)
+      SetPhase('Загрузка модели изображений…');
+      GenerateChatImage(Request.Image,
+        procedure(const Text: string)
         begin
-          if TInterlocked.CompareExchange(FCancel, 0, 0) <> 0 then
-            raise EAbort.Create('Отменено');
-          SetPhase(Format('Подготовка INT4-кеша: %d/%d частей', [Done, Total]));
-        end;
-      FModel := TQNNLLM.Create(Request.Directory, Request.TokenizerDirectory, Request.Preferences.Context, Memory);
-      FSessionKey := Key;
-    end;
-    if FSessionChat <> Request.ChatId then
-    begin
-      FModel.ResetContext;
-      FSessionChat := Request.ChatId;
-    end;
-    FLock.Acquire;
-    try
-      FSnapshot.LoadedModel := Request.ModelName;
-    finally
-      FLock.Release;
-    end;
-    UpdateMemory;
-    if TInterlocked.CompareExchange(FCancel, 0, 0) <> 0 then
-      raise EAbort.Create('Отменено');
-    RunConversation(Request, Response, Checkpoint);
-    UpdateMemory;
-    if Response.FinishReason = lfCancelled then
-      SetPhase('Ответ остановлен')
-    else if Response.FinishReason = lfContextFull then
-      SetPhase(
-        'Контекст заполнен. Увеличьте контекст, включите автосжатие или уменьшите число защищённых запросов.'
-      )
-    else if Response.FinishReason = lfHardLimit then
-      SetPhase('Достигнут жёсткий предел. Можно продолжить ответ.')
-    else if Response.FinishReason = lfMaxTokens then
-      SetPhase('Достигнут мягкий лимит. Можно продолжить ответ.')
+          SetPhase(Text)
+        end,
+        function: Boolean
+        begin
+          Result := TInterlocked.CompareExchange(FCancel, 0, 0) <> 0
+        end);
+      FLock.Acquire;
+      try
+        FSnapshot.Image := Request.Image;
+        FSnapshot.ImageReady := True
+      finally
+        FLock.Release
+      end;
+      Response.FinishReason := lfEOS;
+      SetPhase('Изображение готово');
+    end
     else
-      SetPhase('Готово');
+    begin
+      var Boundary := ContextMemoryBoundary(Request.History, Request.Preferences.SystemPrompt, Request.ContextMemory);
+      if Boundary >= ContextProtectedStart(Request.History, Request.Preferences.Compaction.KeepRecentTurns) then
+        Boundary := -1;
+      for var I := Boundary + 1 to High(Request.History) do
+        PrepareMessage(Request.History[I].Message, Request.History[I].Id.EndsWith('/image'));
+      // ContextHistory is authoritative when present; avoid encoding attachments twice.
+      if Length(Request.History) = 0 then
+        for var I := 0 to High(Request.Messages) do
+          PrepareMessage(Request.Messages[I]);
+      Key :=
+        Request.Directory
+        + #1
+        + Request.TokenizerDirectory
+        + #1
+        + Request.Preferences.Context.ToString
+        + '/'
+        + Request.Preferences.GPUCacheGiB.ToString
+        + '/'
+        + Request.Preferences.RAMCacheGiB.ToString
+        + '/'
+        + BoolToStr(Request.Preferences.Int4Experts, True);
+      if (FModel = nil) or (FSessionKey <> Key) then
+      begin
+        ReleaseModel;
+        QNNConfigureGPU(gpuForce);
+        SetPhase('Загрузка модели ' + Request.ModelName + '…');
+        Memory := TLLMMemoryOptions.Defaults;
+        Memory.GPUWeightLimitBytes := UInt64(Request.Preferences.GPUCacheGiB) * 1024 * 1024 * 1024;
+        Memory.RAMCacheLimitBytes := UInt64(Request.Preferences.RAMCacheGiB) * 1024 * 1024 * 1024;
+        if Request.Preferences.Int4Experts then
+          Memory.DenseQuantization := wqInt4
+        else
+          Memory.DenseQuantization := wqNative;
+        if Request.IsMoE and Request.Preferences.Int4Experts then
+          Memory.ExpertQuantization := eqInt4;
+        Memory.OnExpertCacheProgress :=
+          procedure(Done, Total: Integer)
+          begin
+            if TInterlocked.CompareExchange(FCancel, 0, 0) <> 0 then
+              raise EAbort.Create('Отменено');
+            SetPhase(Format('Подготовка INT4-кеша: %d/%d частей', [Done, Total]));
+          end;
+        FModel := TQNNLLM.Create(Request.Directory, Request.TokenizerDirectory, Request.Preferences.Context, Memory);
+        FSessionKey := Key;
+      end;
+      if FSessionChat <> Request.ChatId then
+      begin
+        FModel.ResetContext;
+        FSessionChat := Request.ChatId;
+      end;
+      FLock.Acquire;
+      try
+        FSnapshot.LoadedModel := Request.ModelName;
+      finally
+        FLock.Release;
+      end;
+      UpdateMemory;
+      if TInterlocked.CompareExchange(FCancel, 0, 0) <> 0 then
+        raise EAbort.Create('Отменено');
+      RunConversation(Request, Response, Checkpoint);
+      UpdateMemory;
+      if Response.FinishReason = lfCancelled then
+        SetPhase('Ответ остановлен')
+      else if Response.FinishReason = lfContextFull then
+        SetPhase(
+          'Контекст заполнен. Увеличьте контекст, включите автосжатие или уменьшите число защищённых запросов.'
+        )
+      else if Response.FinishReason = lfHardLimit then
+        SetPhase('Достигнут жёсткий предел. Можно продолжить ответ.')
+      else if Response.FinishReason = lfMaxTokens then
+        SetPhase('Достигнут мягкий лимит. Можно продолжить ответ.')
+      else
+        SetPhase('Готово');
+    end;
   except
     on E: Exception do
     begin
@@ -491,6 +575,30 @@ begin
     Checkpoint := Request.Continuation;
   FLock.Acquire;
   try
+    if (Response.Text <> '') and (Response.FinishReason <> lfCancelled) then
+    begin
+      var Description := Response.Text;
+      if Description.StartsWith('<think>') then
+      begin
+        var Closing := Pos('</think>', Description);
+        if Closing > 0 then
+          Description := Copy(Description, Closing + 8, MaxInt).Trim
+        else
+          Description := '';
+      end;
+      if Description <> '' then
+        for var Item in Request.History do
+          if (Item.Message.Role = lrUser) and (Item.Id = Request.History[High(Request.History)].Id) then
+            for var Image in Item.Message.Images do
+              if (Image.Description = '') and (Image.Identity <> '') then
+              begin
+                var Observation := Default(TImageDescription);
+                Observation.MessageId := Item.Id;
+                Observation.ContentHash := Image.Identity;
+                Observation.Text := 'Вопрос об изображении: ' + Item.Message.Content + #10 + 'Ответ vision-модели: ' + Description;
+                FSnapshot.ImageDescriptions := FSnapshot.ImageDescriptions + [Observation];
+              end;
+    end;
     FSnapshot.Continuation := Checkpoint;
     FSnapshot.Result := Response;
     FSnapshot.ErrorText := ErrorText;

@@ -155,6 +155,8 @@
         <DCC_DebugInformation>0</DCC_DebugInformation>
     </PropertyGroup>
     <ItemGroup>
+        <DCCReference Include="..\..\src\io\QuickNN.GGUF.Quantization.pas"/>
+        <DCCReference Include="..\..\src\io\QuickNN.GGUF.pas"/>
         <DCCReference Include="..\..\src\core\QuickNN.Quantization.Int4.pas"/>
         <DCCReference Include="..\..\src\models\QuickNN.Models.LLM.Quantization.pas"/>
 
@@ -179,6 +181,8 @@
             <CfgParent>Base</CfgParent>
         </BuildConfiguration>
         <DCCReference Include="..\..\src\models\QuickNN.Models.LLM.pas"/>
+        <DCCReference Include="..\..\src\models\QuickNN.Models.QwenHybrid.pas"/>
+        <DCCReference Include="..\..\src\models\QuickNN.Models.LLM.Vision.pas"/>
         <DCCReference Include="..\..\src\models\QuickNN.Models.LLM.Types.pas"/>
         <DCCReference Include="..\..\src\models\QuickNN.Models.LLM.Text.pas"/>
         <DCCReference Include="..\..\src\models\QuickNN.Models.LLM.Memory.pas"/>

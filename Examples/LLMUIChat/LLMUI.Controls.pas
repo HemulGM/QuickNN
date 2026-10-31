@@ -3,12 +3,14 @@
 interface
 
 uses
-  FMX.Types, FMX.Controls, FMX.ListBox;
+  System.Types, FMX.Types, FMX.Controls, FMX.ListBox, FMX.Layouts;
 
 const
   CHAT_CONTENT_MAX_WIDTH = 800;
 
 procedure ConfigureComboBox(const Combo: TComboBox);
+
+procedure PrepareControlRelease(const Control: TControl);
 
 procedure RetireControl(const Control: TControl);
 
@@ -18,11 +20,68 @@ procedure CopyText(const Text: string);
 
 function ScrollAncestorByWheel(const Origin: TFmxObject; const WheelDelta: Integer): Boolean;
 
+// Layout corrections move the animation target together with its origin.
+procedure MoveScrollViewport(const Scroll: TVertScrollBox; const Position: TPointF);
+
+procedure StopScrollMotion(const Scroll: TVertScrollBox);
+
 implementation
 
 uses
-  System.SysUtils, System.Types, System.UITypes, System.Math, FMX.Layouts,
-  System.TypInfo, System.Rtti, FMX.Platform;
+  System.SysUtils, System.UITypes, System.Math, System.Math.Vectors,
+  FMX.InertialMovement, System.TypInfo, System.Rtti, FMX.Platform;
+
+type
+  TScrollControlAccess = class(TVertScrollBox);
+
+  TScrollMotionAccess = class(TAniCalculations)
+  public
+    property MouseTarget;
+    property Shown;
+  end;
+
+procedure MoveScrollViewport(const Scroll: TVertScrollBox; const Position: TPointF);
+var
+  Motion: TScrollMotionAccess;
+  Pending: TAniCalculations.TTarget;
+  Delta: TPointD;
+  HalfPixel: Single;
+begin
+  Motion := TScrollMotionAccess(Scroll.AniCalculations);
+  Delta := TPointD.Create(Position - Scroll.ViewportPosition);
+  // Keep subpixel progress. Rounding every layout tick can cancel or stall a
+  // slow animation even when the visible viewport has not actually moved.
+  HalfPixel := 0.5;
+  if Scroll.Scene <> nil then
+    HalfPixel := HalfPixel / Max(1, Scroll.Scene.GetSceneScale);
+  if (Abs(Delta.X) < HalfPixel) and (Abs(Delta.Y) < HalfPixel) then
+    Exit;
+  Pending := Motion.MouseTarget;
+  Motion.ViewportPosition := Motion.ViewportPosition + Delta;
+  if Pending.TargetType = TAniCalculations.TTargetType.Other then
+  begin
+    Pending.Point := Pending.Point + Delta;
+    Motion.MouseTarget := Pending;
+  end;
+  TScrollControlAccess(Scroll).Realign;
+end;
+
+procedure StopScrollMotion(const Scroll: TVertScrollBox);
+var
+  Motion: TScrollMotionAccess;
+  Pending: TAniCalculations.TTarget;
+  Animated: Boolean;
+begin
+  Motion := TScrollMotionAccess(Scroll.AniCalculations);
+  Pending := Default(TAniCalculations.TTarget);
+  Pending.TargetType := TAniCalculations.TTargetType.Achieved;
+  Motion.MouseTarget := Pending;
+  // Clear velocity as well as the pending wheel destination before a chat
+  // switch or an explicit jump. Do not carry momentum into another chat.
+  Animated := Motion.Animation;
+  Motion.Animation := False;
+  Motion.Animation := Animated;
+end;
 
 procedure ConfigureComboBox(const Combo: TComboBox);
 begin
@@ -64,7 +123,7 @@ begin
     Disconnect(Obj.Children[I]);
 end;
 
-procedure RetireControl(const Control: TControl);
+procedure PrepareControlRelease(const Control: TControl);
 var
   Root: IRoot;
   Captured: TFmxObject;
@@ -86,6 +145,13 @@ begin
       Captured := Captured.Parent;
     end;
   end;
+end;
+
+procedure RetireControl(const Control: TControl);
+begin
+  if Control = nil then
+    Exit;
+  PrepareControlRelease(Control);
   Control.Parent := nil;
   Control.Release;
 end;
@@ -103,8 +169,7 @@ function ScrollAncestorByWheel(const Origin: TFmxObject; const WheelDelta: Integ
 var
   Parent: TFmxObject;
   Scroll: TVertScrollBox;
-  Position: TPointF;
-  Limit: Single;
+  Motion: TScrollMotionAccess;
 begin
   Parent := Origin;
   while (Parent <> nil) and not (Parent is TVertScrollBox) do
@@ -113,10 +178,11 @@ begin
   if not Result then
     Exit;
   Scroll := TVertScrollBox(Parent);
-  Position := Scroll.ViewportPosition;
-  Limit := Max(0, Scroll.ContentBounds.Height - Scroll.ViewportRect.Height);
-  Position.Y := EnsureRange(Position.Y - WheelDelta * 0.4, 0, Limit);
-  Scroll.ViewportPosition := Position;
+  if not Scroll.Enabled then
+    Exit;
+  Motion := TScrollMotionAccess(Scroll.AniCalculations);
+  Motion.Shown := True;
+  Motion.MouseWheel(0, -WheelDelta * 0.4);
   // Consume at the boundary too: the wheel must never reach a value editor.
 end;
 

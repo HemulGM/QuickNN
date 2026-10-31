@@ -33,7 +33,7 @@ type
 type
   TQwen21Block = record
     QNorm, KNorm: TMemoryBlock;
-    Q, K, V, O, GateUp, Down: TQNNLinearWeight;
+    Q, K, V, O, GateUp, Gate, Up, Down: TQNNLinearWeight;
     procedure Load(const Files: TSafeTensorFiles; const Index: Integer);
     procedure Free;
   end;
@@ -82,7 +82,16 @@ begin
   K.Load(Files, P + 'attn.to_k');
   V.Load(Files, P + 'attn.to_v');
   O.Load(Files, P + 'attn.to_out.0');
-  GateUp.Load(Files, P + 'img_mlp.gate_up');
+  if Files.GetTensor(P + 'img_mlp.gate_up.weight') <> nil then
+    GateUp.Load(Files, P + 'img_mlp.gate_up')
+  else
+  begin
+    Gate.Load(Files, P + 'img_mlp.gate_layer');
+    Up.Load(Files, P + 'img_mlp.proj');
+    if (Gate.InputDim <> HIDDEN) or (Gate.OutputDim <> MLP)
+      or (Up.InputDim <> HIDDEN) or (Up.OutputDim <> MLP) then
+      raise EArgumentException.Create('Invalid Qwen-Image 2.1 split MLP dimensions');
+  end;
   Down.Load(Files, P + 'img_mlp.out');
   if (Q.InputDim <> HIDDEN)
     or (Q.OutputDim <> HIDDEN)
@@ -92,8 +101,7 @@ begin
     or (V.OutputDim <> HIDDEN)
     or (O.InputDim <> HIDDEN)
     or (O.OutputDim <> HIDDEN)
-    or (GateUp.InputDim <> HIDDEN)
-    or (GateUp.OutputDim <> 2 * MLP)
+    or (GateUp.Weight.IsAssigned and ((GateUp.InputDim <> HIDDEN) or (GateUp.OutputDim <> 2 * MLP)))
     or (Down.InputDim <> MLP)
     or (Down.OutputDim <> HIDDEN) then
     raise EArgumentException.Create('Invalid Qwen-Image 2.1 block dimensions');
@@ -117,6 +125,8 @@ begin
   FStatus := Status;
   SetLength(FFiles, 1);
   FFiles[0] := TSafeTensorFile.Open(Checkpoint);
+  if FFiles[0].IsGGUF and (FFiles[0].Architecture <> 'qwen_image21') then
+    raise EArgumentException.Create('Expected GGUF architecture qwen_image21; found ' + FFiles[0].Architecture);
   FTextNorm := QNNRequiredTensor(FFiles, 'txt_in.text_norm.weight').AsSingle(True);
   FTextIn.Load(FFiles, 'txt_in.in_layer');
   FTextOut.Load(FFiles, 'txt_in.out_layer');
@@ -202,14 +212,21 @@ begin
     Result := @FBlocks[Index].V
   else if Name = 'attn.to_out.0' then
     Result := @FBlocks[Index].O
-  else if Name = 'img_mlp.gate_up' then
+  else if (Name = 'img_mlp.gate_up') and FBlocks[Index].GateUp.Weight.IsAssigned then
     Result := @FBlocks[Index].GateUp
   else if Name = 'img_mlp.gate_layer' then
-    Result := @FBlocks[Index].GateUp
+  begin
+    if FBlocks[Index].Gate.Weight.IsAssigned then Result := @FBlocks[Index].Gate
+    else Result := @FBlocks[Index].GateUp;
+  end
   else if Name = 'img_mlp.proj' then
   begin
-    Result := @FBlocks[Index].GateUp;
-    OutputOffset := MLP
+    if FBlocks[Index].Up.Weight.IsAssigned then Result := @FBlocks[Index].Up
+    else
+    begin
+      Result := @FBlocks[Index].GateUp;
+      OutputOffset := MLP;
+    end;
   end
   else if Name = 'img_mlp.out' then
     Result := @FBlocks[Index].Down;
@@ -360,12 +377,22 @@ begin
       Q21ModNorm(N, X, Modulation, Rows, HIDDEN, PrefixRows, 2 * HIDDEN);
       Used := False;
       if not Block.GateUp.HasAdapters
+        and not Block.Gate.HasAdapters
+        and not Block.Up.HasAdapters
         and not Block.Down.HasAdapters
         and (Block.GateUp.Weight.DataType <> DT_I8)
         and (Block.Down.Weight.DataType <> DT_I8) then
       begin
-        GateView := Block.GateUp.Weight;
-        UpView := Block.GateUp.Weight + Int64(MLP) * HIDDEN;
+        if Block.Gate.Weight.IsAssigned then
+        begin
+          GateView := Block.Gate.Weight;
+          UpView := Block.Up.Weight;
+        end
+        else
+        begin
+          GateView := Block.GateUp.Weight;
+          UpView := Block.GateUp.Weight + Int64(MLP) * HIDDEN;
+        end;
         Used := TryVulkanSwiGLU(Y, N, GateView, UpView, Block.Down.Weight, Rows, HIDDEN, MLP);
         GateView := Default(TMemoryBlock);
         UpView := Default(TMemoryBlock);
@@ -377,14 +404,25 @@ begin
           G := TMemoryBlock.Create([Rows, 2 * MLP], 'qwen21-gate-up');
           Active := TMemoryBlock.Create([Rows, MLP], 'qwen21-swiglu');
         end;
-        Block.GateUp.forward(G, N, Rows);
-        for var R := 0 to Rows - 1 do
+        if Block.Gate.Weight.IsAssigned then
         begin
-          Offset := NativeInt(R) * 2 * MLP;
-          Q21Silu(G + Offset, MLP);
-          for var J := 0 to MLP - 1 do
-            System.PSingle(Active)[NativeInt(R) * MLP + J] :=
-              System.PSingle(G)[Offset + J] * System.PSingle(G)[Offset + MLP + J];
+          Block.Gate.forward(G, N, Rows);
+          Block.Up.forward(Active, N, Rows);
+          Q21Silu(G, Rows * MLP);
+          for var J := 0 to Rows * MLP - 1 do
+            System.PSingle(Active)[J] := System.PSingle(G)[J] * System.PSingle(Active)[J];
+        end
+        else
+        begin
+          Block.GateUp.forward(G, N, Rows);
+          for var R := 0 to Rows - 1 do
+          begin
+            Offset := NativeInt(R) * 2 * MLP;
+            Q21Silu(G + Offset, MLP);
+            for var J := 0 to MLP - 1 do
+              System.PSingle(Active)[NativeInt(R) * MLP + J] :=
+                System.PSingle(G)[Offset + J] * System.PSingle(G)[Offset + MLP + J];
+          end;
         end;
         Block.Down.forward(Y, Active, Rows);
       end;

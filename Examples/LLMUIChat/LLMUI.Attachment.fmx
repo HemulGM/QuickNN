@@ -1,0 +1,118 @@
+object FrameAttachment: TFrameAttachment
+  Size.Width = 148.000000000000000000
+  Size.Height = 104.000000000000000000
+  Size.PlatformDefault = False
+  object PanelAttachment: TPanel
+    Align = Client
+    Cursor = crHandPoint
+    Padding.Left = 6.000000000000000000
+    Padding.Top = 6.000000000000000000
+    Padding.Right = 6.000000000000000000
+    Padding.Bottom = 6.000000000000000000
+    Size.Width = 148.000000000000000000
+    Size.Height = 104.000000000000000000
+    Size.PlatformDefault = False
+    StyleLookup = 'chatpanel'
+    OnClick = ImagePreviewClick
+    object ImagePreview: TImage
+      MultiResBitmap = <
+        item
+        end>
+      Align = Client
+      Cursor = crHandPoint
+      Size.Width = 136.000000000000000000
+      Size.Height = 92.000000000000000000
+      Size.PlatformDefault = False
+      OnClick = ImagePreviewClick
+      object LayoutCaption: TLayout
+        Align = Bottom
+        Position.Y = 66.000000000000000000
+        Size.Width = 136.000000000000000000
+        Size.Height = 26.000000000000000000
+        Size.PlatformDefault = False
+        TabOrder = 0
+        object RectangleCaptionShade: TRectangle
+          Align = Contents
+          Fill.Kind = Gradient
+          Fill.Gradient.Points = <
+            item
+              Color = x8E000000
+              Offset = 0.000000000000000000
+            end
+            item
+              Color = claNull
+              Offset = 0.726708054542541500
+            end>
+          Fill.Gradient.StartPosition.X = 0.500000000000000000
+          Fill.Gradient.StartPosition.Y = 1.000000000000000000
+          Fill.Gradient.StopPosition.X = 0.499999970197677600
+          Fill.Gradient.StopPosition.Y = 0.000000000000000000
+          HitTest = False
+          Size.Width = 136.000000000000000000
+          Size.Height = 26.000000000000000000
+          Size.PlatformDefault = False
+          Stroke.Kind = None
+        end
+        object LabelFileName: TLabel
+          Align = Client
+          StyledSettings = []
+          Size.Width = 136.000000000000000000
+          Size.Height = 26.000000000000000000
+          Size.PlatformDefault = False
+          TextSettings.Font.Size = 10.000000000000000000
+          TextSettings.FontColor = xFFB1C2C0
+          TextSettings.WordWrap = False
+          ParentShowHint = False
+          ShowHint = True
+        end
+      end
+      object LayoutAttachmentOverlay: TLayout
+        Align = Client
+        Size.Width = 136.000000000000000000
+        Size.Height = 66.000000000000000000
+        Size.PlatformDefault = False
+        TabOrder = 1
+        object ButtonRemove: TButton
+          Align = TopRight
+          Margins.Top = -10.000000000000000000
+          Margins.Right = -10.000000000000000000
+          Position.X = 122.000000000000000000
+          Position.Y = -10.000000000000000000
+          Size.Width = 24.000000000000000000
+          Size.Height = 24.000000000000000000
+          Size.PlatformDefault = False
+          StyleLookup = 'chatsecondarybutton'
+          TabOrder = 0
+          OnClick = ButtonRemoveClick
+          object PathRemove: TPath
+            Align = Center
+            Data.Path = {
+              2A0000000000000039B48C405EBA9140010000003D0A8F403D0A8F4002000000
+              2B709740CFA3864002000000BAB7A4408AA5854002000000A145AE4039B48C40
+              01000000C2F5B0403D0A8F40010000000000404125062F41010000008FC29341
+              0D028F40020000006544954193C5884002000000917F97411546864002000000
+              899899415D7988400200000081B19B41A5AC8A4002000000B5549D410A3B9140
+              0200000005E19D41729F994002000000556D9E41DA03A24002000000ECCC9D41
+              EDEFAA4002000000703D9C41C4F5B04001000000DBF950410000404101000000
+              7D3F9C418FC293410200000076589E4192DC95410200000027979E416C2E9941
+              02000000F2D29C4168919B4101000000713D9C41703D9C4102000000F5239A41
+              0B579E410200000012D296419D969E4102000000986E9441F1D29C4101000000
+              90C29341703D9C410100000000004041DBF9504101000000C3F5B0407D3F9C41
+              02000000E789A74055859E4102000000C7919840917C9E4102000000E7508F40
+              CA2B9C41020000000710864003DB99410200000097F08540F91C964102000000
+              3F0A8F408FC293410100000025062F4100004041010000000D028F40C3F5B040
+              020000002B9E8640B78DA8400200000065A385404E469B40020000003AB48C40
+              5FBA9140010000003E0A8F403E0A8F400300000039B48C405EBA9140}
+            Fill.Color = xFF9BAFAD
+            HitTest = False
+            Size.Width = 10.000000000000000000
+            Size.Height = 10.000000000000000000
+            Size.PlatformDefault = False
+            Stroke.Kind = None
+            WrapMode = Fit
+          end
+        end
+      end
+    end
+  end
+end

@@ -22,7 +22,7 @@ type
     Norm, NormBias: TMemoryBlock;
     FC1, FC2: TQNNLinearWeight;
     PostShuffle: Boolean;
-    procedure Load(const Files: TSafeTensorFiles; const Prefix: string; const Post: Boolean);
+    procedure Load(const Files: TSafeTensorFiles; const Prefix: string; const Post: Boolean; const OutputDim: Integer = 4096);
     function forward(const Src: TMemoryBlock; const Rows: Integer): TMemoryBlock;
     function ForwardGPU(const Ctx: TQNNGPUContext; const Src: TQNNGPUTensor; const Rows: Integer): TQNNGPUTensor;
     procedure Free;
@@ -37,8 +37,11 @@ type
     FMerger: TQwen21VisionMerger;
     FDeep: array[0..2] of TQwen21VisionMerger;
     FStatus: TQwen21Status;
+    FHybrid: Boolean;
+    procedure Initialize(const OutputDim: Integer; const DeepStack: Boolean);
   public
     constructor Create(const Checkpoint: string; const Status: TQwen21Status = nil);
+    constructor CreateHybrid(const Directory: string; const Status: TQwen21Status; const OutputDim: Integer);
     destructor Destroy; override;
     procedure EncodeGPU(const Ctx: TQNNGPUContext; var Image: TQwen21ImageCondition; var resident: TQwen21GPUImageCondition);
     procedure Encode(var Image: TQwen21ImageCondition);
@@ -183,14 +186,14 @@ begin
   FC2.Free
 end;
 
-procedure TQwen21VisionMerger.Load(const Files: TSafeTensorFiles; const Prefix: string; const Post: Boolean);
+procedure TQwen21VisionMerger.Load(const Files: TSafeTensorFiles; const Prefix: string; const Post: Boolean; const OutputDim: Integer);
 begin
   PostShuffle := Post;
   Norm := QNNRequiredTensor(Files, Prefix + '.norm.weight').AsSingle(True);
   NormBias := QNNRequiredTensor(Files, Prefix + '.norm.bias').AsSingle(True);
   FC1.Load(Files, Prefix + '.linear_fc1');
   FC2.Load(Files, Prefix + '.linear_fc2');
-  if (FC1.InputDim <> 4608) or (FC1.OutputDim <> 4608) or (FC2.InputDim <> 4608) or (FC2.OutputDim <> 4096) then
+  if (FC1.InputDim <> 4608) or (FC1.OutputDim <> 4608) or (FC2.InputDim <> 4608) or (FC2.OutputDim <> OutputDim) then
     raise ESafeTensorError.Create('Unexpected visual merger: ' + Prefix);
 end;
 
@@ -209,7 +212,7 @@ begin
       Q21AffineNorm(NormData, Src, Self.Norm, Self.NormBias, Rows, HIDDEN);
     FC1.forward(Projected, NormData, Rows div 4);
     GeluExact(Projected, Projected.Count);
-    Result := TMemoryBlock.Create([Rows div 4, 4096], 'vision-merged-features');
+    Result := TMemoryBlock.Create([Rows div 4, FC2.OutputDim], 'vision-merged-features');
     FC2.forward(Result, Projected, Rows div 4);
     QNNCheckFinite(Result, Result.Count, 'Vision merger');
   finally
@@ -227,13 +230,27 @@ begin
 end;
 
 constructor TQwen21Vision.Create(const Checkpoint: string; const Status: TQwen21Status);
-var
-  Tensor: PSafeTensor;
 begin
   inherited Create;
   FStatus := Status;
   SetLength(FFiles, 1);
   FFiles[0] := TSafeTensorFile.Open(Checkpoint);
+  Initialize(4096, True);
+end;
+
+constructor TQwen21Vision.CreateHybrid(const Directory: string; const Status: TQwen21Status; const OutputDim: Integer);
+begin
+  inherited Create;
+  FHybrid := True;
+  FStatus := Status;
+  FFiles := LoadSafeTensorShards(Directory, 'model.safetensors.index.json', 'model.safetensors');
+  Initialize(OutputDim, False);
+end;
+
+procedure TQwen21Vision.Initialize(const OutputDim: Integer; const DeepStack: Boolean);
+var
+  Tensor: PSafeTensor;
+begin
   Tensor := QNNRequiredTensor(FFiles, 'model.visual.patch_embed.proj.weight');
   if (Tensor.Ndim <> 5)
     or (Tensor.Shape[0] <> HIDDEN)
@@ -251,9 +268,10 @@ begin
     raise ESafeTensorError.Create('Unexpected learned vision position table');
   for var I := 0 to 26 do
     FBlocks[I].Load(FFiles, I);
-  FMerger.Load(FFiles, 'model.visual.merger', False);
-  for var I := 0 to 2 do
-    FDeep[I].Load(FFiles, Format('model.visual.deepstack_merger_list.%d', [I]), True);
+  FMerger.Load(FFiles, 'model.visual.merger', False, OutputDim);
+  if DeepStack then
+    for var I := 0 to 2 do
+      FDeep[I].Load(FFiles, Format('model.visual.deepstack_merger_list.%d', [I]), True);
 end;
 
 destructor TQwen21Vision.Destroy;
@@ -382,14 +400,15 @@ begin
       Block.FC2.forward(Y, Mlp, Rows);
       QNNAddInplace(X, Y, Rows * HIDDEN);
       QNNCheckFinite(X, X.Count, 'Vision block ' + IntToStr(I));
-      case I of
-        8:
-          Image.DeepStack[0] := FDeep[0].forward(X, Rows);
-        16:
-          Image.DeepStack[1] := FDeep[1].forward(X, Rows);
-        24:
-          Image.DeepStack[2] := FDeep[2].forward(X, Rows)
-      end;
+      if not FHybrid then
+        case I of
+          8:
+            Image.DeepStack[0] := FDeep[0].forward(X, Rows);
+          16:
+            Image.DeepStack[1] := FDeep[1].forward(X, Rows);
+          24:
+            Image.DeepStack[2] := FDeep[2].forward(X, Rows)
+        end;
       if Assigned(FStatus) and ((I + 1) mod 9 = 0) then
         FStatus(Format('Vision encoder %d/27', [I + 1]));
     end;

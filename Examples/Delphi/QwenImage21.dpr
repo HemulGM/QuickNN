@@ -34,7 +34,7 @@ var
   LoraJSON: TJSONArray;
   LoraItem: TJSONObject;
   Params: TQwen21Params;
-  Models, Assets, OutputPath, Arg, Precision: string;
+  Models, Assets, OutputPath, Arg, Precision, DiffusionCheckpoint: string;
   Index: Integer;
   Pipeline: TQwen21Pipeline;
   Image: TQNNImage;
@@ -56,6 +56,7 @@ begin
   Assets := '';
   OutputPath := '';
   Precision := 'int8';
+  DiffusionCheckpoint := '';
   Index := 1;
   while Index <= ParamCount do
   begin
@@ -63,6 +64,7 @@ begin
     if Arg = '--help' then
     begin
       WriteLn('QwenImage21 [--models H:\Models] [--assets DIR] [--precision int8|bf16]');
+      WriteLn('  [--transformer FILE.gguf|FILE.safetensors] (text encoder/VAE come from --models)');
       WriteLn('  [--prompt TEXT | --prompt-file UTF8.txt] [--negative TEXT] [--cfg 1]');
       WriteLn('  [--image FILE]... [--reference-size 512] (ordered image references)');
       WriteLn('  [--lora FILE --lora-scale 1]... (repeat for multiple adapters)');
@@ -72,6 +74,8 @@ begin
     end
     else if Arg = '--models' then
       Models := NextValue
+    else if Arg = '--transformer' then
+      DiffusionCheckpoint := NextValue
     else if Arg = '--assets' then
       Assets := NextValue
     else if Arg = '--precision' then
@@ -152,7 +156,7 @@ begin
     begin
       WriteLn(Msg);
       Flush(Output)
-    end);
+    end, DiffusionCheckpoint);
   try
     Image := Pipeline.Generate(Params);
     try
@@ -167,6 +171,8 @@ begin
       JSON.AddPair('assets_root', ExpandFileName(Assets));
       JSON.AddPair('model', 'Qwen-Image 2.1');
       JSON.AddPair('precision', Precision);
+      JSON.AddPair('transformer_checkpoint', DiffusionCheckpoint);
+      JSON.AddPair('text_encoder_precision', Precision);
       JSON.AddPair('prompt', Params.Prompt);
       JSON.AddPair('negative_prompt', Params.NegativePrompt);
       JSON.AddPair('width', TJSONNumber.Create(Params.Width));
@@ -184,6 +190,11 @@ begin
       JSON.AddPair('gpu_submissions', TJSONNumber.Create(Int64(Status.Submissions)));
       JSON.AddPair('gpu_convrot_calls', TJSONNumber.Create(Int64(Status.ConvRotCalls)));
       JSON.AddPair('gpu_tensor_calls', TJSONNumber.Create(Int64(Status.TensorCalls)));
+      JSON.AddPair('gpu_gguf_calls', TJSONNumber.Create(Int64(Status.GGUFCalls)));
+      JSON.AddPair('gpu_weight_upload_bytes', TJSONNumber.Create(Int64(Status.WeightUploadBytes)));
+      JSON.AddPair('gpu_weight_uploads', TJSONNumber.Create(Int64(Status.WeightUploads)));
+      JSON.AddPair('gpu_weight_cache_hits', TJSONNumber.Create(Int64(Status.WeightCacheHits)));
+      JSON.AddPair('gpu_weight_cache_limit', TJSONNumber.Create(Int64(Status.WeightCacheLimit)));
       JSON.AddPair('gpu_resident_peak_bytes', TJSONNumber.Create(Int64(Status.ResidentPeakBytes)));
       var References := TJSONArray.Create;
       JSON.AddPair('reference_images', References);

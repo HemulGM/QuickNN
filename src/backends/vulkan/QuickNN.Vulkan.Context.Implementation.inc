@@ -258,6 +258,12 @@ begin
     Groups := (Args[1] + 7) div 8
   else if Op = GO_MOE_INT4_GEMM then
     Groups := ((Args[1] + 31) div 32) * ((Args[2] + 7) div 8)
+  else if Op = GO_HYBRID_QK_L2 then
+    Groups := Args[0] * 2 * Args[1]
+  else if Op = GO_HYBRID_DELTA_SCAN then
+    Groups := Args[0]
+  else if Op = GO_HYBRID_GATED_NORM then
+    Groups := N div Args[0]
   else if Op = GO_LLM_MATVEC_BF16 then
     Groups := (N + 7) div 8
   else if Op = GO_LLM_MATVEC then
@@ -272,6 +278,8 @@ begin
   Pipeline := 3;
   if Op in [GO_MOE_ROUTE, GO_MOE_GATHER, GO_MOE_SCATTER, GO_MOE_INT4_MATVEC, GO_MOE_INT4_GEMM] then
     Pipeline := 4;
+  if (Op >= GO_HYBRID_INT4_GATHER) and (Op <= GO_HYBRID_ROPE) then
+    Pipeline := 5;
   FDevice.DispatchPipeline(TKernelHandle(Pipeline), Params, Groups, 1, 1, FSlots[Pipeline]);
   Inc(FSlots[Pipeline]);
   Barrier;
@@ -289,7 +297,7 @@ var
 begin
 {$IF defined(MSWINDOWS) and defined(CPUX64)}
   Check(FError);
-  Entry := FDevice.AcquireWeight(Weight, Rows, Columns);
+  Entry := FDevice.AcquireWeight(Weight, Rows, Columns, Weight.DataType = dtU8);
   for var Existing in FRetained do
     if Existing = Entry then
     begin
@@ -454,7 +462,10 @@ begin
           or (Weights[I].Size <> Weights[I].Shape[0] * Weights[I].Shape[1]) then
         raise EArgumentException.Create('Preload requires complete immutable native matrices');
       Keys[I] := FDevice.WeightKey(Weights[I], Weights[I].Shape[0], Weights[I].Shape[1]);
-      Sizes[I] := UInt64(Weights[I].Size) * UInt64(DATATYPE_BITS[Weights[I].DataType] div 8);
+      if Weights[I].Encoding <> weNative then
+        Sizes[I] := GGUFWeightBytes(Weights[I], Weights[I].Shape[0], Weights[I].Shape[1])
+      else
+        Sizes[I] := UInt64(Weights[I].Size) * UInt64(DATATYPE_BITS[Weights[I].DataType] div 8);
       PaddedSizes[I] := (Sizes[I] + 3) and not UInt64(3);
       if Unique.TryAdd(Keys[I], 0) then
       begin
@@ -541,7 +552,9 @@ begin
       FPins[I] := Entry;
       Created[I] := True;
       Inc(FDevice.FWeightBytes, PaddedSizes[I]);
-      if Weights[I].DataType = dtU8 then
+      if Weights[I].Encoding <> weNative then
+        Source := GGUFWeightPointer(Weights[I])
+      else if Weights[I].DataType = dtU8 then
         Source := PByte(Weights[I])
       else if Weights[I].DataType = dtBF16 then
         Source := PBF16(Weights[I])
@@ -716,9 +729,9 @@ begin
   Wc := nil;
   try
     if B.IsAssigned then
-      Wb := FDevice.AcquireWeight(B, 1, B.Count);
+      Wb := FDevice.AcquireWeight(B, 1, B.Count, B.DataType = dtU8);
     if C.IsAssigned then
-      Wc := FDevice.AcquireWeight(C, 1, C.Count);
+      Wc := FDevice.AcquireWeight(C, 1, C.Count, C.DataType = dtU8);
     RecordKernel(Op, N, Dst, A, nil, nil, Args, Wb, Wc, B.DataType = dtBF16, C.DataType = dtBF16);
     Pin(Wb);
     Wb := nil;
@@ -762,7 +775,7 @@ begin
       Input := Scratch(0, Rows * InputDim);
       Kernel(GO_CONV_ROT, Rows * InputDim, Input, Src, nil, nil, [Rotation]);
     end;
-    Flags := 2;
+    Flags := 2 or (Ord(Weight.Encoding) shl 4);
     if Weight.DataType = DT_I8 then
       Flags := Flags or 8
     else if Weight.DataType = dtBF16 then
@@ -797,6 +810,7 @@ begin
     Pin(Entry);
     Entry := nil;
     Inc(GPUStatus.GemmCalls);
+    if Weight.Encoding <> weNative then Inc(GPUStatus.GGUFCalls);
     if Weight.DataType = dtBF16 then
       Inc(GPUStatus.BF16Calls);
     if Bias.IsAssigned then

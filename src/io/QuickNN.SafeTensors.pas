@@ -148,6 +148,7 @@ type
   TSafeTensor = record
   public
     WeightIdentity: IInterface;
+    Encoding: TQNNWeightEncoding;
     Name: string;
     Ndim: LongInt;
     Shape: TArray<Int64>; // array {[0..7]} of int64;
@@ -183,8 +184,10 @@ type
   private
     TensorIndex: TArray<Integer>;
     MappingOwner: IInterface;
+    procedure OpenGGUF(const Stream: TFileStream);
   public
-    Path: string;
+    Path, Architecture: string;
+    IsGGUF: Boolean;
     Data: Pointer; (* mmapped file data *)
     FileSize, HeaderSize, DataSize, Offset: Int64;
     HeaderJson: UTF8String;
@@ -226,7 +229,7 @@ const
 
 implementation
 uses
-  System.IOUtils;
+  System.IOUtils, QuickNN.GGUF, QuickNN.GGUF.Quantization;
 
 type
   TSafeTensorResource = class(TInterfacedObject)
@@ -339,6 +342,14 @@ function TSafeTensor.AsSingle(const UseMmap: Boolean): TMemoryBlock;
 function TSafeTensor.AsSingle: TArray<Single>;
 {$ENDIF}
 begin
+  if Encoding <> weNative then
+  begin
+    Result := TMemoryBlock.Create(Shape, Name, dtF32);
+    try GGUFDequantize(Data, Encoding, Count, System.PSingle(Result))
+    except Result.Free; raise end;
+    Result.WeightIdentity := WeightIdentity;
+    Exit;
+  end;
   if not (DType in [StBF16, StF16, StF32]) then
     raise ESafeTensorError.Create('Unsupported conversion to F32: ' + Name);
   if UseMmap and (DType = StF32) then
@@ -466,6 +477,48 @@ begin
     raise ESafeTensorError.Create('Invalid integer in safetensors header');
 end;
 
+procedure TSafeTensorFile.OpenGGUF(const Stream: TFileStream);
+begin
+  Stream.Position := 0;
+  var Header := TGGUFHeader.Read(Stream);
+  IsGGUF := True;
+  Architecture := Header.Architecture;
+  Offset := Header.DataOffset;
+  HeaderSize := Offset;
+  DataSize := FileSize - Offset;
+  SetLength(Tensors, Length(Header.Tensors));
+  SetLength(TensorIndex, Length(Tensors));
+  for var I := 0 to High(Tensors) do
+  begin
+    var Source := Header.Tensors[I];
+    Tensors[I].Name := Source.Name;
+    Tensors[I].Shape := Source.Shape;
+    Tensors[I].Ndim := Length(Source.Shape);
+    Tensors[I].WeightIdentity := TInterfacedObject.Create;
+    Tensors[I].Encoding := GGUFEncoding(Source.StorageType);
+    case Source.StorageType of
+      0: Tensors[I].DType := StF32;
+      1: Tensors[I].DType := StF16;
+      30: Tensors[I].DType := StBF16;
+      8, 12, 14: Tensors[I].DType := StU8;
+    end;
+    Tensors[I].DataOffset := Offset + Source.Offset;
+    Tensors[I].DataSize := Source.ByteSize;
+    TensorIndex[I] := I;
+  end;
+  var Sorted := Tensors;
+  TArray.Sort<Integer>(TensorIndex, TComparer<Integer>.Construct(
+    function(const A, B: Integer): Integer
+    begin Result := CompareStr(Sorted[A].Name, Sorted[B].Name) end));
+  var Resource := TSafeTensorResource.Create;
+  MappingOwner := Resource;
+  Resource.Data := MapFile(Stream);
+  Resource.Size := FileSize;
+  Data := Resource.Data;
+  for var I := 0 to High(Tensors) do
+    Tensors[I].Data := PByte(Data) + NativeInt(Tensors[I].DataOffset);
+end;
+
 constructor TSafeTensorFile.Open(const Apath: string);
 const
   MAX_HEADER_SIZE = 100000000;
@@ -495,6 +548,11 @@ begin
       if (FileSize < 8) or (FileSize > High(NativeInt)) then
         raise ESafeTensorError.Create('Invalid file size or insufficient address space: ' + Apath);
       Stream.ReadBuffer(HeaderLength, SizeOf(HeaderLength));
+      if UInt32(HeaderLength and $FFFFFFFF) = GGUF_MAGIC then
+      begin
+        OpenGGUF(Stream);
+        Exit;
+      end;
       if (HeaderLength < 2) or (HeaderLength > MAX_HEADER_SIZE) or (HeaderLength > UInt64(FileSize - 8)) then
         raise ESafeTensorError.Create('Invalid safetensors header length: ' + Apath);
       HeaderSize := HeaderLength;
@@ -624,8 +682,10 @@ begin
       Stream.Free;
     end;
   except
-    Close;
-    raise;
+    on E: EGGUFError do
+    begin Close; raise ESafeTensorError.Create(E.Message) end;
+    on E: Exception do
+    begin Close; raise end;
   end;
 end;
 
@@ -663,6 +723,18 @@ begin
     Exit;
   if Data = nil then
     raise ESafeTensorError.Create('Safetensors file is closed');
+  if SafeTensor.Encoding <> weNative then
+  begin
+    if not UseMMAP then Exit(SafeTensor.AsSingle(False));
+    Result.DataType := dtU8;
+    Result.Encoding := SafeTensor.Encoding;
+    Result.DataPtr := SafeTensor.Data;
+    Result.Shape := SafeTensor.Shape;
+    Result.Size := SafeTensor.Count;
+    Result.Name := SafeTensor.Name;
+    Result.WeightIdentity := SafeTensor.WeightIdentity;
+    Exit;
+  end;
   Typ := SafeTensor.DType.ToDataType;
   if (Typ = dtUndef) or not (DATATYPE_BITS[Typ] in [4, 8, 16, 32]) then
     raise ESafeTensorError.Create('Unsupported tensor storage type: ' + SafeTensor.DType.ToString);
@@ -806,6 +878,19 @@ begin
   Tensor := GetTensor(Name);
   if Tensor = nil then
     raise ESafeTensorError.Create('Cannot find linear weight "' + Name + '"');
+  if Tensor.Encoding <> weNative then
+  begin
+    if not UseMMAP then Exit(Tensor.AsSingle(False));
+    Result := Default(TMemoryBlock);
+    Result.DataType := dtU8;
+    Result.Encoding := Tensor.Encoding;
+    Result.Shape := Tensor.Shape;
+    Result.Size := Tensor.Count;
+    Result.DataPtr := Tensor.Data;
+    Result.WeightIdentity := Tensor.WeightIdentity;
+    Result.Name := Tensor.Name;
+    Exit;
+  end;
   if Tensor.DType = StBF16 then
     Result := Tensor.AsBF16(UseMMAP)
   else

@@ -1,0 +1,88 @@
+#version 450
+// Qwen hybrid text kernels. Recurrent and convolution states never leave VRAM.
+layout(local_size_x=256) in;
+layout(set=0,binding=0,std430) readonly buffer A { uint a[]; };
+layout(set=0,binding=1,std430) readonly buffer B { uint b[]; };
+layout(set=0,binding=2,std430) buffer C { uint c[]; };
+layout(set=0,binding=3,std430) buffer D { uint d[]; };
+layout(push_constant) uniform Params { uint op,n,u0,u1,u2,u3; uint v0,v1,v2,v3,v4,v5,v6,v7,v8,v9; } p;
+shared float reduction[256];
+float av(uint i){return uintBitsToFloat(a[i]);}
+float bv(uint i){return p.v8!=0u?uintBitsToFloat((b[i/2u]>>((i%2u)*16u))<<16u):uintBitsToFloat(b[i]);}
+float cv(uint i){return p.v9!=0u?uintBitsToFloat((c[i/2u]>>((i%2u)*16u))<<16u):uintBitsToFloat(c[i]);}
+void put(uint i,float x){d[i]=floatBitsToUint(x);}
+float sumGroup(float x){uint lane=gl_LocalInvocationID.x;reduction[lane]=x;barrier();for(uint s=128u;s>0u;s>>=1u){if(lane<s)reduction[lane]+=reduction[lane+s];barrier();}float r=reduction[0];barrier();return r;}
+float sigmoid(float x){return 1.0/(1.0+exp(-x));}
+float silu(float x){return x*sigmoid(x);}
+void main(){
+ uint id=gl_GlobalInvocationID.x,lane=gl_LocalInvocationID.x,group=gl_WorkGroupID.x;
+ // One group per query/key head. Value channels in the mixed tensor are untouched.
+ if(p.op==59u){
+  uint token=group/(2u*p.v1),head=group%(2u*p.v1),base=token*p.v3+head*p.v2;
+  float partial=0.0;for(uint j=lane;j<p.v2;j+=256u){float x=av(base+j);partial+=x*x;}
+  float inv=inversesqrt(sumGroup(partial)+1e-6);
+  for(uint j=lane;j<p.v2;j+=256u)put(base+j,av(base+j)*inv);
+  return;
+ }
+ // Each value column owns a disjoint column of the FP32 recurrent state.
+ // Prefill scans tokens in order in one dispatch per layer, exactly like decode.
+ if(p.op==61u){
+  uint head=group,kdim=p.v2,vdim=p.v3,kh=head/(p.v0/p.v1),convDim=2u*p.v1*kdim+p.v0*vdim;
+  if(lane>=vdim)return;
+  for(uint token=0u;token<p.v4;++token){
+   uint mixed=token*convDim,qbase=mixed+kh*kdim,kbase=qbase+p.v1*kdim;
+   float beta=uintBitsToFloat(b[token*2u*p.v0+head]);
+   float decay=uintBitsToFloat(b[token*2u*p.v0+p.v0+head]);
+   float memory=0.0;
+   for(uint j=0u;j<kdim;++j){uint s=(head*kdim+j)*vdim+lane;memory+=uintBitsToFloat(c[s])*decay*av(kbase+j);}
+   float delta=(av(mixed+2u*p.v1*kdim+head*vdim+lane)-memory)*beta;
+   float result=0.0;
+   for(uint j=0u;j<kdim;++j){
+    uint s=(head*kdim+j)*vdim+lane;float value=uintBitsToFloat(c[s])*decay+av(kbase+j)*delta;
+    c[s]=floatBitsToUint(value);result+=value*av(qbase+j);
+   }
+   put(token*p.v0*vdim+head*vdim+lane,result*inversesqrt(float(kdim)));
+  }
+  return;
+ }
+ if(p.op==62u){
+  uint dim=p.v0,base=group*dim;float partial=0.0;
+  for(uint j=lane;j<dim;j+=256u){float x=av(base+j);partial+=x*x;}
+  float inv=inversesqrt(sumGroup(partial)/float(dim)+uintBitsToFloat(p.v1));
+  for(uint j=lane;j<dim;j+=256u)put(base+j,av(base+j)*inv*bv(j)*silu(cv(base+j)));
+  return;
+ }
+ if(id>=p.n)return;
+ if(p.op==57u){
+  uint token=a[id/p.v0],column=id%p.v0;
+  if(token>=p.v2){put(id,0.0);return;}
+  uint base=token*p.v1+(column/32u)*5u;
+  uint packed=b[base+1u+(column%32u)/8u];
+  put(id,float(int((packed>>((column%8u)*4u))&15u)-8)*uintBitsToFloat(b[base]));return;
+ }
+ if(p.op==58u){
+  uint channel=id,kernel=p.v1;
+  for(uint token=0u;token<p.v2;++token){
+   for(uint j=0u;j+1u<kernel;++j)c[channel*kernel+j]=c[channel*kernel+j+1u];
+   c[channel*kernel+kernel-1u]=a[token*p.v0+channel];
+   float value=0.0;for(uint j=0u;j<kernel;++j)value+=uintBitsToFloat(c[channel*kernel+j])*bv(channel*kernel+j);
+   put(token*p.v0+channel,silu(value));
+  }return;
+ }
+ if(p.op==60u){
+  uint token=id/p.v0,head=id%p.v0;float x=av(token*2u*p.v0+p.v0+head)+cv(head);
+  float softplus=max(x,0.0)+log(1.0+exp(-abs(x)));
+  put(token*2u*p.v0+head,sigmoid(av(token*2u*p.v0+head)));
+  put(token*2u*p.v0+p.v0+head,exp(-exp(bv(head))*softplus));return;
+ }
+ if(p.op==63u){put(id,av(id)*sigmoid(uintBitsToFloat(b[id])));return;}
+ if(p.op==64u){
+  uint halfDim=p.v1/2u,j=id%halfDim,head=(id/halfDim)%p.v0,token=id/(halfDim*p.v0);
+  uint first=token*p.v0*p.v2+head*p.v2+j,second=first+halfDim;
+  uint axis=j%3u;
+  if((axis==1u&&j>=33u)||(axis==2u&&j>=30u))axis=0u;
+  float pos=p.v5!=0u?float(b[token*3u+axis]):float(token+p.v3);
+  float angle=pos*pow(uintBitsToFloat(p.v4),-float(2u*j)/float(p.v1));
+  float x=av(first),y=av(second);put(first,x*cos(angle)-y*sin(angle));put(second,x*sin(angle)+y*cos(angle));return;
+ }
+}

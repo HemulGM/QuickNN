@@ -6,11 +6,21 @@ uses
   System.SysUtils;
 
 type
+  ELLMCancelled = class(EAbort);
+
   TLLMRole = (lrSystem, lrUser, lrAssistant);
+
+  TLLMImage = record
+    FileName, Identity, EncoderKey, Description: string;
+    GridHeight, GridWidth: Integer;
+    Features: TArray<Single>;
+    function TokenCount: Integer;
+  end;
 
   TLLMMessage = record
     Role: TLLMRole;
     Content: string;
+    Images: TArray<TLLMImage>;
     class function Create(const Role: TLLMRole; const Content: string): TLLMMessage; static;
   end;
 
@@ -29,19 +39,25 @@ type
 
   TLLMExpertQuantization = (eqNative, eqInt4);
 
+  TLLMWeightQuantization = (wqNative, wqInt4);
+
   TLLMMemoryOptions = record
     // Zero GPU limit preserves the caller's current global weight budget.
     GPUWeightLimitBytes, RAMCacheLimitBytes: UInt64;
     // Zero selects scalar uploads; otherwise capped at 128 MiB and available VRAM.
     ExpertBatchBytes: UInt64;
     ExpertQuantization: TLLMExpertQuantization;
+    DenseQuantization: TLLMWeightQuantization;
     ExpertCacheDirectory: string;
     OnExpertCacheProgress: TProc<Integer, Integer>;
     class function Defaults: TLLMMemoryOptions; static;
   end;
 
   TLLMMemoryStatus = record
-    IsMoE: Boolean;
+    IsMoE, IsHybrid: Boolean;
+    DenseQuantization: TLLMWeightQuantization;
+    ResidentLayers, StreamedLayers: Integer;
+    RecurrentBytes, ActivationBytes: UInt64;
     ExpertQuantization: TLLMExpertQuantization;
     QuantizedMappedWeightBytes: UInt64;
     ExpertCacheDirectory: string;
@@ -56,7 +72,7 @@ type
   // Immutable once published; it can rebuild a session after unloading the model.
 
   TLLMContinuationState = record
-    ModelKey, Text, PromptSignature: string;
+    ModelKey, Text, PromptSignature, VisionSignature: string;
     Tokens: TArray<LongInt>;
     PromptTokens, GeneratedTokens: Integer;
     RandomState: UInt32;
@@ -78,6 +94,11 @@ type
 
 implementation
 
+function TLLMImage.TokenCount: Integer;
+begin
+  Result := (GridHeight div 2) * (GridWidth div 2);
+end;
+
 function TLLMContinuationState.Available: Boolean;
 begin
   Result :=
@@ -90,6 +111,7 @@ end;
 class function TLLMMemoryOptions.Defaults: TLLMMemoryOptions;
 begin
   Result := Default(TLLMMemoryOptions);
+  Result.DenseQuantization := wqInt4;
   Result.RAMCacheLimitBytes := UInt64(4) * 1024 * 1024 * 1024;
   Result.ExpertBatchBytes := UInt64(128) * 1024 * 1024;
 end;
@@ -104,6 +126,7 @@ end;
 
 class function TLLMMessage.Create(const Role: TLLMRole; const Content: string): TLLMMessage;
 begin
+  Result.Images := nil;
   Result.Role := Role;
   Result.Content := Content;
 end;

@@ -3,12 +3,16 @@
 uses
   System.StartUpCopy,
   System.SysUtils,
-  System.Hash,
-  Winapi.Windows,
-  FMX.Dialogs,
   FMX.Forms,
+  LLMUI.Theme in 'LLMUI.Theme.pas' {DataModuleChatTheme: TDataModule},
+  LLMUI.Dialogs in 'LLMUI.Dialogs.pas' {FormChatDialog},
+  LLMUI.ImageViewer in 'LLMUI.ImageViewer.pas' {FrameImageViewer: TFrame},
   LLMUI.Main in 'LLMUI.Main.pas' {FormMain},
   LLMUI.Data in 'LLMUI.Data.pas',
+  LLMUI.Images in 'LLMUI.Images.pas',
+  LLMUI.Attachments in 'LLMUI.Attachments.pas',
+  LLMUI.Attachment in 'LLMUI.Attachment.pas' {FrameAttachment: TFrame},
+  LLMUI.VirtualMessages in 'LLMUI.VirtualMessages.pas',
   LLMUI.Context.Types in 'LLMUI.Context.Types.pas',
   LLMUI.Context in 'LLMUI.Context.pas',
   LLMUI.Engine in 'LLMUI.Engine.pas',
@@ -19,33 +23,10 @@ uses
 
 {$R *.res}
 
-var
-  InstanceMutex: THandle;
-
 begin
-  // Concurrent instances must not overwrite the same chat history.
-  InstanceMutex :=
-      CreateMutex(
-          nil,
-          True,
-          PChar('Local\QuickNN.LLMUIChat.' + THashSHA2.GetHashString(LowerCase(ExpandFileName(DefaultStorePath))))
-      );
-  if InstanceMutex = 0 then
-    RaiseLastOSError;
-  if GetLastError = ERROR_ALREADY_EXISTS then
-  begin
-    CloseHandle(InstanceMutex);
-    ShowMessage(
-        'QuickNN Chat уже запущен. Переключитесь в открытое окно приложения.'
-    );
-    Exit;
-  end;
-  try
-    Application.Initialize;
-    Application.CreateForm(TFormMain, FormMain);
-    Application.Run;
-  finally
-    ReleaseMutex(InstanceMutex);
-    CloseHandle(InstanceMutex);
-  end;
+  Application.Initialize;
+  TChatDialogs.InstallExceptionHandler;
+  Application.CreateForm(TFormMain, FormMain);
+  Application.Run;
 end.
+

@@ -80,6 +80,11 @@ begin
       Field(History[I].Id);
       Text.Append(Ord(History[I].Message.Role)).Append(':');
       Field(History[I].Message.Content);
+      for var Image in History[I].Message.Images do
+      begin
+        Field(Image.FileName);
+        Field(Image.Description)
+      end;
     end;
     Result := THashSHA2.GetHashString(Text.ToString);
   finally
@@ -327,6 +332,8 @@ begin
       else
         Source.AppendLine('Assistant:');
       Source.AppendLine(FHistory[I].Message.Content).AppendLine;
+      for var Image in FHistory[I].Message.Images do
+        Source.AppendLine('[Image ' + Image.Identity + ': ' + Image.Description + ']');
     end;
     Candidate := FMemory;
     try

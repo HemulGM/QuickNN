@@ -126,10 +126,14 @@ type
   end;
   // todo link TMemoryBlock to IMemoryArena for allocations
 
+  // Packed GGUF storage is separate from the logical element type/shape.
+  TQNNWeightEncoding = (weNative, weGGUFQ8_0, weGGUFQ4_K, weGGUFQ6_K);
+
   { TMemoryBlock }
   PMemoryBlock = ^TMemoryBlock;
   TMemoryBlock = record
     DataType: TQNNDataType;
+    Encoding: TQNNWeightEncoding;
     Shape: TArray<Int64>;
     Offset: NativeInt;
     DataPtr: Pointer;
@@ -1210,6 +1214,7 @@ begin
 {$ENDIF}
   end;
   Self.DataType := dtUndef;
+  Self.Encoding := weNative;
   Self.Offset := 0;
   Self.Size := 0;
   Self.Shape := nil;
@@ -1336,6 +1341,7 @@ procedure TMemoryBlock.AssignPtr(const Ptr: System.PSingle; const AShape: TArray
 begin
   Assert(not IsAllocated(), 'TMemoryBlock.assignPtr : Cannot assign a pointer to an already allocatd memory block!');
   WeightIdentity := nil;
+  Encoding := weNative;
   Shape := AShape;
   Size := Product(AShape);
   DataType := dtF32;
@@ -1346,6 +1352,7 @@ procedure TMemoryBlock.AssignPtr(const Ptr: PBF16; const AShape: TArray<Int64>);
 begin
   Assert(not IsAllocated(), 'TMemoryBlock.assignPtr : Cannot assign a pointer to an already allocatd memory block!');
   WeightIdentity := nil;
+  Encoding := weNative;
   Shape := AShape;
   Size := Product(AShape);
   DataType := dtBF16;
@@ -1356,6 +1363,7 @@ procedure TMemoryBlock.AssignPtr(const Ptr: PFP16; const AShape: TArray<Int64>);
 begin
   Assert(not IsAllocated(), 'TMemoryBlock.assignPtr : Cannot assign a pointer to an already allocatd memory block!');
   WeightIdentity := nil;
+  Encoding := weNative;
   Shape := AShape;
   Size := Product(AShape);
   DataType := dtF16;
@@ -1366,6 +1374,7 @@ procedure TMemoryBlock.AssignPtr(const Ptr: PLongint; const AShape: TArray<Int64
 begin
   Assert(not IsAllocated(), 'TMemoryBlock.assignPtr : Cannot assign a pointer to an already allocatd memory block!');
   WeightIdentity := nil;
+  Encoding := weNative;
   Shape := AShape;
   Size := Product(AShape);
   DataType := dtS32;
@@ -1376,6 +1385,7 @@ procedure TMemoryBlock.AssignPtr(const Ptr: PSmallInt; const AShape: TArray<Int6
 begin
   Assert(not IsAllocated(), 'TMemoryBlock.assignPtr : Cannot assign a pointer to an already allocatd memory block!');
   WeightIdentity := nil;
+  Encoding := weNative;
   Shape := AShape;
   Size := Product(AShape);
   DataType := dtS16;
@@ -1386,6 +1396,7 @@ procedure TMemoryBlock.AssignPtr(const Ptr: PShortInt; const AShape: TArray<Int6
 begin
   Assert(not IsAllocated(), 'TMemoryBlock.assignPtr : Cannot assign a pointer to an already allocatd memory block!');
   WeightIdentity := nil;
+  Encoding := weNative;
   Shape := AShape;
   Size := Product(AShape);
   DataType := dtS8;
@@ -1396,6 +1407,7 @@ procedure TMemoryBlock.AssignPtr(const Ptr: PInt4; const AShape: TArray<Int64>);
 begin
   Assert(not IsAllocated(), 'TMemoryBlock.assignPtr : Cannot assign a pointer to an already allocatd memory block!');
   WeightIdentity := nil;
+  Encoding := weNative;
   Shape := AShape;
   Size := Product(AShape);
   DataType := dtS4;

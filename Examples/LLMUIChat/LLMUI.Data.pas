@@ -4,7 +4,7 @@ interface
 
 uses
   System.SysUtils, System.Generics.Collections, System.JSON,
-  QuickNN.Models.LLM.Types, LLMUI.Context.Types;
+  QuickNN.Models.LLM.Types, LLMUI.Context.Types, LLMUI.Images;
 
 type
   TMessageState = (msComplete, msStreaming, msStopped, msFailed, msLimited, msContextFull);
@@ -17,6 +17,7 @@ type
     GPUCacheGiB, RAMCacheGiB: Integer;
     Int4Experts: Boolean;
     StreamOutput: Boolean;
+    ImageGeneration: TChatImageSettings;
     class function Defaults: TChatPreferences; static;
     function ToJSON: TJSONObject;
     class function FromJSON(const Value: TJSONValue): TChatPreferences; static;
@@ -26,8 +27,9 @@ type
   public
     Id, Name, Directory, TokenizerDirectory: string;
     ModelType, Validation, ResolvedTokenizer: string;
-    Available, SupportsThinking: Boolean;
-    Layers, KVHeads, HeadDim, MaxContext: Integer;
+    Available, SupportsThinking, SupportsVision: Boolean;
+    Layers, KVLayers, KVHeads, HeadDim, MaxContext: Integer;
+    RecurrentBytes: UInt64;
     constructor Create;
     procedure Inspect;
     function ToJSON: TJSONObject;
@@ -38,6 +40,7 @@ type
   TChatMessage = class
   public
     Id, Text, ErrorText, ModelName, ModelId: string;
+    Images: TArray<TChatImage>;
     Continuation: TLLMContinuationState;
     Role: TLLMRole;
     State: TMessageState;
@@ -52,7 +55,10 @@ type
   TChatSession = class
   public
     Id, Title, Draft: string;
+    DraftImages: TArray<TChatImage>;
     ScrollPosition: Double;
+    ScrollMessageId: string;
+    ScrollMessageOffset: Double;
     FollowLatest: Boolean;
     Created, Updated: TDateTime;
     Preferences: TChatPreferences;
@@ -73,8 +79,10 @@ type
     FRecoveredBackup: Boolean;
     procedure ReadDocument(const Text: string);
     procedure ImportLegacyStore;
+    procedure ImportImageModels;
   public
     Models: TObjectList<TModelEntry>;
+    ImageModels: TObjectList<TImageModelEntry>;
     Chats: TObjectList<TChatSession>;
     ActiveChatId: string;
     RecoveryNotice: string;
@@ -84,6 +92,8 @@ type
     procedure Save;
     procedure SeedLocalModels;
     function FindModel(const Id: string): TModelEntry;
+    function FindImageModel(const Id: string): TImageModelEntry;
+    procedure RemoveImageModel(const Id: string);
     function FindChat(const Id: string): TChatSession;
     function NewChat: TChatSession;
     procedure RemoveChat(const Id: string);
@@ -122,6 +132,7 @@ end;
 class function TChatPreferences.Defaults: TChatPreferences;
 begin
   Result := Default(TChatPreferences);
+  Result.ImageGeneration := TChatImageSettings.Defaults;
   Result.Context := 2048;
   Result.Generation := TLLMGenerationOptions.Defaults;
   Result.Compaction := TChatCompactionOptions.Defaults;
@@ -141,6 +152,7 @@ function TChatPreferences.ToJSON: TJSONObject;
 begin
   Result := TJSONObject.Create;
   Result.AddPair('model_id', ModelId);
+  Result.AddPair('image_generation', ImageGeneration.ToJSON);
   Result.AddPair('compaction', Compaction.ToJSON);
   Result.AddPair('system_prompt', SystemPrompt);
   Result.AddPair('context', TJSONNumber.Create(Context));
@@ -165,6 +177,7 @@ begin
   if not (Value is TJSONObject) then
     Exit;
   Result.ModelId := Value.GetValue<string>('model_id', '');
+  Result.ImageGeneration := TChatImageSettings.FromJSON(Value.FindValue('image_generation'));
   Result.Compaction := TChatCompactionOptions.FromJSON(Value.FindValue('compaction'));
   Result.SystemPrompt := Value.GetValue<string>('system_prompt', Result.SystemPrompt);
   Result.Context := EnsureRange(Value.GetValue<Integer>('context', 2048), 512, 8192);
@@ -192,12 +205,15 @@ end;
 
 procedure TModelEntry.Inspect;
 var
-  Config, Tokenizer: TJSONValue;
+  Config, Tokenizer, TextConfig, Kinds: TJSONValue;
+  LinearLayers: Integer;
+  StateCount: UInt64;
   Candidate: string;
 begin
   Available := False;
   Validation := '';
   SupportsThinking := False;
+  SupportsVision := False;
   ModelType := '';
   ResolvedTokenizer := '';
   Config := nil;
@@ -212,8 +228,9 @@ begin
     if not (Config is TJSONObject) then
       raise EArgumentException.Create('Некорректный config.json.');
     ModelType := Config.GetValue<string>('model_type', '');
-    if (ModelType <> 'qwen3') and (ModelType <> 'qwen3_moe') then
-      raise EArgumentException.Create('Этот движок поддерживает Qwen3 и Qwen3 MoE в safetensors.');
+    SupportsVision := (ModelType = 'qwen3_5') and (Config.FindValue('vision_config') <> nil);
+    if (ModelType <> 'qwen3') and (ModelType <> 'qwen3_moe') and (ModelType <> 'qwen3_5') then
+      raise EArgumentException.Create('Этот движок поддерживает Qwen3, Qwen3 MoE и гибридные Qwen3.8 в safetensors.');
     if (Config.FindValue('quantization_config') <> nil)
       and not (Config.FindValue('quantization_config') is TJSONNull) then
       raise EArgumentException.Create('Нужен исходный BF16/F32 checkpoint. INT4 экспертов создаётся самим QuickNN.');
@@ -229,20 +246,66 @@ begin
     end;
     if not TFile.Exists(TPath.Combine(ResolvedTokenizer, 'tokenizer.json')) then
       raise EArgumentException.Create('Не найден tokenizer.json. Укажите каталог токенизатора.');
-    Layers := Config.GetValue<Integer>('num_hidden_layers', 0);
-    KVHeads := Config.GetValue<Integer>('num_key_value_heads', 0);
-    HeadDim := Config.GetValue<Integer>('head_dim', 0);
+    var IndexPath := TPath.Combine(Directory, 'model.safetensors.index.json');
+    if TFile.Exists(IndexPath) then
+    begin
+      var Index := TJSONValue.ParseJSONValue(TFile.ReadAllText(IndexPath, TEncoding.UTF8));
+      try
+        if (Index = nil) or not (Index.FindValue('weight_map') is TJSONObject) then
+          raise EArgumentException.Create('Неверный индекс весов.');
+        for var Pair in TJSONObject(Index.FindValue('weight_map')) do
+          if not TFile.Exists(TPath.Combine(Directory, Pair.JsonValue.Value)) then
+            raise EArgumentException.Create('Загрузка весов не завершена: ' + Pair.JsonValue.Value);
+      finally
+        Index.Free
+      end;
+    end
+    else if not TFile.Exists(TPath.Combine(Directory, 'model.safetensors')) then
+      raise EArgumentException.Create('В каталоге нет весов model.safetensors.');
+    TextConfig := Config;
+    if ModelType = 'qwen3_5' then
+    begin
+      TextConfig := Config.FindValue('text_config');
+      if TextConfig = nil then
+        raise EArgumentException.Create('Нет text_config гибридной модели.');
+    end;
+    Layers := TextConfig.GetValue<Integer>('num_hidden_layers', 0);
+    KVHeads := TextConfig.GetValue<Integer>('num_key_value_heads', 0);
+    HeadDim := TextConfig.GetValue<Integer>('head_dim', 0);
     if HeadDim = 0 then
       HeadDim :=
-        Config.GetValue<Integer>('hidden_size', 0) div Max(1, Config.GetValue<Integer>('num_attention_heads', 1));
+        TextConfig.GetValue<Integer>('hidden_size', 0) div Max(1, TextConfig.GetValue<Integer>('num_attention_heads', 1));
     if (Layers < 1) or (KVHeads < 1) or (HeadDim < 1) then
       raise EArgumentException.Create('Неверная геометрия attention.');
+    KVLayers := Layers;
+    RecurrentBytes := 0;
+    if ModelType = 'qwen3_5' then
+    begin
+      Kinds := TextConfig.FindValue('layer_types');
+      if not (Kinds is TJSONArray) or (TJSONArray(Kinds).Count <> Layers) then
+        raise EArgumentException.Create('Неверные типы слоёв гибридной модели.');
+      LinearLayers := 0;
+      for var Kind in TJSONArray(Kinds) do
+        if Kind.Value = 'linear_attention' then
+          Inc(LinearLayers);
+      KVLayers := Layers - LinearLayers;
+      StateCount := UInt64(TextConfig.GetValue<Integer>('linear_num_value_heads'))
+        * UInt64(TextConfig.GetValue<Integer>('linear_key_head_dim'))
+        * UInt64(TextConfig.GetValue<Integer>('linear_value_head_dim'));
+      Inc(StateCount, UInt64(2 * TextConfig.GetValue<Integer>('linear_num_key_heads')
+          * TextConfig.GetValue<Integer>('linear_key_head_dim')
+          + TextConfig.GetValue<Integer>('linear_num_value_heads') * TextConfig.GetValue<Integer>('linear_value_head_dim'))
+        * UInt64(TextConfig.GetValue<Integer>('linear_conv_kernel_dim')));
+      RecurrentBytes := UInt64(LinearLayers) * StateCount * 4;
+      if (RecurrentBytes >= UInt64(1536) * 1024 * 1024) or (KVLayers < 1) then
+        raise EArgumentException.Create('Состояние гибридной модели превышает доступный бюджет.');
+    end;
     MaxContext :=
       Min(
-      Config.GetValue<Integer>('max_position_embeddings', 32768),
-      Integer((UInt64(1536) * 1024 * 1024) div (UInt64(Layers) * 2 * UInt64(KVHeads) * UInt64(HeadDim) * 4))
+      TextConfig.GetValue<Integer>('max_position_embeddings', 32768),
+      Integer((UInt64(1536) * 1024 * 1024 - RecurrentBytes) div (UInt64(KVLayers) * 2 * UInt64(KVHeads) * UInt64(HeadDim) * 4))
     );
-    SupportsThinking := ModelType = 'qwen3';
+    SupportsThinking := (ModelType = 'qwen3') or (ModelType = 'qwen3_5');
     Candidate := TPath.Combine(ResolvedTokenizer, 'tokenizer_config.json');
     if TFile.Exists(Candidate) then
     begin
@@ -251,7 +314,9 @@ begin
         SupportsThinking := Tokenizer.GetValue<string>('chat_template', '').Contains('<think>');
     end;
     Available := True;
-    if ModelType = 'qwen3_moe' then
+    if ModelType = 'qwen3_5' then
+      Validation := 'Qwen3.8 · Gated DeltaNet'
+    else if ModelType = 'qwen3_moe' then
       Validation := 'Qwen3 MoE'
     else
       Validation := 'Qwen3';
@@ -267,7 +332,7 @@ end;
 function TModelEntry.KVBytes(const Context: Integer): UInt64;
 begin
   Result :=
-    UInt64(Max(0, Layers)) * 2 * UInt64(Max(0, Context)) * UInt64(Max(0, KVHeads)) * UInt64(Max(0, HeadDim)) * 4;
+    RecurrentBytes + UInt64(Max(0, KVLayers)) * 2 * UInt64(Max(0, Context)) * UInt64(Max(0, KVHeads)) * UInt64(Max(0, HeadDim)) * 4;
 end;
 
 function TModelEntry.ToJSON: TJSONObject;
@@ -303,6 +368,7 @@ begin
   Result.AddPair('version', TJSONNumber.Create(1));
   Result.AddPair('model_key', State.ModelKey);
   Result.AddPair('prompt_signature', State.PromptSignature);
+  Result.AddPair('vision_signature', State.VisionSignature);
   Result.AddPair('prompt_tokens', TJSONNumber.Create(State.PromptTokens));
   Result.AddPair('generated_tokens', TJSONNumber.Create(State.GeneratedTokens));
   Result.AddPair('random_state', TJSONNumber.Create(Int64(State.RandomState)));
@@ -334,6 +400,7 @@ begin
       Exit;
     Result.ModelKey := Value.GetValue<string>('model_key', '');
     Result.PromptSignature := Value.GetValue<string>('prompt_signature', '');
+    Result.VisionSignature := Value.GetValue<string>('vision_signature', '');
     Result.Text := Text;
     Result.PromptTokens := Value.GetValue<Integer>('prompt_tokens', 0);
     Result.GeneratedTokens := Value.GetValue<Integer>('generated_tokens', 0);
@@ -390,6 +457,10 @@ begin
   Result.AddPair('tokens', TJSONNumber.Create(Tokens));
   Result.AddPair('decode_rate', TJSONNumber.Create(DecodeRate));
   Result.AddPair('first_token_seconds', TJSONNumber.Create(FirstTokenSeconds));
+  var Attachments := TJSONArray.Create;
+  for var Image in Images do
+    Attachments.AddElement(Image.ToJSON);
+  Result.AddPair('images', Attachments);
 end;
 
 class function TChatMessage.FromJSON(const Value: TJSONValue): TChatMessage;
@@ -398,6 +469,10 @@ begin
   try
     Result.Id := Value.GetValue<string>('id', Result.Id);
     Result.Text := Value.GetValue<string>('text', '');
+    var Attachments := Value.FindValue('images');
+    if Attachments is TJSONArray then
+      for var Attachment in TJSONArray(Attachments) do
+        Result.Images := Result.Images + [TChatImage.FromJSON(Attachment)];
     Result.ErrorText := Value.GetValue<string>('error', '');
     Result.ModelName := Value.GetValue<string>('model_name', '');
     Result.ModelId := Value.GetValue<string>('model_id', '');
@@ -439,6 +514,8 @@ begin
   Result := 'Пока нет сообщений';
   if Messages.Count > 0 then
     Result := ShortText(Messages.Last.Text, 64);
+  if (Result = '') and (Messages.Count > 0) and (Length(Messages.Last.Images) > 0) then
+    Result := 'Изображение';
   if Result = '' then
     Result := 'Ответ прерван';
 end;
@@ -451,13 +528,11 @@ begin
   try
     if Trim(Preferences.SystemPrompt) <> '' then
       List.Add(TLLMMessage.Create(lrSystem, Preferences.SystemPrompt));
-    for var Message in Messages do
-      if (Message.Text <> '')
-        and ((Message.Role = lrUser) or (Message.State in [msComplete, msStopped, msLimited, msContextFull])) then
-        List.Add(TLLMMessage.Create(Message.Role, Message.Text));
+    for var Item in ContextHistory do
+      List.Add(Item.Message);
     Result := List.ToArray;
   finally
-    List.Free;
+    List.Free
   end;
 end;
 
@@ -470,12 +545,29 @@ begin
   try
     for var Message in Messages do
       if (Message.Id <> ExcludeMessageId)
-        and (Message.Text <> '')
-        and ((Message.Role = lrUser) or (Message.State in [msComplete, msStopped, msLimited, msContextFull])) then
+        and ((Message.Text <> '') or (Length(Message.Images) > 0))
+        and ((Length(Message.Images) > 0) or (Message.Role = lrUser) or (Message.State in [msComplete, msStopped, msLimited, msContextFull])) then
       begin
-        Item.Id := Message.Id;
-        Item.Message := TLLMMessage.Create(Message.Role, Message.Text);
-        Items.Add(Item);
+        if (Length(Message.Images) > 0) and (Message.Role = lrAssistant) then
+        begin
+          Item.Id := Message.Id + '/image';
+          Item.Message := TLLMMessage.Create(lrUser, 'В истории сохранено сгенерированное изображение.');
+          for var Image in Message.Images do
+            if Image.Prompt <> '' then
+              Item.Message.Content := Item.Message.Content + #10 + 'Запрос генерации: ' + Image.Prompt;
+          for var Image in Message.Images do
+            Item.Message.Images := Item.Message.Images + [Image.LLMImage];
+          Items.Add(Item);
+        end;
+        if (Message.Text <> '') or (Message.Role = lrUser) then
+        begin
+          Item.Id := Message.Id;
+          Item.Message := TLLMMessage.Create(Message.Role, Message.Text);
+          if Message.Role = lrUser then
+            for var Image in Message.Images do
+              Item.Message.Images := Item.Message.Images + [Image.LLMImage];
+          Items.Add(Item);
+        end;
       end;
     Result := Items.ToArray;
   finally
@@ -491,8 +583,14 @@ begin
   Result.AddPair('id', Id);
   Result.AddPair('title', Title);
   Result.AddPair('draft', Draft);
+  var Attachments := TJSONArray.Create;
+  for var Image in DraftImages do
+    Attachments.AddElement(Image.ToJSON);
+  Result.AddPair('draft_images', Attachments);
   Result.AddPair('scroll_position', TJSONNumber.Create(ScrollPosition));
   Result.AddPair('follow_latest', TJSONBool.Create(FollowLatest));
+  Result.AddPair('scroll_message_id', ScrollMessageId);
+  Result.AddPair('scroll_message_offset', TJSONNumber.Create(ScrollMessageOffset));
   Result.AddPair('created', TJSONNumber.Create(Created));
   Result.AddPair('updated', TJSONNumber.Create(Updated));
   Result.AddPair('preferences', Preferences.ToJSON);
@@ -513,12 +611,22 @@ begin
     Result.Id := Value.GetValue<string>('id', Result.Id);
     Result.Title := Value.GetValue<string>('title', 'Новый чат');
     Result.Draft := Value.GetValue<string>('draft', '');
+    var Attachments := Value.FindValue('draft_images');
+    if Attachments is TJSONArray then
+      for var Image in TJSONArray(Attachments) do
+        Result.DraftImages := Result.DraftImages + [TChatImage.FromJSON(Image)];
     Result.ScrollPosition := Value.GetValue<Double>('scroll_position', 0);
     if IsNan(Result.ScrollPosition) or IsInfinite(Result.ScrollPosition) then
       Result.ScrollPosition := 0
     else
       Result.ScrollPosition := Max(0, Result.ScrollPosition);
     Result.FollowLatest := Value.GetValue<Boolean>('follow_latest', True);
+    Result.ScrollMessageId := Value.GetValue<string>('scroll_message_id', '');
+    Result.ScrollMessageOffset := Value.GetValue<Double>('scroll_message_offset', 0);
+    if IsNan(Result.ScrollMessageOffset) or IsInfinite(Result.ScrollMessageOffset) then
+      Result.ScrollMessageOffset := 0
+    else
+      Result.ScrollMessageOffset := Max(0, Result.ScrollMessageOffset);
     Result.Created := Value.GetValue<Double>('created', Now);
     Result.Updated := Value.GetValue<Double>('updated', Result.Created);
     Result.Preferences := TChatPreferences.FromJSON(Value.FindValue('preferences'));
@@ -538,12 +646,14 @@ begin
   inherited Create;
   FPath := FileName;
   Models := TObjectList<TModelEntry>.Create(True);
+  ImageModels := TObjectList<TImageModelEntry>.Create(True);
   Chats := TObjectList<TChatSession>.Create(True);
 end;
 
 destructor TChatStore.Destroy;
 begin
   Chats.Free;
+  ImageModels.Free;
   Models.Free;
   inherited;
 end;
@@ -557,19 +667,82 @@ begin
     if not (Root is TJSONObject) or (Root.GetValue<Integer>('version', 0) <> 1) then
       raise EArgumentException.Create('Неизвестный или повреждённый формат истории чатов.');
     Models.Clear;
+    ImageModels.Clear;
     Chats.Clear;
     Items := Root.FindValue('models');
     if Items is TJSONArray then
       for var Item in TJSONArray(Items) do
         Models.Add(TModelEntry.FromJSON(Item));
+    Items := Root.FindValue('image_models');
+    if Items is TJSONArray then
+      for var Item in TJSONArray(Items) do
+        ImageModels.Add(TImageModelEntry.FromJSON(Item));
     Items := Root.FindValue('chats');
     if Items is TJSONArray then
       for var Item in TJSONArray(Items) do
         Chats.Add(TChatSession.FromJSON(Item));
+    if Root.FindValue('image_models') = nil then
+      ImportImageModels;
     ActiveChatId := Root.GetValue<string>('active_chat_id', '');
   finally
     Root.Free;
   end;
+end;
+
+procedure TChatStore.ImportImageModels;
+begin
+  // Only older documents without a catalog are migrated. An intentionally
+  // emptied catalog must stay empty after restart.
+  for var Chat in Chats do
+  begin
+    var Preferences := Chat.Preferences.ImageGeneration;
+    if Preferences.Directory.Trim = '' then
+      Continue;
+    if (Preferences.Kind = ipQwenImage) and (Preferences.AssetsDirectory = '') then
+      Preferences.AssetsDirectory := FindQwenImageAssets;
+    var Entry: TImageModelEntry := nil;
+    for var Existing in ImageModels do
+      if (Existing.Settings.Kind = Preferences.Kind)
+        and (Existing.Settings.UseInt8 = Preferences.UseInt8)
+        and SameText(Existing.Settings.AssetsDirectory, Preferences.AssetsDirectory)
+        and SameText(ExcludeTrailingPathDelimiter(ExpandFileName(Existing.Settings.Directory)),
+          ExcludeTrailingPathDelimiter(ExpandFileName(Preferences.Directory))) then
+      begin
+        Entry := Existing;
+        Break
+      end;
+    if Entry = nil then
+    begin
+      Entry := TImageModelEntry.Create;
+      Entry.Name := ImagePipelineName(Preferences.Kind) + ' · ' + ExtractFileName(ExcludeTrailingPathDelimiter(Preferences.Directory));
+      Entry.Settings := Preferences;
+      Entry.Settings.ModelId := '';
+      Entry.Settings.AnalysisModelId := '';
+      if (Preferences.Kind = ipQwenImage) and (Entry.Settings.AssetsDirectory = '') then
+        Entry.Settings.AssetsDirectory := FindQwenImageAssets;
+      Entry.Inspect;
+      ImageModels.Add(Entry);
+    end;
+    Chat.Preferences.ImageGeneration := Entry.Resolve(Preferences);
+  end;
+end;
+
+function TChatStore.FindImageModel(const Id: string): TImageModelEntry;
+begin
+  for var Model in ImageModels do
+    if Model.Id = Id then
+      Exit(Model);
+  Result := nil;
+end;
+
+procedure TChatStore.RemoveImageModel(const Id: string);
+begin
+  for var Chat in Chats do
+    if Chat.Preferences.ImageGeneration.ModelId = Id then
+      Chat.Preferences.ImageGeneration.ModelId := '';
+  var Model := FindImageModel(Id);
+  if Model <> nil then
+    ImageModels.Remove(Model);
 end;
 
 procedure TChatStore.ImportLegacyStore;
@@ -635,6 +808,10 @@ begin
     for var Model in Models do
       Items.AddElement(Model.ToJSON);
     Items := TJSONArray.Create;
+    Root.AddPair('image_models', Items);
+    for var Model in ImageModels do
+      Items.AddElement(Model.ToJSON);
+    Items := TJSONArray.Create;
     Root.AddPair('chats', Items);
     for var Chat in Chats do
       Items.AddElement(Chat.ToJSON);
@@ -679,6 +856,7 @@ procedure TChatStore.SeedLocalModels;
   end;
 
 begin
+  Add('Qwen3.8 27B · DeltaNet', 'H:\Models\Qwen3.8-27B', '');
   Add('Qwen3-Coder 30B · MoE', 'H:\Models\Qwen3-Coder-30B-A3B-Instruct', '');
   Add('Qwen3 1.7B', 'H:\Models\Qwen3-1.7B', '');
   Add('Qwen3 4B', 'H:\Models\FLUX.2-klein-4B\text_encoder', 'H:\Models\FLUX.2-klein-4B\tokenizer');
@@ -705,6 +883,11 @@ begin
   Result := TChatSession.Create;
   if Models.Count > 0 then
     Result.Preferences.ModelId := Models[0].Id;
+  if ImageModels.Count > 0 then
+  begin
+    Result.Preferences.ImageGeneration := ImageModels[0].Settings;
+    Result.Preferences.ImageGeneration.ModelId := ImageModels[0].Id;
+  end;
   Chats.Insert(0, Result);
   ActiveChatId := Result.Id;
 end;
@@ -731,6 +914,9 @@ begin
   for var Chat in Chats do
     if Chat.Preferences.ModelId = Id then
       Chat.Preferences.ModelId := '';
+  for var Chat in Chats do
+    if Chat.Preferences.ImageGeneration.AnalysisModelId = Id then
+      Chat.Preferences.ImageGeneration.AnalysisModelId := '';
   Model := FindModel(Id);
   if Model <> nil then
     Models.Remove(Model);

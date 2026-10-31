@@ -19,9 +19,53 @@ float readA(uint row, uint col) {
     uint index = p.offsetA + (((p.flags & 1u) != 0u) ? col * p.lda + row : row * p.lda + col);
     return a[index];
 }
+// GGUF block decoding feeds the same shared F32 tile used by native weights.
+// Byte access also handles the 34/210-byte strides without 8/16-bit extensions.
+uint packedByte(uint offset) {
+    return (b[offset >> 2u] >> ((offset & 3u) * 8u)) & 255u;
+}
+float packedHalf(uint offset) {
+    return unpackHalf2x16(packedByte(offset) | (packedByte(offset + 1u) << 8u)).x;
+}
+int packedSigned(uint value) {
+    return value >= 128u ? int(value) - 256 : int(value);
+}
+float readGGUF(uint index, uint encoding) {
+    if (encoding == 1u) { // Q8_0: FP16 delta + 32 signed bytes.
+        uint base = (index >> 5u) * 34u;
+        return packedHalf(base) * float(packedSigned(packedByte(base + 2u + (index & 31u))));
+    }
+    uint item = index & 255u;
+    if (encoding == 2u) { // Q4_K: 8 affine subblocks with packed 6-bit scales/mins.
+        uint base = (index >> 8u) * 144u;
+        uint group = item >> 5u;
+        uint scale, minimum;
+        if (group < 4u) {
+            scale = packedByte(base + 4u + group) & 63u;
+            minimum = packedByte(base + 8u + group) & 63u;
+        } else {
+            scale = (packedByte(base + 8u + group) & 15u) | ((packedByte(base + group) >> 6u) << 4u);
+            minimum = (packedByte(base + 8u + group) >> 4u) | ((packedByte(base + 4u + group) >> 6u) << 4u);
+        }
+        uint value = (packedByte(base + 16u + (item >> 6u) * 32u + (item & 31u)) >> ((group & 1u) * 4u)) & 15u;
+        return (packedHalf(base) * float(scale)) * float(value) - packedHalf(base + 2u) * float(minimum);
+    }
+    // Q6_K is part of the standard Q4_K_M mixed-precision preset.
+    uint base = (index >> 8u) * 210u;
+    uint part = item >> 7u;
+    uint quarter = (item & 127u) >> 5u;
+    uint lane = item & 31u;
+    uint lo = packedByte(base + part * 64u + (quarter & 1u) * 32u + lane);
+    uint hi = packedByte(base + 128u + part * 32u + lane);
+    uint value = ((lo >> ((quarter >> 1u) * 4u)) & 15u) | (((hi >> (quarter * 2u)) & 3u) << 4u);
+    int scale = packedSigned(packedByte(base + 192u + (item >> 4u)));
+    return (packedHalf(base + 208u) * float(scale)) * float(int(value) - 32);
+}
 float readB(uint row, uint col) {
     if (row >= p.k || col >= p.n) return 0.0;
     uint index = p.offsetB + (((p.flags & 2u) != 0u) ? col * p.ldb + row : row * p.ldb + col);
+    uint encoding = (p.flags >> 4u) & 3u;
+    if (encoding != 0u) return readGGUF(index, encoding);
     if ((p.flags & 8u) != 0u) {
         uint word = b[index >> 2u];
         int value = int((word >> ((index & 3u) * 8u)) & 255u);

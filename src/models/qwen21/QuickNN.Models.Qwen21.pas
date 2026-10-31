@@ -40,7 +40,7 @@ type
         Images: TQwen21ImageConditions;
       end;
   private
-    FModels, FAssets: string;
+    FModels, FAssets, FDiffusionCheckpoint: string;
     FInt8: Boolean;
     FStatus: TQwen21Status;
     procedure Notify(const Message: string);
@@ -48,8 +48,7 @@ type
     function GenerateLegacy(const Params: TQwen21Params; const Inputs: TGenerationInputs): TQNNImage;
     function GenerateResident(const Params: TQwen21Params; const Inputs: TGenerationInputs): TQNNImage;
   public
-    constructor Create(const ModelRoot, AssetsRoot: string; const UseInt8: Boolean = True; const Status: TQwen21Status = nil
-);
+    constructor Create(const ModelRoot, AssetsRoot: string; const UseInt8: Boolean = True; const Status: TQwen21Status = nil; const DiffusionCheckpoint: string = '');
     function Generate(const Params: TQwen21Params): TQNNImage;
   end;
 
@@ -74,13 +73,14 @@ begin
   Result.Prompt := 'A red apple on a wooden table, soft daylight, realistic photograph.';
 end;
 
-constructor TQwen21Pipeline.Create(const ModelRoot, AssetsRoot: string; const UseInt8: Boolean; const Status: TQwen21Status);
+constructor TQwen21Pipeline.Create(const ModelRoot, AssetsRoot: string; const UseInt8: Boolean; const Status: TQwen21Status; const DiffusionCheckpoint: string);
 begin
   inherited Create;
   FModels := ExcludeTrailingPathDelimiter(ModelRoot);
   FAssets := ExcludeTrailingPathDelimiter(AssetsRoot);
   FInt8 := UseInt8;
-  FStatus := Status
+  FStatus := Status;
+  FDiffusionCheckpoint := DiffusionCheckpoint;
 end;
 
 procedure TQwen21Pipeline.Notify(const Message: string);
@@ -127,11 +127,15 @@ begin
   else
     Inputs.Suffix := 'bf16';
   Inputs.TextFile := TPath.Combine(FModels, 'text_encoders/qwen3vl_8b_' + Inputs.Suffix + '.safetensors');
-  Inputs.DiffusionFile := TPath.Combine(FModels, 'diffusion_models/qwen_image_2.1_' + Inputs.Suffix + '.safetensors');
+  Inputs.DiffusionFile := FDiffusionCheckpoint;
+  if Inputs.DiffusionFile = '' then
+    Inputs.DiffusionFile := TPath.Combine(FModels, 'diffusion_models/qwen_image_2.1_' + Inputs.Suffix + '.safetensors');
   Inputs.VAEFile := TPath.Combine(FModels, 'vae/qwen_image_2.1_vae_bf16.safetensors');
   RequireFile(Inputs.TextFile);
   RequireFile(Inputs.DiffusionFile);
   RequireFile(Inputs.VAEFile);
+  if SameText(ExtractFileExt(Inputs.DiffusionFile), '.gguf') then
+    Inputs.Suffix := 'GGUF / text ' + Inputs.Suffix;
   for var FileName in TArray<string>.Create('tokenizer.json', 'encoder_config.json', 'vae_config.json', 'scheduler_config.json') do
     RequireFile(TPath.Combine(FAssets, FileName));
 

@@ -6,7 +6,8 @@ interface
 
 uses
   System.SysUtils, QuickNN.Common, QuickNN.Vulkan, QuickNN.Models.Qwen3,
-  QuickNN.Models.LLM.Types, QuickNN.Models.LLM.Text, QuickNN.Models.LLM.MoE;
+  QuickNN.Models.LLM.Types, QuickNN.Models.LLM.Text, QuickNN.Models.LLM.MoE,
+  QuickNN.Models.QwenHybrid;
 
 type
   // A model/session is bound to its creating thread, like the resident context.
@@ -33,9 +34,11 @@ type
     FEpsilon: Single;
     FGenerating, FPlainTemplate, FRestoreWeightLimit: Boolean;
     FMoE: TLLMMoE;
+    FHybrid: TQwenHybrid;
     FPreviousWeightLimit, FFixedWeightBytes: UInt64;
     function GetMemoryStatus: TLLMMemoryStatus;
     procedure PrepareMoEWeights;
+    procedure SetCancelCallback(const OnToken: TLLMTokenCallback);
     procedure ForwardRows(const Ids: TArray<LongInt>; const GPUIds: TQNNGPUTensor = nil);
     function Sample(const Options: TLLMGenerationOptions; var RandomState: UInt32): Integer;
     function IsStop(const Token: Integer): Boolean;
@@ -56,6 +59,7 @@ type
     function ContinueGeneration(const State: TLLMContinuationState; const Options: TLLMGenerationOptions; const OnToken: TLLMTokenCallback = nil
 ): TLLMGenerationResult;
     // Host token planning only; these methods do not alter resident GPU state.
+    function PrepareChat(const Messages: TLLMMessages; const EnableThinking: Boolean): TArray<LongInt>;
     function EncodeChat(const Messages: TLLMMessages; const EnableThinking: Boolean): TArray<LongInt>;
     function RebaseContinuation(const State: TLLMContinuationState; const Messages: TLLMMessages; const EnableThinking: Boolean): TLLMContinuationState;
     property Continuation: TLLMContinuationState read GetContinuation;
@@ -88,7 +92,7 @@ end;
 
 constructor TQNNLLM.Create(const ModelDirectory, TokenizerDirectory: string; const MaxContext: Integer; const Memory: TLLMMemoryOptions);
 var
-  Config, Generation: TJSONValue;
+  Config, Generation, HybridConfig: TJSONValue;
   Value, StopValue: TJSONValue;
   MaxPositions: Integer;
   ModelType, CacheDirectory: string;
@@ -121,83 +125,106 @@ begin
     raise ENotSupportedException.Create('Resident LLM generation requires Win64');
   FModelKey := ExpandFileName(ModelDirectory) + #1 + ExpandFileName(TokenizerDirectory);
   FCtx := TQNNGPUContext.Create;
+  if Memory.GPUWeightLimitBytes > 0 then
+  begin
+    FPreviousWeightLimit := QNNGetGPUStatus.WeightCacheLimit;
+    QNNSetGPUWeightCacheLimit(Memory.GPUWeightLimitBytes);
+    FRestoreWeightLimit := True;
+  end;
   Config := TJSONValue.ParseJSONValue(TFile.ReadAllText(TPath.Combine(ModelDirectory, 'config.json')));
   if Config = nil then
     raise EArgumentException.Create('Invalid LLM config.json');
   try
     ModelType := Config.GetValue<string>('model_type', '');
-    if (ModelType <> 'qwen3') and (ModelType <> 'qwen3_moe') then
-      raise ENotSupportedException.Create('Only Qwen3 and Qwen3 MoE causal language models are supported');
-    if (Memory.ExpertQuantization = eqInt4) and (ModelType <> 'qwen3_moe') then
-      raise ENotSupportedException.Create('INT4 expert storage requires a MoE model');
-    FPlainTemplate := ModelType = 'qwen3_moe';
-    if Config.GetValue<Boolean>('attention_bias', False)
-      or Config.GetValue<Boolean>('use_sliding_window', False)
-      or (Config.GetValue<string>('hidden_act', 'silu') <> 'silu') then
-      raise ENotSupportedException.Create('Unsupported Qwen3 attention/activation configuration');
-    for var Name in TArray<string>.Create('rope_scaling', 'quantization_config') do
+    if ModelType = 'qwen3_5' then
     begin
-      Value := Config.FindValue(Name);
-      if (Value <> nil) and not (Value is TJSONNull) then
-        raise ENotSupportedException.Create('Unsupported LLM configuration: ' + Name);
-    end;
-    Value := Config.FindValue('layer_types');
-    if Value is TJSONArray then
-      for var Kind in TJSONArray(Value) do
-        if Kind.Value <> 'full_attention' then
-          raise ENotSupportedException.Create('Only full Qwen3 attention layers are supported');
-    MaxPositions := Config.GetValue<Integer>('max_position_embeddings', 32768);
-    if (MaxContext < 2) or (MaxContext > MaxPositions) then
-      raise EArgumentOutOfRangeException.Create('LLM context exceeds model position limit');
-    FCapacity := MaxContext;
-    FEpsilon := Config.GetValue<Single>('rms_norm_eps', 1E-6);
-    if IsNan(FEpsilon) or IsInfinite(FEpsilon) or (FEpsilon <= 0) then
-      raise EArgumentException.Create('Invalid LLM RMS epsilon');
-    Tied := Config.GetValue<Boolean>('tie_word_embeddings', False);
-    FModel.Load(ModelDirectory, True, True);
-    if (Length(FModel.Layers) < 1)
-      or (FModel.HiddenSize < 1)
-      or (FModel.IntermediateSize < 1)
-      or (FModel.VocabSize < 1)
-      or (FModel.NumHeads < 1)
-      or (FModel.NumKvHeads < 1)
-      or (FModel.NumHeads mod FModel.NumKvHeads <> 0)
-      or (FModel.HeadDim < 2)
-      or (FModel.HeadDim mod 2 <> 0)
-      or (FModel.HeadDim > 1152) then
-      raise EArgumentException.Create('Invalid Qwen3 model geometry');
-    FKVCacheBytes :=
-      UInt64(Length(FModel.Layers)) * 2 * UInt64(FCapacity) * UInt64(FModel.NumKvHeads) * UInt64(FModel.HeadDim) * 4;
-    if FKVCacheBytes > MAX_KV_BYTES then
-      raise EArgumentOutOfRangeException.Create('KV cache exceeds resident budget; reduce MaxContext');
-    Weight := FModel.SfFiles.GetTensor('lm_head.weight');
-    if Weight <> nil then
-      FOutputWeight := FModel.SfFiles.GetLinearWeight('lm_head.weight', True)
-    else if Tied then
-      FOutputWeight := FModel.EmbedTokens
+      FCapacity := MaxContext;
+      HybridConfig := Config.FindValue('text_config');
+      if HybridConfig = nil then
+        raise EArgumentException.Create('Missing hybrid text_config');
+      if (Config.FindValue('quantization_config') <> nil)
+        and not (Config.FindValue('quantization_config') is TJSONNull) then
+        raise ENotSupportedException.Create('Use native BF16/F32 hybrid sources for QuickNN INT4 conversion');
+      FHybrid := TQwenHybrid.Create(FCtx, FModel, ModelDirectory, Config, MaxContext, Memory);
+      FKVCacheBytes := FHybrid.CacheBytes;
+      FEpsilon := HybridConfig.GetValue<Single>('rms_norm_eps', 1E-6);
+      AddStop(HybridConfig.FindValue('eos_token_id'));
+    end
     else
-      raise EArgumentException.Create('Missing untied lm_head.weight');
-    if (FOutputWeight.Count <> Int64(FModel.VocabSize) * FModel.HiddenSize)
-      or not (FOutputWeight.DataType in [dtF32, dtBF16]) then
-      raise EArgumentException.Create('Invalid LLM output projection');
-    CacheDirectory := Memory.ExpertCacheDirectory;
-    if CacheDirectory = '' then
-      CacheDirectory := TPath.Combine(ModelDirectory, '.quicknn-cache');
-    if ModelType = 'qwen3_moe' then
-      FMoE :=
-        TLLMMoE.Create(
-        FModel.SfFiles,
-        Config,
-        Length(FModel.Layers),
-        FModel.HiddenSize,
-        Memory.RAMCacheLimitBytes,
-        Memory.ExpertBatchBytes,
-        Memory.ExpertQuantization,
-        CacheDirectory,
-        Memory.OnExpertCacheProgress
-      );
-    StopValue := Config.FindValue('eos_token_id');
-    AddStop(StopValue);
+    begin
+      if (ModelType <> 'qwen3') and (ModelType <> 'qwen3_moe') then
+        raise ENotSupportedException.Create('Only Qwen3 and Qwen3 MoE causal language models are supported');
+      if (Memory.ExpertQuantization = eqInt4) and (ModelType <> 'qwen3_moe') then
+        raise ENotSupportedException.Create('INT4 expert storage requires a MoE model');
+      FPlainTemplate := ModelType = 'qwen3_moe';
+      if Config.GetValue<Boolean>('attention_bias', False)
+        or Config.GetValue<Boolean>('use_sliding_window', False)
+        or (Config.GetValue<string>('hidden_act', 'silu') <> 'silu') then
+        raise ENotSupportedException.Create('Unsupported Qwen3 attention/activation configuration');
+      for var Name in TArray<string>.Create('rope_scaling', 'quantization_config') do
+      begin
+        Value := Config.FindValue(Name);
+        if (Value <> nil) and not (Value is TJSONNull) then
+          raise ENotSupportedException.Create('Unsupported LLM configuration: ' + Name);
+      end;
+      Value := Config.FindValue('layer_types');
+      if Value is TJSONArray then
+        for var Kind in TJSONArray(Value) do
+          if Kind.Value <> 'full_attention' then
+            raise ENotSupportedException.Create('Only full Qwen3 attention layers are supported');
+      MaxPositions := Config.GetValue<Integer>('max_position_embeddings', 32768);
+      if (MaxContext < 2) or (MaxContext > MaxPositions) then
+        raise EArgumentOutOfRangeException.Create('LLM context exceeds model position limit');
+      FCapacity := MaxContext;
+      FEpsilon := Config.GetValue<Single>('rms_norm_eps', 1E-6);
+      if IsNan(FEpsilon) or IsInfinite(FEpsilon) or (FEpsilon <= 0) then
+        raise EArgumentException.Create('Invalid LLM RMS epsilon');
+      Tied := Config.GetValue<Boolean>('tie_word_embeddings', False);
+      FModel.Load(ModelDirectory, True, True);
+      if (Length(FModel.Layers) < 1)
+        or (FModel.HiddenSize < 1)
+        or (FModel.IntermediateSize < 1)
+        or (FModel.VocabSize < 1)
+        or (FModel.NumHeads < 1)
+        or (FModel.NumKvHeads < 1)
+        or (FModel.NumHeads mod FModel.NumKvHeads <> 0)
+        or (FModel.HeadDim < 2)
+        or (FModel.HeadDim mod 2 <> 0)
+        or (FModel.HeadDim > 1152) then
+        raise EArgumentException.Create('Invalid Qwen3 model geometry');
+      FKVCacheBytes :=
+        UInt64(Length(FModel.Layers)) * 2 * UInt64(FCapacity) * UInt64(FModel.NumKvHeads) * UInt64(FModel.HeadDim) * 4;
+      if FKVCacheBytes > MAX_KV_BYTES then
+        raise EArgumentOutOfRangeException.Create('KV cache exceeds resident budget; reduce MaxContext');
+      Weight := FModel.SfFiles.GetTensor('lm_head.weight');
+      if Weight <> nil then
+        FOutputWeight := FModel.SfFiles.GetLinearWeight('lm_head.weight', True)
+      else if Tied then
+        FOutputWeight := FModel.EmbedTokens
+      else
+        raise EArgumentException.Create('Missing untied lm_head.weight');
+      if (FOutputWeight.Count <> Int64(FModel.VocabSize) * FModel.HiddenSize)
+        or not (FOutputWeight.DataType in [dtF32, dtBF16]) then
+        raise EArgumentException.Create('Invalid LLM output projection');
+      CacheDirectory := Memory.ExpertCacheDirectory;
+      if CacheDirectory = '' then
+        CacheDirectory := TPath.Combine(ModelDirectory, '.quicknn-cache');
+      if ModelType = 'qwen3_moe' then
+        FMoE :=
+          TLLMMoE.Create(
+          FModel.SfFiles,
+          Config,
+          Length(FModel.Layers),
+          FModel.HiddenSize,
+          Memory.RAMCacheLimitBytes,
+          Memory.ExpertBatchBytes,
+          Memory.ExpertQuantization,
+          CacheDirectory,
+          Memory.OnExpertCacheProgress
+        );
+      StopValue := Config.FindValue('eos_token_id');
+      AddStop(StopValue);
+    end;
     if TFile.Exists(TPath.Combine(ModelDirectory, 'generation_config.json')) then
     begin
       Generation :=
@@ -228,18 +255,15 @@ begin
       Config.Free;
     end;
   end;
-  if Memory.GPUWeightLimitBytes > 0 then
-  begin
-    FPreviousWeightLimit := QNNGetGPUStatus.WeightCacheLimit;
-    QNNSetGPUWeightCacheLimit(Memory.GPUWeightLimitBytes);
-    FRestoreWeightLimit := True;
-  end;
   FTokenizer := TQNNTokenizer.Load(TPath.Combine(TokenizerDirectory, 'tokenizer.json'));
   if FMoE <> nil then
     PrepareMoEWeights;
-  SetLength(FCaches, Length(FModel.Layers));
-  for var I := 0 to High(FCaches) do
-    FCaches[I] := FCtx.NewTensor(2 * FCapacity * FModel.NumKvHeads * FModel.HeadDim);
+  if FHybrid = nil then
+  begin
+    SetLength(FCaches, Length(FModel.Layers));
+    for var I := 0 to High(FCaches) do
+      FCaches[I] := FCtx.NewTensor(2 * FCapacity * FModel.NumKvHeads * FModel.HeadDim);
+  end;
   FLogits := FCtx.NewTensor(FModel.VocabSize);
   FSeen := FCtx.NewTensor(FModel.VocabSize);
   FSelected := FCtx.NewTensor(1);
@@ -262,6 +286,7 @@ destructor TQNNLLM.Destroy;
 begin
   FCtx.Free;
   FMoE.Free;
+  FHybrid.Free;
   FOutputWeight.Free;
   if Length(FModel.SfFiles) <> 0 then
     FModel.Free;
@@ -284,6 +309,8 @@ begin
     Inc(Result.MappedWeightBytes, UInt64(FileInfo.DataSize));
   if FMoE <> nil then
     FMoE.Status(Result);
+  if FHybrid <> nil then
+    FHybrid.Status(Result);
 end;
 
 procedure TQNNLLM.PrepareMoEWeights;
@@ -342,11 +369,34 @@ begin
   FMoE.RetainRouters(FCtx);
 end;
 
+procedure TQNNLLM.SetCancelCallback(const OnToken: TLLMTokenCallback);
+var
+  Probe: TFunc<Boolean>;
+begin
+  Probe := nil;
+  if Assigned(OnToken) then
+    Probe :=
+      function: Boolean
+      var
+        Cancel: Boolean;
+      begin
+        Cancel := False;
+        OnToken('', Cancel);
+        Result := Cancel;
+      end;
+  if FMoE <> nil then
+    FMoE.CancelCheck := Probe;
+  if FHybrid <> nil then
+    FHybrid.CancelCheck := Probe;
+end;
+
 procedure TQNNLLM.ResetContext;
 begin
   if FGenerating then
     raise EInvalidOp.Create('Cannot reset an active LLM generation');
   FCtx.Copy(FSeen, FSeenInitial, FModel.VocabSize);
+  if FHybrid <> nil then
+    FHybrid.Reset;
   FPosition := 0;
   FHistory := nil;
   FCheckpoint := Default(TLLMContinuationState);
@@ -387,6 +437,14 @@ begin
   for var Id in Ids do
     if (Id < 0) or (Id >= FModel.VocabSize) then
       raise EArgumentOutOfRangeException.Create('LLM token outside vocabulary');
+  if FHybrid <> nil then
+  begin
+    FHybrid.forward(Ids, GPUIds, FLogits, FPosition);
+    SetLength(FHistory, FPosition + Rows);
+    Move(Ids[0], FHistory[FPosition], Rows * SizeOf(LongInt));
+    Inc(FPosition, Rows);
+    Exit;
+  end;
   Work := TGPUWorkspace.Create(FCtx);
   try
     if GPUIds <> nil then
@@ -557,7 +615,9 @@ end;
 
 function TQNNLLM.GetKVCacheIdentity: NativeUInt;
 begin
-  if Length(FCaches) = 0 then
+  if FHybrid <> nil then
+    Result := FHybrid.StateIdentity
+  else if Length(FCaches) = 0 then
     Result := 0
   else
     Result := NativeUInt(FCaches[0]);
@@ -575,12 +635,15 @@ begin
   Result :=
     FCheckpoint.Available
     and (State.ModelKey = FCheckpoint.ModelKey)
+    and (State.VisionSignature = FCheckpoint.VisionSignature)
     and (State.Text = FCheckpoint.Text)
     and (State.RandomState = FCheckpoint.RandomState)
     and (State.PendingUTF8 = FCheckpoint.PendingUTF8)
     and (State.PromptTokens = FCheckpoint.PromptTokens)
     and (State.GeneratedTokens = FCheckpoint.GeneratedTokens)
     and (Length(State.Tokens) = Length(FCheckpoint.Tokens));
+  if (FHybrid <> nil) and not FHybrid.StateValid then
+    Result := False;
   if Result then
     Result := CompareMem(@State.Tokens[0], @FCheckpoint.Tokens[0], Length(State.Tokens) * SizeOf(LongInt));
 end;
@@ -603,6 +666,13 @@ begin
   // Recompute the last row if logits may belong to a later token.
   if Common = Length(Tokens) then
     Dec(Common);
+  // Recurrent state describes the complete processed prefix. It cannot be
+  // rewound by truncating the token/KV indices; rebuild on a changed prefix.
+  if (FHybrid <> nil) and ((Common <> FPosition) or not FHybrid.StateValid) then
+  begin
+    Common := 0;
+    FHybrid.Reset;
+  end;
   Response.ReusedTokens := Common;
   FPosition := Common;
   SetLength(FHistory, Common);
@@ -658,6 +728,8 @@ begin
   FirstAt := 0;
   LastAt := 0;
   Cancel := False;
+  if (FHybrid <> nil) and Options.EnableThinking and (InitialGenerated = 0) then
+    Emit('<think>'#10);
   DecodeStartedAt := TStopwatch.GetTimeStamp;
   Budget := Options.MaxNewTokens;
   if Options.AutoContinue then
@@ -732,6 +804,8 @@ begin
   begin
     FCheckpoint.ModelKey := FModelKey;
     FCheckpoint.PromptSignature := FPromptSignature;
+    if FHybrid <> nil then
+      FCheckpoint.VisionSignature := FHybrid.VisionSignature;
     FCheckpoint.Text := Response.Text;
     FCheckpoint.Tokens := Copy(FHistory);
     if FPendingToken then
@@ -754,7 +828,11 @@ begin
   try
     Builder.Append(Ord(EnableThinking)).Append('/').Append(Ord(FPlainTemplate)).Append(':');
     for var Message in Messages do
+    begin
       Builder.Append(Ord(Message.Role)).Append(':').Append(Length(Message.Content)).Append(':').Append(Message.Content);
+      for var Image in Message.Images do
+        Builder.Append('/image:').Append(Image.Identity).Append('/').Append(Image.EncoderKey);
+    end;
     Result := THashSHA2.GetHashString(Builder.ToString);
   finally
     Builder.Free
@@ -763,7 +841,31 @@ end;
 
 function TQNNLLM.EncodeChat(const Messages: TLLMMessages; const EnableThinking: Boolean): TArray<LongInt>;
 begin
-  Result := LLMChatTokens(FTokenizer, Messages, EnableThinking, FPlainTemplate);
+  Result := LLMChatTokens(FTokenizer, Messages, EnableThinking, FPlainTemplate, FHybrid <> nil);
+end;
+
+function TQNNLLM.PrepareChat(const Messages: TLLMMessages; const EnableThinking: Boolean): TArray<LongInt>;
+var
+  Images: TArray<TLLMImage>;
+  Signature: string;
+begin
+  Result := EncodeChat(Messages, EnableThinking);
+  for var Message in Messages do
+    for var Image in Message.Images do
+    begin
+      Images := Images + [Image];
+      Signature := Signature + Image.Identity + '/' + Image.EncoderKey + ';';
+    end;
+  if Length(Images) > 0 then
+  begin
+    var Last := High(Result);
+    while (Last >= 0) and (Result[Last] <> 248056) do
+      Dec(Last);
+    for var I := 0 to Last do
+      Signature := Signature + '/' + Result[I].ToString;
+  end;
+  if FHybrid <> nil then
+    FHybrid.SetVision(Result, Images, Signature);
 end;
 
 function TQNNLLM.RebaseContinuation(const State: TLLMContinuationState; const Messages: TLLMMessages; const EnableThinking: Boolean): TLLMContinuationState;
@@ -772,6 +874,7 @@ var
 begin
   if not State.Available or (State.ModelKey <> FModelKey) then
     raise EArgumentException.Create('Cannot rebase a continuation from another model');
+  Prompt := PrepareChat(Messages, EnableThinking);
   var Signature := ChatSignature(Messages, EnableThinking);
   if (State.PromptSignature <> '') and (State.PromptSignature = Signature) then
   begin
@@ -779,9 +882,11 @@ begin
     Result.Tokens := Copy(State.Tokens);
     Exit;
   end;
-  Prompt := EncodeChat(Messages, EnableThinking);
   Result := State;
   Result.PromptSignature := Signature;
+  Result.VisionSignature := '';
+  if FHybrid <> nil then
+    Result.VisionSignature := FHybrid.VisionSignature;
   Result.PromptTokens := Length(Prompt);
   // Preserve every generated ID, including the final token not yet forwarded.
   Result.Tokens := Prompt + Copy(State.Tokens, State.PromptTokens, State.GeneratedTokens);
@@ -796,7 +901,7 @@ begin
   if FGenerating then
     raise EInvalidOp.Create('LLM generation is already active');
   ValidateOptions(Options);
-  Prompt := LLMChatTokens(FTokenizer, Messages, Options.EnableThinking, FPlainTemplate);
+  Prompt := PrepareChat(Messages, Options.EnableThinking);
   if (Length(Prompt) < 1) or (Length(Prompt) >= FCapacity) then
     raise EArgumentOutOfRangeException.Create('Chat prompt fills context; reset or shorten the history');
   for var Id in Prompt do
@@ -815,23 +920,15 @@ begin
   FAutomaticContinuations := 0;
   FGenerating := True;
   try
-    if FMoE <> nil then
-      FMoE.CancelCheck :=
-        function: Boolean
-        var
-          Cancel: Boolean;
-        begin
-          Cancel := False;
-          if Assigned(OnToken) then
-            OnToken('', Cancel);
-          Result := Cancel
-        end;
+    SetCancelCallback(OnToken);
     try
       if Prefill(Prompt, OnToken, Result) then
         Decode(Options, OnToken, StartedAt, Result)
       else
         Result.TotalSeconds := (TStopwatch.GetTimeStamp - StartedAt) / TStopwatch.Frequency;
     except
+      if FHybrid <> nil then
+        FHybrid.Reset;
       FPosition := 0;
       FHistory := nil;
       FCheckpoint := Default(TLLMContinuationState);
@@ -839,8 +936,7 @@ begin
       raise;
     end;
   finally
-    if FMoE <> nil then
-      FMoE.CancelCheck := nil;
+    SetCancelCallback(nil);
     FGenerating := False;
   end;
 end;
@@ -855,6 +951,8 @@ begin
   ValidateOptions(Options);
   if not State.Available or (State.ModelKey <> FModelKey) or (Length(State.PendingUTF8) > 3) then
     raise EArgumentException.Create('Continuation does not match this model/tokenizer');
+  if (State.VisionSignature <> '') and ((FHybrid = nil) or (State.VisionSignature <> FHybrid.VisionSignature)) then
+    raise EArgumentException.Create('Restore image attachments with RebaseContinuation before replaying this visual checkpoint');
   if Length(State.Tokens) >= FCapacity then
     raise EArgumentOutOfRangeException.Create('Continuation fills context; increase the chat context');
   for var Id in State.Tokens do
@@ -872,17 +970,7 @@ begin
   FAutomaticContinuations := 0;
   FGenerating := True;
   try
-    if FMoE <> nil then
-      FMoE.CancelCheck :=
-        function: Boolean
-        var
-          Cancel: Boolean;
-        begin
-          Cancel := False;
-          if Assigned(OnToken) then
-            OnToken('', Cancel);
-          Result := Cancel
-        end;
+    SetCancelCallback(OnToken);
     try
       if Result.ResumedFromCache then
         Result.ReusedTokens := FPosition
@@ -898,6 +986,8 @@ begin
       FRandomState := State.RandomState;
       Decode(Options, OnToken, StartedAt, Result);
     except
+      if FHybrid <> nil then
+        FHybrid.Reset;
       FPosition := 0;
       FHistory := nil;
       FCheckpoint := Default(TLLMContinuationState);
@@ -905,8 +995,7 @@ begin
       raise;
     end;
   finally
-    if FMoE <> nil then
-      FMoE.CancelCheck := nil;
+    SetCancelCallback(nil);
     FGenerating := False;
   end;
 end;

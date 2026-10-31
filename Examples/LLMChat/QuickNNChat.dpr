@@ -63,6 +63,13 @@ var
         ]
       )
     );
+    if Usage.IsHybrid then
+    begin
+      Console.WriteLine(Format('Qwen hybrid: %d слоёв в VRAM, %d подгружаются из RAM; рекуррентное состояние %.1f MiB.',
+        [Usage.ResidentLayers, Usage.StreamedLayers, Usage.RecurrentBytes / 1048576.0]));
+      if Usage.DenseQuantization = wqInt4 then
+        Console.WriteLine('INT4-кеш: ' + Usage.ExpertCacheDirectory);
+    end;
     if Usage.IsMoE then
       if Usage.ExpertQuantization = eqInt4 then
       begin
@@ -91,10 +98,10 @@ begin
           raise EAbort.Create('Подготовка INT4 остановлена.');
         Console.WriteLine(Format('Подготовка INT4-кеша: %d/%d частей.', [Done, Total]));
       end;
-  Console.WriteLine('QuickNN / Qwen3 LLM');
+  Console.WriteLine('QuickNN / Local LLM');
   Console.WriteLine('Model: ' + Settings.ModelDirectory);
   Console.WriteLine('Tokenizer: ' + Settings.TokenizerDirectory);
-  Console.WriteLine('Загрузка модели и выделение KV-кеша в VRAM…');
+  Console.WriteLine('Загрузка модели и выделение состояния в VRAM…');
   Model := TQNNLLM.Create(Settings.ModelDirectory, Settings.TokenizerDirectory, Settings.MaxContext, Settings.Memory);
   try
     NewConversation;

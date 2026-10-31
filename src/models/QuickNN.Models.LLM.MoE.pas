@@ -11,7 +11,7 @@ uses
   QuickNN.Models.LLM.Quantization;
 
 type
-  ELLMMoECancelled = class(EAbort);
+  ELLMMoECancelled = ELLMCancelled;
 
   TLLMMoE = class
   private

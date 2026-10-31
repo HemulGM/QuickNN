@@ -3,6 +3,11 @@ object FrameMessage: TFrameMessage
   Size.Height = 160.000000000000000000
   Size.PlatformDefault = False
   OnResize = FrameResize
+  object SaveDialogImage: TSaveDialog
+    DefaultExt = 'png'
+    Filter = 'PNG image|*.png'
+    Options = [ofOverwritePrompt, ofEnableSizing]
+  end
   object LayoutRow: TLayout
     Align = HorzCenter
     Size.Width = 720.000000000000000000
@@ -93,6 +98,77 @@ object FrameMessage: TFrameMessage
         TextSettings.FontColor = xFF7CD5B7
         TextSettings.WordWrap = False
         Text = #1040#1089#1089#1080#1089#1090#1077#1085#1090
+      end
+      object LayoutImageCard: TLayout
+        Align = Top
+        Margins.Bottom = 10.000000000000000000
+        Size.Width = 50.000000000000000000
+        Size.Height = 340.000000000000000000
+        Size.PlatformDefault = False
+        Visible = False
+        object LayoutImageActions: TLayout
+          Align = Bottom
+          Position.Y = 304.000000000000000000
+          Size.Width = 50.000000000000000000
+          Size.Height = 36.000000000000000000
+          Size.PlatformDefault = False
+          object ButtonOpenImage: TButton
+            Align = Left
+            Size.Width = 110.000000000000000000
+            Size.Height = 36.000000000000000000
+            Size.PlatformDefault = False
+            StyleLookup = 'chatghostbutton'
+            Text = #1054#1090#1082#1088#1099#1090#1100
+            OnClick = ButtonOpenImageClick
+          end
+          object ButtonSaveImage: TButton
+            Align = Left
+            Position.X = 110.000000000000000000
+            Size.Width = 150.000000000000000000
+            Size.Height = 36.000000000000000000
+            Size.PlatformDefault = False
+            StyleLookup = 'chatghostbutton'
+            Text = #1057#1086#1093#1088#1072#1085#1080#1090#1100' '#1082#1072#1082#8230
+            OnClick = ButtonSaveImageClick
+          end
+        end
+        object LayoutImageDetails: TLayout
+          Align = Bottom
+          Position.Y = 276.000000000000000000
+          Size.Width = 50.000000000000000000
+          Size.Height = 28.000000000000000000
+          Size.PlatformDefault = False
+          object ButtonNextImage: TButton
+            Align = Right
+            Size.Width = 100.000000000000000000
+            Size.Height = 22.000000000000000000
+            Size.PlatformDefault = False
+            StyleLookup = 'chatghostbutton'
+            Text = #1057#1083#1077#1076#1091#1102#1097#1077#1077
+            Visible = False
+            OnClick = ButtonNextImageClick
+          end
+          object LabelImageDetails: TLabel
+            Align = Client
+            StyledSettings = []
+            Size.Width = 50.000000000000000000
+            Size.Height = 28.000000000000000000
+            Size.PlatformDefault = False
+            TextSettings.FontColor = xFF9BB0A9
+            TextSettings.WordWrap = False
+          end
+        end
+        object ImageGenerated: TImage
+          MultiResBitmap = <
+            item
+            end>
+          Align = Client
+          Cursor = crHandPoint
+          Size.Width = 50.000000000000000000
+          Size.Height = 276.000000000000000000
+          Size.PlatformDefault = False
+          OnClick = ButtonOpenImageClick
+        end
       end
       object ExpanderThinking: TExpander
         Align = Top
