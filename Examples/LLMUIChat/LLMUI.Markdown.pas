@@ -35,11 +35,22 @@ function CreateChatMarkdownViewer(const Owner: TComponent; const Parent: TContro
 implementation
 
 uses
-  System.SysUtils, System.Math, FMX.Types, Markdown4D.Theme,
+  System.SysUtils, System.Math, System.Generics.Collections, FMX.Types, Markdown4D.Theme,
+  Markdown4D, Markdown4D.Defines, Markdown4D.Ast, Markdown4D.Ast.Interfaces,
+  Markdown4D.Extensions.Interfaces, Markdown4D.Layout.BlockOverride,
   Markdown4D.Layout.Interfaces, Markdown4D.Highlighter.Interfaces,
   Markdown4D.Highlighter.LineScanner;
 
 type
+  // Keep the viewer source untouched: only reference-tag AST nodes become text.
+  TChatReferenceMarkers = class(TInterfacedObject, IMarkdownDocumentProcessor)
+  private
+    class function IsMarker(const Value: string): Boolean; static;
+    class function MarkerBlock(const Node: IMarkdownNode): IMarkdownDocument; static;
+  public
+    procedure Process(const Document: IMarkdownDocument);
+  end;
+
   TChatCodeScanner = class(TSyntaxLineScanner)
   private
     const
@@ -70,6 +81,104 @@ type
   protected
     function ScannerClass: TSyntaxLineScannerClass; override;
   end;
+
+class function TChatReferenceMarkers.IsMarker(const Value: string): Boolean;
+begin
+  Result := False;
+  var Position := 2;
+  if (Length(Value) < 8) or (Value[1] <> '<') then Exit;
+  if Value[Position] = '/' then Inc(Position);
+  if not SameText(Copy(Value, Position, 5), 'image') then Exit;
+  Inc(Position, 5);
+  var Start := Position;
+  while (Position <= Length(Value)) and CharInSet(Value[Position], ['0'..'9']) do Inc(Position);
+  Result := (Position > Start) and (Position = Length(Value)) and (Value[Position] = '>');
+end;
+
+class function TChatReferenceMarkers.MarkerBlock(const Node: IMarkdownNode): IMarkdownDocument;
+begin
+  Result := nil;
+  var Literal := (Node as IMarkdownText).Literal;
+  var LineEnd := Pos(#10, Literal);
+  if LineEnd = 0 then LineEnd := Length(Literal) + 1;
+  if not IsMarker(Copy(Literal, 1, LineEnd - 1).Trim) then Exit;
+  // A marker alone starts an HTML block under CommonMark. Escape its first
+  // opening bracket for this local parse so following Markdown is parsed too.
+  // Code spans/fences, links and their source text are left to the native parser.
+  var EscapeOffset := Pos('<', Literal) - 1;
+  Insert('\', Literal, EscapeOffset + 1);
+  Result := TMarkdown.Parse(Literal, TMarkdownDialect.Gfm);
+  var Pending := TStack<IMarkdownNode>.Create;
+  try
+    Pending.Push(Result);
+    while Pending.Count > 0 do
+    begin
+      var Item := Pending.Pop;
+      var Segment := Item.Segment;
+      if Segment.StartOffset > EscapeOffset + 1 then Dec(Segment.StartOffset);
+      if Segment.EndOffset > EscapeOffset + 1 then Dec(Segment.EndOffset);
+      Segment.StartOffset := Min(Node.Segment.EndOffset, Node.Segment.StartOffset + Max(0, Segment.StartOffset - 1));
+      Segment.EndOffset := Min(Node.Segment.EndOffset, Node.Segment.StartOffset + Max(0, Segment.EndOffset - 1));
+      (Item as TMarkdownAstNode).SetSegment(Segment);
+      for var I := 0 to Item.ChildCount - 1 do Pending.Push(Item.Children[I]);
+    end;
+  finally Pending.Free end;
+end;
+
+procedure TChatReferenceMarkers.Process(const Document: IMarkdownDocument);
+var
+  Pending: TStack<IMarkdownNode>;
+  Children: TList<IMarkdownNode>;
+begin
+  if Document = nil then Exit;
+  Pending := TStack<IMarkdownNode>.Create;
+  Children := TList<IMarkdownNode>.Create;
+  try
+    Pending.Push(Document);
+    while Pending.Count > 0 do
+    begin
+      var Parent := Pending.Pop;
+      var Changed := False;
+      Children.Clear;
+      for var I := 0 to Parent.ChildCount - 1 do
+      begin
+        var Child := Parent.Children[I];
+        if (Child.Kind = TMarkdownNodeKind.InlineHtml) and IsMarker((Child as IMarkdownText).Literal) then
+        begin
+          var Text := TMarkdownTextNode.Create(TMarkdownNodeKind.Text, (Child as IMarkdownText).Literal);
+          Text.SetSegment(Child.Segment);
+          Children.Add(Text);
+          Changed := True;
+        end
+        else if Child.Kind = TMarkdownNodeKind.HtmlBlock then
+        begin
+          var Parsed := MarkerBlock(Child);
+          if Parsed = nil then Children.Add(Child)
+          else
+          begin
+            for var J := 0 to Parsed.ChildCount - 1 do
+            begin
+              Children.Add(Parsed.Children[J]);
+              Pending.Push(Parsed.Children[J]);
+            end;
+            Changed := True;
+          end;
+        end
+        else
+        begin
+          Children.Add(Child);
+          if Child.ChildCount > 0 then Pending.Push(Child);
+        end;
+      end;
+      if Changed then
+      begin
+        var Mutable := Parent as TMarkdownAstNode;
+        while Mutable.ChildCount > 0 do Mutable.DeleteChild(Mutable.ChildCount - 1);
+        for var Child in Children do Mutable.AddChild(Child);
+      end;
+    end;
+  finally Children.Free; Pending.Free end;
+end;
 
 constructor TChatMarkdownViewer.Create(AOwner: TComponent);
 begin
@@ -467,5 +576,7 @@ begin
   end;
 end;
 
-end.
+initialization
+  TLayoutDocumentProcessorRegistry.Register('quicknn-reference-markers', TChatReferenceMarkers.Create);
 
+end.

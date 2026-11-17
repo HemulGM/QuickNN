@@ -19,7 +19,8 @@ uses
   LLMUI.Controls in 'LLMUI.Controls.pas',
   LLMUI.Markdown in 'LLMUI.Markdown.pas',
   LLMUI.Message in 'LLMUI.Message.pas' {FrameMessage: TFrame},
-  LLMUI.Entry in 'LLMUI.Entry.pas' {FrameEntry: TFrame};
+  LLMUI.Entry in 'LLMUI.Entry.pas' {FrameEntry: TFrame},
+  LLMUI.RoleSection in 'LLMUI.RoleSection.pas' {FrameRoleSection: TFrame};
 
 {$R *.res}
 

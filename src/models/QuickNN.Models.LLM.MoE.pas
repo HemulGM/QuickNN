@@ -51,13 +51,14 @@ type
 implementation
 
 uses
-  System.Math, QuickNN.Quantization.Int4;
+  System.Math, QuickNN.Quantization.Int4, QuickNN.GGUF.Quantization;
 
 constructor TLLMMoE.Create(const Files: TSafeTensorFiles; const Config: TJSONValue; const Layers, Hidden: Integer; const RAMLimit, BatchBytes: UInt64; const Quantization: TLLMExpertQuantization; const CacheDirectory: string; const Progress: TProc<Integer, Integer>);
 var
   Step: Integer;
   OnlyLayers: TArray<Boolean>;
   List: TJSONValue;
+  GGUF: Boolean;
 
   function Matrix(const Name: string; const R, C: Integer; const Expert: Boolean = False): TMemoryBlock;
   var
@@ -76,8 +77,28 @@ var
       Result := Files.GetLinearWeight(Name, True);
   end;
 
+  function ExpertMatrix(const Name: string; const Index, R, C: Integer): TMemoryBlock;
+  begin
+    var Tensor := Files.GetTensor(Name);
+    if (Tensor = nil) or (Tensor.Ndim <> 3) or (Tensor.Shape[0] <> FExperts)
+      or (Tensor.Shape[1] <> R) or (Tensor.Shape[2] <> C) then
+      raise EArgumentException.Create('Invalid GGUF expert tensor: ' + Name);
+    Result := Default(TMemoryBlock);
+    Result.Size := NativeInt(R)*C; Result.Shape := [R,C]; Result.Encoding := Tensor.Encoding;
+    Result.DataType := Tensor.DType.ToDataType;
+    var Bytes: UInt64;
+    if Result.Encoding <> weNative then Bytes := GGUFQuantBytes(Result.Encoding, Result.Size)
+    else Bytes := UInt64(Result.Size)*UInt64(DATATYPE_BITS[Result.DataType] div 8);
+    if not (Result.DataType in [dtU8,dtBF16,dtF32]) then
+      raise EArgumentException.Create('Unsupported expert scalar type: ' + Name);
+    Result.DataPtr := PByte(Tensor.Data) + NativeInt(UInt64(Index)*Bytes);
+    Result.WeightIdentity := TInterfacedObject.Create;
+    Result.Name := Name + '/' + Index.ToString;
+  end;
+
 begin
   inherited Create;
+  GGUF := Config.GetValue<string>('model_type','') = 'qwen4exp';
   FHidden := Hidden;
   FBatchBytes := Min(BatchBytes, UInt64(128) * 1024 * 1024);
   FExperts := Config.GetValue<Integer>('num_experts', 0);
@@ -86,13 +107,13 @@ begin
   Step := Config.GetValue<Integer>('decoder_sparse_step', 1);
   FNormalize := Config.GetValue<Boolean>('norm_topk_prob', False);
   if (FExperts < 1)
-    or (FExperts > 256)
+    or (FExperts > 512)
     or (FTopK < 1)
     or (FTopK > Min(FExperts, 64))
     or (FHidden < 1)
     or (FIntermediate < 1)
     or (Step < 1) then
-    raise EArgumentException.Create('Invalid Qwen3 MoE geometry (experts <=256, top-k <=64)');
+    raise EArgumentException.Create('Invalid Qwen3 MoE geometry (experts <=512, top-k <=64)');
   SetLength(OnlyLayers, Layers);
   List := Config.FindValue('mlp_only_layers');
   if (List <> nil) and not (List is TJSONArray) then
@@ -106,7 +127,7 @@ begin
       OnlyLayers[Index] := True;
     end;
   SetLength(FLayers, Layers);
-  if Quantization = eqInt4 then
+  if (Quantization = eqInt4) and not GGUF then
     FQuantized := TMoEInt4Cache.Create(Files, CacheDirectory, Progress);
   FCache := TLLMHostWeightCache.Create(RAMLimit);
   FNative := TDictionary<IInterface, TMemoryBlock>.Create;
@@ -114,22 +135,31 @@ begin
     if not OnlyLayers[L] and ((L + 1) mod Step = 0) then
     begin
       var Prefix := Format('model.layers.%d.mlp.', [L]);
-      FLayers[L].Router := Matrix(Prefix + 'gate.weight', FExperts, FHidden);
+      if GGUF then FLayers[L].Router := Files.GetLinearWeight(Format('blk.%d.ffn_gate_inp.weight',[L]),True)
+      else FLayers[L].Router := Matrix(Prefix + 'gate.weight', FExperts, FHidden);
       SetLength(FLayers[L].Experts, FExperts);
       for var E := 0 to FExperts - 1 do
       begin
         var Name := Prefix + 'experts.' + E.ToString + '.';
+        if GGUF then
+        begin
+          FLayers[L].Experts[E].Gate := ExpertMatrix(Format('blk.%d.ffn_gate_exps.weight',[L]),E,FIntermediate,FHidden);
+          FLayers[L].Experts[E].Up := ExpertMatrix(Format('blk.%d.ffn_up_exps.weight',[L]),E,FIntermediate,FHidden);
+          FLayers[L].Experts[E].Down := ExpertMatrix(Format('blk.%d.ffn_down_exps.weight',[L]),E,FHidden,FIntermediate);
+        end
+        else
+        begin
         FLayers[L].Experts[E].Gate := Matrix(Name + 'gate_proj.weight', FIntermediate, FHidden, True);
         FLayers[L].Experts[E].Up := Matrix(Name + 'up_proj.weight', FIntermediate, FHidden, True);
         FLayers[L].Experts[E].Down := Matrix(Name + 'down_proj.weight', FHidden, FIntermediate, True);
+        end;
         FNative.Add(FLayers[L].Experts[E].Gate.WeightIdentity, FLayers[L].Experts[E].Gate);
         FNative.Add(FLayers[L].Experts[E].Up.WeightIdentity, FLayers[L].Experts[E].Up);
         FNative.Add(FLayers[L].Experts[E].Down.WeightIdentity, FLayers[L].Experts[E].Down);
-        var ExpertSize :=
-          UInt64(FLayers[L].Experts[E].Gate.Size) * UInt64(DATATYPE_BITS[FLayers[L].Experts[E].Gate.DataType] div 8)
-          + UInt64(FLayers[L].Experts[E].Up.Size) * UInt64(DATATYPE_BITS[FLayers[L].Experts[E].Up.DataType] div 8)
-          + UInt64(FLayers[L].Experts[E].Down.Size)
-          * UInt64(DATATYPE_BITS[FLayers[L].Experts[E].Down.DataType] div 8);
+        var ExpertSize: UInt64 := 0;
+        for var Weight in TArray<TMemoryBlock>.Create(FLayers[L].Experts[E].Gate, FLayers[L].Experts[E].Up, FLayers[L].Experts[E].Down) do
+          if Weight.Encoding <> weNative then Inc(ExpertSize,GGUFQuantBytes(Weight.Encoding,Weight.Size))
+          else Inc(ExpertSize,UInt64(Weight.Size)*UInt64(DATATYPE_BITS[Weight.DataType] div 8));
         FMaxExpertBytes := Max(FMaxExpertBytes, ExpertSize);
       end;
     end;
@@ -189,7 +219,7 @@ end;
 function TLLMMoE.WeightFor(const Ctx: TQNNGPUContext; const Weight: TMemoryBlock; const InputDim, OutputDim: Integer): TMemoryBlock;
 begin
   var Width := InputDim;
-  if Weight.DataType = dtU8 then
+  if (Weight.DataType = dtU8) and (Weight.Encoding = weNative) then
     Width := Int4RowBytes(InputDim);
   if Ctx.IsWeightResident(Weight, OutputDim, Width) then
     Result := Weight
@@ -215,7 +245,12 @@ var
   begin
     Native := WeightFor(Ctx, Weight, InDim, OutDim);
     try
-      if Native.DataType = dtU8 then
+      if Native.Encoding <> weNative then
+      begin
+        Result := ExpertWork.New(ExpertRows*OutDim);
+        Ctx.Linear(Result,Input,Native,Default(TMemoryBlock),Default(TMemoryBlock),ExpertRows,InDim,OutDim);
+      end
+      else if Native.DataType = dtU8 then
       begin
         Result := ExpertWork.New(ExpertRows * OutDim);
         Ctx.Int4Linear(Result, Input, Native, ExpertRows, InDim, OutDim);
@@ -234,6 +269,7 @@ var
 
   function PaddedBytes(const Weight: TMemoryBlock): UInt64;
   begin
+    if Weight.Encoding <> weNative then Exit((GGUFQuantBytes(Weight.Encoding,Weight.Size)+3) and not UInt64(3));
     Result := (UInt64(Weight.Size) * UInt64(DATATYPE_BITS[Weight.DataType] div 8) + 3) and not UInt64(3);
   end;
 
@@ -263,19 +299,35 @@ var
         Gathered := ExpertWork.New(ExpertRows * FHidden);
         Ctx.Kernel(GO_MOE_GATHER, Gathered.Count, Gathered, Src, Indices, nil, [FHidden, FTopK, Offsets[E]]);
       end;
-      G := Project(Gathered, FLayers[Layer].Experts[E].Gate, FHidden, FIntermediate);
-      U := Project(Gathered, FLayers[Layer].Experts[E].Up, FHidden, FIntermediate);
-      Ctx.Kernel(GO_SWIGLU, ExpertRows * FIntermediate, G, G, U, nil, [FIntermediate, 0]);
-      Y := Project(G, FLayers[Layer].Experts[E].Down, FIntermediate, FHidden);
-      Ctx.Kernel(
-        GO_MOE_SCATTER,
-        Y.Count,
-        Output,
-        Y,
-        Indices,
-        Routes,
-        [FHidden, FTopK, Offsets[E], RouteIndex, Ord(Rows = 1), Rows * FTopK]
-      );
+      G := ExpertWork.New(Int64(ExpertRows) * FIntermediate);
+      if (ExpertRows <> 1) or not Ctx.TrySwiGLUVector(G, Gathered, FLayers[Layer].Experts[E].Gate,
+        FLayers[Layer].Experts[E].Up, FHidden, FIntermediate) then
+      begin
+        ExpertWork.Release(G);
+        G := Project(Gathered, FLayers[Layer].Experts[E].Gate, FHidden, FIntermediate);
+        U := Project(Gathered, FLayers[Layer].Experts[E].Up, FHidden, FIntermediate);
+        Ctx.Kernel(GO_SWIGLU, ExpertRows * FIntermediate, G, G, U, nil, [FIntermediate, 0]);
+      end;
+      if (Rows = 1) and (FLayers[Layer].Experts[E].Down.DataType = dtU8) and (FLayers[Layer].Experts[E].Down.Encoding = weNative) then
+      begin
+        var Native := WeightFor(Ctx, FLayers[Layer].Experts[E].Down, FIntermediate, FHidden);
+        try
+          Ctx.Int4LinearAccumulate(Output, G, Routes, Native, FIntermediate, FHidden, Rows * FTopK + RouteIndex);
+        finally Native.Free end;
+      end
+      else
+      begin
+        Y := Project(G, FLayers[Layer].Experts[E].Down, FIntermediate, FHidden);
+        Ctx.Kernel(
+          GO_MOE_SCATTER,
+          Y.Count,
+          Output,
+          Y,
+          Indices,
+          Routes,
+          [FHidden, FTopK, Offsets[E], RouteIndex, Ord(Rows = 1), Rows * FTopK]
+        );
+      end;
     finally
       ExpertWork.Free;
     end;

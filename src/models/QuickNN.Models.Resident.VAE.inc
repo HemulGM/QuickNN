@@ -2,7 +2,8 @@
     const Ctx: TQNNGPUContext;
     const Block: TVAEResBlock;
     const Src: TQNNGPUTensor;
-    const Height, Width, Groups: Integer
+    const Height, Width, Groups: Integer;
+    const Tiled: Boolean = False
 ): TQNNGPUTensor;
 var
   Work: TGPUWorkspace;
@@ -10,6 +11,22 @@ var
 begin
   Work := TGPUWorkspace.Create(Ctx);
   try
+    if Tiled then
+    begin
+      // Src is exclusively owned by the decoder. The second convolution
+      // accumulates into its original residual after all Src reads finish.
+      if Block.InChannels = Block.OutChannels then Result := Src
+      else Result := Work.Conv(Src, Block.SkipWeight, Block.SkipBias,
+        Height, Width, Block.InChannels, Block.OutChannels, 1, 1, 0);
+      Conv := Work.NormalizedConv(Src, Block.Norm1Weight, Block.Norm1Bias,
+        Block.Conv1Weight, Block.Conv1Bias, Height, Width,
+        Block.InChannels, Block.OutChannels, Groups);
+      Work.NormalizedConv(Conv, Block.Norm2Weight, Block.Norm2Bias,
+        Block.Conv2Weight, Block.Conv2Bias, Height, Width,
+        Block.OutChannels, Block.OutChannels, Groups, Result);
+      if Result <> Src then Work.Keep(Result);
+      Exit;
+    end;
     N := Work.GroupNorm(Src, Block.Norm1Weight, Block.Norm1Bias, Block.InChannels, Height * Width, Groups);
     Ctx.Kernel(GO_UNARY, N.Count, N, N, nil, nil, [0]);
     Conv := Work.Conv(N, Block.Conv1Weight, Block.Conv1Bias, Height, Width, Block.InChannels, Block.OutChannels, 3);
@@ -70,7 +87,8 @@ function VAEDecodeGPU(
     const Ctx: TQNNGPUContext;
     const Model: TVAE;
     const Latent: TQNNGPUTensor;
-    const Height, Width: Integer
+    const Height, Width: Integer;
+    const Tiled: Boolean
 ): TQNNGPUTensor;
 var
   Work: TGPUWorkspace;
@@ -79,8 +97,18 @@ var
 
   procedure Replace(const Tensor: TQNNGPUTensor);
   begin
-    Work.Release(X);
-    X := Tensor;
+    if X <> Tensor then
+    begin
+      Work.Release(X);
+      X := Tensor;
+    end;
+  end;
+
+  procedure Residual(const Block: TVAEResBlock);
+  begin
+    Next := VAEResGPU(Ctx, Block, X, H, W, Model.NumGroups, Tiled);
+    if Next <> X then Work.Own(Next);
+    Replace(Next);
   end;
 
   procedure Notify;
@@ -91,6 +119,7 @@ var
   end;
 
 begin
+  Ctx.TrimActivations;
   Work := TGPUWorkspace.Create(Ctx);
   try
     X := Work.Copy(Latent, Height * Width * Model.LatentChannels);
@@ -136,12 +165,11 @@ begin
     Replace(Work.Conv(X, Model.DecConvInWeight, Model.DecConvInBias, H, W, Model.ZChannels, Ch, 3));
     Progress := 0;
     Total := 3 + 4 * (Model.NumResBlocks + 1);
-    Next := Work.Own(VAEResGPU(Ctx, Model.DecMidBlock1, X, H, W, Model.NumGroups));
-    Replace(Next);
+    Residual(Model.DecMidBlock1);
     Notify;
     Replace(Work.Own(VAEAttentionGPU(Ctx, Model.DecMidAttn, X, H, W, Model.NumGroups)));
     Notify;
-    Replace(Work.Own(VAEResGPU(Ctx, Model.DecMidBlock2, X, H, W, Model.NumGroups)));
+    Residual(Model.DecMidBlock2);
     Notify;
     BlockIndex := 0;
     UpIndex := 0;
@@ -150,7 +178,7 @@ begin
       Ch := Model.BaseChannels * Model.ChMult[Level];
       for var R := 0 to Model.NumResBlocks do
       begin
-        Replace(Work.Own(VAEResGPU(Ctx, Model.DecUpBlocks[BlockIndex], X, H, W, Model.NumGroups)));
+        Residual(Model.DecUpBlocks[BlockIndex]);
         Inc(BlockIndex);
         Notify;
       end;
@@ -167,9 +195,17 @@ begin
         Inc(UpIndex);
       end;
     end;
-    N := Work.GroupNorm(X, Model.DecNormOutWeight, Model.DecNormOutBias, Model.BaseChannels, H * W, Model.NumGroups);
-    N := Work.Unary(N, H * W * Model.BaseChannels);
-    Result := Work.Conv(N, Model.DecConvOutWeight, Model.DecConvOutBias, H, W, Model.BaseChannels, 3, 3);
+    if Tiled then
+      Result := Work.NormalizedConv(X, Model.DecNormOutWeight, Model.DecNormOutBias,
+        Model.DecConvOutWeight, Model.DecConvOutBias, H, W, Model.BaseChannels, 3, Model.NumGroups)
+    else
+    begin
+      N := Work.GroupNorm(X, Model.DecNormOutWeight, Model.DecNormOutBias, Model.BaseChannels, H * W, Model.NumGroups);
+      Ctx.Kernel(GO_UNARY, N.Count, N, N, nil, nil, [0]);
+      Work.Release(X);
+      Result := Work.Conv(N, Model.DecConvOutWeight, Model.DecConvOutBias, H, W, Model.BaseChannels, 3, 3);
+      Work.Release(N);
+    end;
     Ctx.CheckFinite(Result);
     Work.Keep(Result);
   finally

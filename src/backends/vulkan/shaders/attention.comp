@@ -5,7 +5,7 @@ layout(local_size_x=128, local_size_y=1, local_size_z=1) in;
 layout(set=0,binding=0,std430) readonly buffer QBuffer { float q[]; };
 layout(set=0,binding=1,std430) readonly buffer KVBuffer { uint kv[]; };
 layout(set=0,binding=2,std430) writeonly buffer OBuffer { float o[]; };
-layout(push_constant) uniform Params { uint rows; uint heads; uint kvHeads; uint dim; uint causalRows; uint maskMode; } p;
+layout(push_constant) uniform Params { uint rows; uint heads; uint kvHeads; uint dim; uint causalRows; uint maskMode; uint window; float softcap; float scale; } p;
 shared float scores[6144];
 shared float query[1152];
 shared float reduce[128];
@@ -15,18 +15,20 @@ void main() {
     for(uint d=lane;d<p.dim;d+=128u) query[d]=q[(row*p.heads+head)*p.dim+d];
     barrier();
 
-    if(p.rows>6144u || p.maskMode==2u){
+    if(p.rows>6144u || (p.maskMode==2u || p.maskMode==4u)){
         float sums[9];for(uint i=0u;i<9u;++i)sums[i]=0.0;
         float runningMax=-3.402823466e38,runningSum=0.0;
         uint keyEnd=row<p.causalRows?row+1u:p.rows;
-        if(p.maskMode==2u)keyEnd=p.causalRows+row+1u;
-        else if(p.maskMode!=0u)keyEnd=kv[2u*p.rows*p.kvHeads*p.dim+row];
-        for(uint base=0u;base<keyEnd;base+=128u){uint j=base+lane;float score=-3.402823466e38;
-            if(j<keyEnd){score=0.0;for(uint d=0u;d<p.dim;++d)score+=query[d]*uintBitsToFloat(kv[(kh*p.dim+d)*p.rows+j]);score*=inversesqrt(float(p.dim));}
+        if((p.maskMode==2u || p.maskMode==4u))keyEnd=p.causalRows+row+1u;
+        else if(p.maskMode==1u)keyEnd=kv[2u*p.rows*p.kvHeads*p.dim+row];
+        uint keyStart=((p.maskMode==2u || p.maskMode==4u) && p.window>0u && keyEnd>p.window)?keyEnd-p.window:0u;
+        for(uint base=keyStart;base<keyEnd;base+=128u){uint j=base+lane;float score=-3.402823466e38;
+            if(j<keyEnd && (p.maskMode!=4u || kv[2u*p.rows*p.kvHeads*p.dim+row*p.rows+j]!=0u)){score=0.0;for(uint d=0u;d<p.dim;++d)score+=query[d]*uintBitsToFloat(kv[(kh*p.dim+d)*p.rows+j]);if(p.maskMode==3u)score+=uintBitsToFloat(kv[2u*p.rows*p.kvHeads*p.dim+(head*p.rows+row)*p.rows+j]);
+                else {score*=p.scale>0.0?p.scale:inversesqrt(float(p.dim));if(p.softcap>0.0)score=p.softcap*tanh(clamp(score/p.softcap,-20.0,20.0));}}
             scores[lane]=score;reduce[lane]=score;barrier();
             for(uint stride=64u;stride>0u;stride>>=1u){if(lane<stride)reduce[lane]=max(reduce[lane],reduce[lane+stride]);barrier();}
             float nextMax=max(runningMax,reduce[0]),oldScale=exp(runningMax-nextMax);barrier();
-            float weight=j<keyEnd?exp(scores[lane]-nextMax):0.0;scores[lane]=weight;reduce[lane]=weight;barrier();
+            float weight=(j<keyEnd && (p.maskMode!=4u || kv[2u*p.rows*p.kvHeads*p.dim+row*p.rows+j]!=0u))?exp(scores[lane]-nextMax):0.0;scores[lane]=weight;reduce[lane]=weight;barrier();
             for(uint stride=64u;stride>0u;stride>>=1u){if(lane<stride)reduce[lane]+=reduce[lane+stride];barrier();}
             runningSum=runningSum*oldScale+reduce[0];
             for(uint d=lane;d<p.dim;d+=128u){float value=0.0;for(uint k=0u;k<min(128u,keyEnd-base);++k)value+=scores[k]*uintBitsToFloat(kv[p.rows*p.kvHeads*p.dim+(kh*p.rows+base+k)*p.dim+d]);sums[d/128u]=sums[d/128u]*oldScale+value;}
@@ -37,14 +39,15 @@ void main() {
     }
 
     uint keyEnd = row < p.causalRows ? row + 1u : p.rows;
-    if (p.maskMode != 0u) keyEnd = kv[2u*p.rows*p.kvHeads*p.dim+row];
+    if (p.maskMode == 1u) keyEnd = kv[2u*p.rows*p.kvHeads*p.dim+row];
     float maximum=-3.402823466e38;
     for(uint j=lane;j<p.rows;j+=128u) {
         float score=-3.402823466e38;
         if(j<keyEnd) {
             score=0.0;
             for(uint d=0u;d<p.dim;++d) score+=query[d]*uintBitsToFloat(kv[(kh*p.dim+d)*p.rows+j]);
-            score*=inversesqrt(float(p.dim));
+            if(p.maskMode==3u)score+=uintBitsToFloat(kv[2u*p.rows*p.kvHeads*p.dim+(head*p.rows+row)*p.rows+j]);
+                else {score*=p.scale>0.0?p.scale:inversesqrt(float(p.dim));if(p.softcap>0.0)score=p.softcap*tanh(clamp(score/p.softcap,-20.0,20.0));}
         }
         scores[j]=score;maximum=max(maximum,score);
     }

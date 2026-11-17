@@ -9,6 +9,7 @@ uses
   QuickNN.Common,
   QuickNN.Vulkan,
   QuickNN.Models.Flux,
+  QuickNN.Models.Flux1,
   QuickNN.Models.ZImage,
   QuickNN.Models.Qwen21,
   QuickNN.Models.Qwen21.VAE,
@@ -78,6 +79,23 @@ begin
   finally
     Pipeline.Free;
   end;
+end;
+
+function GenerateFlux1(const Settings: TDemoSettings; const Directory: string): TQNNImage;
+var
+  Params: TFlux1Params;
+  Pipeline: TFlux1Pipeline;
+begin
+  if (Length(Settings.ReferenceImages) > 0) or (Settings.NegativePrompt <> '') or not Settings.ResidentGPU then
+    raise ENotSupportedException.Create('FLUX.1-dev uses resident GPU text-to-image and distilled guidance.');
+  QNNConfigureGPU(gpuForce);
+  Params := TFlux1Params.Defaults;
+  Params.Width := Settings.Width; Params.Height := Settings.Height; Params.Steps := Settings.Steps;
+  Params.Seed := Settings.Seed; Params.Prompt := Settings.Prompt; Params.Guidance := Settings.Guidance;
+  Params.LoRAs := Settings.LoRAs;
+  Pipeline := TFlux1Pipeline.Create(Directory,
+    procedure(const Text: string) begin ReportStatus(Text) end);
+  try Result := Pipeline.Generate(Params) finally Pipeline.Free end;
 end;
 
 function GenerateDiffusers(const Settings: TDemoSettings; const Directory: string): TQNNImage;
@@ -152,7 +170,7 @@ begin
     or (Settings.Steps < 1) then
     raise EArgumentException.Create('Use positive dimensions divisible by 16 and a positive step count.');
   if Settings.AssetsDirectory = '' then
-    Settings.AssetsDirectory := TPath.Combine(Root, 'assets/qwen-image-2.1');
+    Settings.AssetsDirectory := Qwen21AssetsDirectory(Directory);
   if Settings.OutputFile = '' then
     Settings.OutputFile :=
       TPath.Combine(
@@ -182,6 +200,8 @@ begin
   case Settings.Model of
     dmQwenImage21Int8, dmQwenImage21BF16:
       Image := GenerateQwen(Settings, Directory);
+    dmFlux1Dev:
+      Image := GenerateFlux1(Settings, Directory);
     dmFlux2Klein4B, dmFlux2Klein9B, dmZImageTurbo:
       Image := GenerateDiffusers(Settings, Directory);
   else

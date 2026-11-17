@@ -41,6 +41,9 @@ type
   TQNNTokenizer = record
     (* Vocabulary: id -> token string *)
     Vocabs: TArray<RawByteString>;
+    SentencePiece, AddSpacePrefix: Boolean;
+    PieceScores: TArray<Single>;
+    PieceTypes: TArray<Integer>;
 
     (* Hash table: token string -> id *)
     VocabsDic: TVocabs;
@@ -51,6 +54,10 @@ type
     (* Merge rank lookup: "left right" -> rank *)
     MergeRanks: TVocabs;
     constructor Load(const JsonFilename: string);
+    constructor LoadBPE(const Tokens, MergePairs: TArray<string>; const TokenTypes: TArray<Integer>);
+    constructor LoadSentencePiece(const Tokens: TArray<string>; const Scores: TArray<Single>;
+      const Types: TArray<Integer>; const SpacePrefix: Boolean);
+    function EncodeSentencePiece(const Text: string): TArray<LongInt>;
     function GetToken(const Id: LongInt): RawByteString;
     function GetId(const Token: RawByteString): LongInt;
     function GetMergeRank(const Left, Right: RawByteString): LongInt;
@@ -185,7 +192,8 @@ type
   TQwen3Encoder = record
     Tokenizer: TQNNTokenizer;
     Model: TQwen3Model;
-    procedure Load(const ModelDir: string; const AUseMMAP: Boolean; const resident: Boolean = False);
+    procedure Load(const ModelDir: string; const AUseMMAP: Boolean; const resident: Boolean = False;
+      const EncoderDirectory: string = ''; const TokenizerFile: string = '');
     function EncodeText(const Prompt: RawByteString; var OutSeqLen: LongInt): TMemoryBlock;
     procedure Free;
   end;
@@ -195,7 +203,7 @@ function PadTokens(const Tokens: TArray<LongInt>; const MaxLen: LongInt; const A
 implementation
 
 uses
-  QuickNN.Kernels, QuickNN.Vulkan, System.IOUtils;
+  QuickNN.Kernels, QuickNN.Vulkan, System.IOUtils, System.Math;
 
 const
   // QWEN3_MAX_SEQ_LEN = 512;
@@ -399,6 +407,163 @@ begin
   finally
     JSON.Free;
   end;
+end;
+
+constructor TQNNTokenizer.LoadBPE(const Tokens, MergePairs: TArray<string>; const TokenTypes: TArray<Integer>);
+begin
+  if Length(Tokens) = 0 then raise EArgumentException.Create('Empty GGUF vocabulary');
+  if (Length(TokenTypes) <> 0) and (Length(TokenTypes) <> Length(Tokens)) then
+    raise EArgumentException.Create('GGUF token types do not match vocabulary');
+  VocabsDic := TVocabs.Create;
+  MergeRanks := TVocabs.Create;
+  try
+    SetLength(Vocabs, Length(Tokens));
+    for var I := 0 to High(Tokens) do
+      if (Length(TokenTypes) = 0) or (TokenTypes[I] <> 5) then
+      begin
+        Vocabs[I] := UTF8String(Tokens[I]);
+        if (Vocabs[I] = '') or not VocabsDic.TryAdd(Vocabs[I], I) then
+          raise EArgumentException.Create('Empty or duplicate GGUF token');
+      end;
+    SetLength(Merges, Length(MergePairs));
+    for var I := 0 to High(Merges) do
+    begin
+      var Separator := Pos(' ', MergePairs[I]);
+      if (Separator <= 1) or (Separator >= Length(MergePairs[I])) then
+        raise EArgumentException.Create('Invalid GGUF BPE merge');
+      Merges[I].Left := UTF8String(Copy(MergePairs[I], 1, Separator - 1));
+      Merges[I].Right := UTF8String(Copy(MergePairs[I], Separator + 1, MaxInt));
+      Merges[I].Rank := I;
+      if (GetId(Merges[I].Left) < 0) or (GetId(Merges[I].Right) < 0)
+        or (GetId(Merges[I].Left + Merges[I].Right) < 0)
+        or not MergeRanks.TryAdd(Merges[I].Left + ' ' + Merges[I].Right, I) then
+        raise EArgumentException.Create('Invalid GGUF BPE vocabulary/merge pair');
+    end;
+  except Self.Free; raise end;
+end;
+
+constructor TQNNTokenizer.LoadSentencePiece(const Tokens: TArray<string>; const Scores: TArray<Single>;
+  const Types: TArray<Integer>; const SpacePrefix: Boolean);
+begin
+  if (Length(Tokens) = 0) or (Length(Tokens) <> Length(Scores)) or (Length(Tokens) <> Length(Types)) then
+    raise EArgumentException.Create('Invalid SentencePiece vocabulary/scores/types');
+  SentencePiece := True; AddSpacePrefix := SpacePrefix;
+  VocabsDic := TVocabs.Create;
+  PieceScores := Copy(Scores); PieceTypes := Copy(Types);
+  try
+    SetLength(Vocabs, Length(Tokens));
+    for var I := 0 to High(Tokens) do
+    begin
+      if IsNan(Scores[I]) or IsInfinite(Scores[I]) then raise EArgumentException.Create('Invalid SentencePiece score');
+      if Types[I] = 5 then Continue;
+      Vocabs[I] := UTF8String(Tokens[I]);
+      if (Vocabs[I] = '') or not VocabsDic.TryAdd(Vocabs[I], I) then
+        raise EArgumentException.Create('Empty or duplicate SentencePiece token');
+    end;
+    for var B := 0 to 255 do
+      if GetId(UTF8String(Format('<0x%.2X>', [B]))) < 0 then
+        raise EArgumentException.Create('SentencePiece byte fallback vocabulary is incomplete');
+  except Self.Free; raise end;
+end;
+
+function TQNNTokenizer.EncodeSentencePiece(const Text: string): TArray<LongInt>;
+type
+  TSymbol = record
+    Text: RawByteString;
+    Previous, Next: Integer;
+  end;
+  TPair = record
+    Left, Right, Size: Integer;
+    Score: Single;
+  end;
+var
+  Symbols: TArray<TSymbol>;
+  Heap: TList<TPair>;
+  Tokens: TList<LongInt>;
+
+  function Better(const A, B: TPair): Boolean;
+  begin
+    Result := (A.Score > B.Score) or ((A.Score = B.Score) and (A.Left < B.Left));
+  end;
+
+  procedure Candidate(const Left, Right: Integer);
+  begin
+    if (Left < 0) or (Right < 0) then Exit;
+    var Id := GetId(Symbols[Left].Text + Symbols[Right].Text);
+    if (Id < 0) or not (PieceTypes[Id] in [1, 4]) then Exit;
+    var Pair: TPair; Pair.Left := Left; Pair.Right := Right;
+    Pair.Size := Length(Symbols[Left].Text) + Length(Symbols[Right].Text); Pair.Score := PieceScores[Id];
+    var Index := Heap.Count; Heap.Add(Pair);
+    while Index > 0 do
+    begin
+      var Parent := (Index - 1) div 2;
+      if not Better(Pair, Heap[Parent]) then Break;
+      Heap[Index] := Heap[Parent]; Index := Parent;
+    end;
+    Heap[Index] := Pair;
+  end;
+
+  function Pop: TPair;
+  begin
+    Result := Heap[0]; var Last := Heap.Last; Heap.Delete(Heap.Count - 1);
+    if Heap.Count = 0 then Exit;
+    var Index := 0;
+    while Index * 2 + 1 < Heap.Count do
+    begin
+      var Child := Index * 2 + 1;
+      if (Child + 1 < Heap.Count) and Better(Heap[Child + 1], Heap[Child]) then Inc(Child);
+      if not Better(Heap[Child], Last) then Break;
+      Heap[Index] := Heap[Child]; Index := Child;
+    end;
+    Heap[Index] := Last;
+  end;
+
+begin
+  if not SentencePiece then raise EInvalidOp.Create('Load SentencePiece before encoding text');
+  if Text = '' then Exit(nil);
+  var Normalized := Text;
+  if AddSpacePrefix then Normalized := ' ' + Normalized;
+  Normalized := StringReplace(Normalized, ' ', #$2581, [rfReplaceAll]);
+  var Bytes := UTF8String(Normalized);
+  SetLength(Symbols, Length(Bytes));
+  var Offset := 1; var Count := 0;
+  while Offset <= Length(Bytes) do
+  begin
+    var B := Byte(Bytes[Offset]); var Size := 1;
+    if (B and $E0) = $C0 then Size := 2
+    else if (B and $F0) = $E0 then Size := 3
+    else if (B and $F8) = $F0 then Size := 4;
+    Size := Min(Size, Length(Bytes) - Offset + 1);
+    Symbols[Count].Text := Copy(Bytes, Offset, Size);
+    Symbols[Count].Previous := Count - 1; Symbols[Count].Next := Count + 1;
+    Inc(Offset, Size); Inc(Count);
+  end;
+  Symbols[Count - 1].Next := -1;
+  Heap := TList<TPair>.Create; Tokens := TList<LongInt>.Create;
+  try
+    for var I := 1 to Count - 1 do Candidate(I - 1, I);
+    while Heap.Count > 0 do
+    begin
+      var Pair := Pop;
+      var L := Pair.Left; var R := Pair.Right;
+      if (Symbols[L].Next <> R) or (Symbols[L].Text = '') or (Symbols[R].Text = '')
+        or (Length(Symbols[L].Text) + Length(Symbols[R].Text) <> Pair.Size) then Continue;
+      Symbols[L].Text := Symbols[L].Text + Symbols[R].Text; Symbols[R].Text := '';
+      Symbols[L].Next := Symbols[R].Next;
+      if Symbols[R].Next >= 0 then Symbols[Symbols[R].Next].Previous := L;
+      Candidate(Symbols[L].Previous, L); Candidate(L, Symbols[L].Next);
+    end;
+    var Index := 0;
+    while Index >= 0 do
+    begin
+      var Piece := Symbols[Index].Text; var Id := GetId(Piece);
+      if Id >= 0 then Tokens.Add(Id)
+      else for var I := 1 to Length(Piece) do
+        Tokens.Add(GetId(UTF8String(Format('<0x%.2X>', [Byte(Piece[I])]))));
+      Index := Symbols[Index].Next;
+    end;
+    Result := Tokens.ToArray;
+  finally Heap.Free; Tokens.Free end;
 end;
 
 function TQNNTokenizer.GetToken(const Id: LongInt): RawByteString;
@@ -756,6 +921,7 @@ end;
 
 procedure TQNNTokenizer.Free;
 begin
+  SentencePiece := False; AddSpacePrefix := False; PieceScores := nil; PieceTypes := nil;
   if Assigned(VocabsDic) then
   begin
     VocabsDic.Free;
@@ -1281,10 +1447,15 @@ end;
 
 { TQWEN3Encoder }
 
-procedure TQwen3Encoder.Load(const ModelDir: string; const AUseMMAP: Boolean; const resident: Boolean);
+procedure TQwen3Encoder.Load(const ModelDir: string; const AUseMMAP: Boolean; const resident: Boolean;
+  const EncoderDirectory, TokenizerFile: string);
 begin
-  Tokenizer := TQNNTokenizer.Load(ModelDir + '/tokenizer/tokenizer.json');
-  Model.Load(ModelDir + '/text_encoder', AUseMMAP, resident);
+  var Tokens := TokenizerFile;
+  if Tokens = '' then Tokens := ModelDir + '/tokenizer/tokenizer.json';
+  var Encoder := EncoderDirectory;
+  if Encoder = '' then Encoder := ModelDir + '/text_encoder';
+  Tokenizer := TQNNTokenizer.Load(Tokens);
+  Model.Load(Encoder, AUseMMAP, resident);
 end;
 
 function TQwen3Encoder.EncodeText(const Prompt: RawByteString; var OutSeqLen: LongInt): TMemoryBlock;

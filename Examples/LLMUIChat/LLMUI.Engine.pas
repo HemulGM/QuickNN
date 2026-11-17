@@ -21,7 +21,7 @@ type
 
   TInferenceSnapshot = record
     JobId, ChatId, MessageId, Phase, Delta, ErrorText, LoadedModel: string;
-    Busy, Finished, MemoryUpdated, ImageReady: Boolean;
+    Busy, Finished, MemoryUpdated, ImageReady, ImageRequestUpdated: Boolean;
     Image: TChatImage;
     ImageDescriptions: TArray<TImageDescription>;
     ContextMemory: TChatContextMemory;
@@ -47,6 +47,7 @@ type
     procedure UpdateMemory;
     procedure RunRequest(const OriginalRequest: TInferenceRequest);
     procedure RunConversation(const Request: TInferenceRequest; var Response: TLLMGenerationResult; var Checkpoint: TLLMContinuationState);
+    procedure AnalyzeReferences(var Request: TInferenceRequest);
     procedure ReleaseModel;
   protected
     procedure Execute; override;
@@ -171,6 +172,7 @@ begin
     FSnapshot.Finished := False;
     FSnapshot.MemoryUpdated := False;
     FSnapshot.ImageReady := False;
+    FSnapshot.ImageRequestUpdated := False;
     FSnapshot.ImageDescriptions := nil;
   finally
     FLock.Release;
@@ -383,6 +385,128 @@ begin
   end;
 end;
 
+procedure TInferenceWorker.AnalyzeReferences(var Request: TInferenceRequest);
+var
+  Input: TLLMMessage;
+  Memory: TLLMMemoryOptions;
+  Options: TLLMGenerationOptions;
+  Analysis: TLLMGenerationResult;
+  Settings: TReferenceAnalysisSettings;
+
+  procedure CheckCancelled;
+  begin
+    if TInterlocked.CompareExchange(FCancel, 0, 0) <> 0 then
+      raise EAbort.Create('Анализ референсов остановлен');
+  end;
+
+begin
+  if not Request.Image.NeedsReferenceAnalysis then
+    Exit;
+  Settings := Request.Image.ReferenceAnalysis;
+  if (Settings.Directory = '') or not LLMVisionAvailable(Settings.Directory) then
+    raise ENotSupportedException.Create('Для анализа референсов выберите доступную vision-модель.');
+  Input := TLLMMessage.Create(lrUser,
+    'Describe each reference image in its numbered order for an image generator. '
+    + 'Include subjects, colors, composition and details relevant to the user request. '
+    + 'Do not claim to generate an image. Write a concise visual description in English.'
+    + #10 + 'User generation request: ' + Request.Image.Prompt);
+  try
+    var Files := Request.Image.ReferenceFiles;
+    SetLength(Input.Images, Length(Files));
+    for var I := 0 to High(Files) do
+    begin
+      CheckCancelled;
+      Input.Images[I].FileName := Files[I];
+      SetPhase(Format('Анализ референса %d/%d…', [I + 1, Length(Files)]));
+      LLMPrepareImage(Settings.Directory, Input.Images[I], nil,
+        procedure(const Text: string)
+        begin
+          SetPhase('Анализ референсов · ' + Text)
+        end,
+        function: Boolean
+        begin
+          Result := TInterlocked.CompareExchange(FCancel, 0, 0) <> 0
+        end);
+    end;
+    CheckCancelled;
+    QNNConfigureGPU(gpuForce);
+    SetPhase('Загрузка модели анализа ' + Settings.ModelName + '…');
+    Memory := TLLMMemoryOptions.Defaults;
+    Memory.GPUWeightLimitBytes := UInt64(Request.Preferences.GPUCacheGiB) * 1024 * 1024 * 1024;
+    Memory.RAMCacheLimitBytes := UInt64(Request.Preferences.RAMCacheGiB) * 1024 * 1024 * 1024;
+    if Request.Preferences.Int4Experts then
+      Memory.DenseQuantization := wqInt4;
+    Memory.OnExpertCacheProgress :=
+      procedure(Done, Total: Integer)
+      begin
+        if TInterlocked.CompareExchange(FCancel, 0, 0) <> 0 then
+          raise EAbort.Create('Анализ референсов остановлен');
+        SetPhase(Format('Подготовка модели анализа: %d/%d', [Done, Total]));
+      end;
+    FModel := TQNNLLM.Create(Settings.Directory, Settings.TokenizerDirectory, Settings.Context, Memory);
+    FLock.Acquire;
+    try
+      FSnapshot.LoadedModel := Settings.ModelName
+    finally
+      FLock.Release
+    end;
+    UpdateMemory;
+    Options := TLLMGenerationOptions.Defaults;
+    Options.EnableThinking := False;
+    Options.AutoContinue := False;
+    Options.MaxNewTokens := Settings.MaxTokens;
+    Options.HardMaxNewTokens := Settings.MaxTokens;
+    Options.Temperature := Settings.Temperature;
+    CheckCancelled;
+    SetPhase('Составление описания референсов…');
+    Analysis := FModel.Generate([
+        TLLMMessage.Create(lrSystem, 'You describe reference images for an image generator. '
+          + 'Report only visible details; do not invent unseen details.' + #10 + Settings.Instruction), Input], Options,
+      procedure(const Text: string; var Cancel: Boolean)
+      begin
+        Cancel := TInterlocked.CompareExchange(FCancel, 0, 0) <> 0
+      end);
+    CheckCancelled;
+    if Analysis.FinishReason = lfCancelled then
+      raise EAbort.Create('Анализ референсов остановлен');
+    if Analysis.FinishReason = lfContextFull then
+      raise EArgumentException.Create('Контекст модели анализа заполнен. Увеличьте контекст в разделе «Анализ изображений».');
+    var Description := Analysis.Text.Trim;
+    if Description.StartsWith('<think>') then
+    begin
+      var Closing := Pos('</think>', Description);
+      if Closing > 0 then
+        Description := Copy(Description, Closing + 8, MaxInt).Trim
+      else
+        Description := '';
+    end;
+    if Description = '' then
+      raise EInvalidOp.Create('Модель анализа не вернула описание референсов. Увеличьте лимит ответа.');
+    Request.Image.ReferenceDescription := Description;
+    FLock.Acquire;
+    try
+      FSnapshot.Image := Request.Image;
+      FSnapshot.ImageRequestUpdated := True;
+      // These are observations of the input references, never of the generated output.
+      if Length(Request.History) > 0 then
+        for var Image in Request.History[High(Request.History)].Message.Images do
+        begin
+          var Observation := Default(TImageDescription);
+          Observation.MessageId := Request.History[High(Request.History)].Id;
+          Observation.ContentHash := Image.Identity;
+          Observation.Text := 'Анализ референсов: ' + Description;
+          FSnapshot.ImageDescriptions := FSnapshot.ImageDescriptions + [Observation];
+        end;
+    finally
+      FLock.Release
+    end;
+  finally
+    Input.Images := nil;
+    ReleaseModel;
+    QNNGPUClearWeightCache;
+  end;
+end;
+
 procedure TInferenceWorker.RunRequest(const OriginalRequest: TInferenceRequest);
 var
   Request: TInferenceRequest;
@@ -449,6 +573,10 @@ begin
     if Request.GenerateImage then
     begin
       ReleaseModel;
+      QNNGPUClearWeightCache;
+      AnalyzeReferences(Request);
+      if TInterlocked.CompareExchange(FCancel, 0, 0) <> 0 then
+        raise EAbort.Create('Генерация остановлена');
       SetPhase('Загрузка модели изображений…');
       GenerateChatImage(Request.Image,
         procedure(const Text: string)

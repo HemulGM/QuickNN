@@ -7,6 +7,15 @@ uses
 
 const
   CHAT_CONTENT_MAX_WIDTH = 800;
+  MESSAGE_ATTACHMENT_WIDTH = 148;
+  MESSAGE_ATTACHMENT_HEIGHT = 104;
+  MESSAGE_ATTACHMENT_GAP = 8;
+  MESSAGE_NEGATIVE_HEADER_HEIGHT = 32;
+  MESSAGE_NEGATIVE_MARGIN = 8;
+
+function MessageAttachmentHeight(const Count: Integer; const AvailableWidth: Single): Single;
+
+procedure FitVerticalLayout(const Layout: TLayout);
 
 procedure ConfigureComboBox(const Combo: TComboBox);
 
@@ -39,6 +48,16 @@ type
     property MouseTarget;
     property Shown;
   end;
+
+function MessageAttachmentHeight(const Count: Integer; const AvailableWidth: Single): Single;
+begin
+  if Count <= 0 then
+    Exit(0);
+  var Columns := Max(1, Trunc((Max(0, AvailableWidth) + MESSAGE_ATTACHMENT_GAP)
+      / (MESSAGE_ATTACHMENT_WIDTH + MESSAGE_ATTACHMENT_GAP)));
+  var Rows := (Count + Columns - 1) div Columns;
+  Result := Rows * MESSAGE_ATTACHMENT_HEIGHT + (Rows - 1) * MESSAGE_ATTACHMENT_GAP;
+end;
 
 procedure MoveScrollViewport(const Scroll: TVertScrollBox; const Position: TPointF);
 var
@@ -81,6 +100,25 @@ begin
   Animated := Motion.Animation;
   Motion.Animation := False;
   Motion.Animation := Animated;
+end;
+
+procedure FitVerticalLayout(const Layout: TLayout);
+begin
+  Layout.BeginUpdate;
+  try
+    var Cursor := Layout.Padding.Top;
+    for var Child in Layout.Children do
+      if (Child is TControl) and TControl(Child).Visible then
+      begin
+        var Control := TControl(Child);
+        if Control.Align = TAlignLayout.Top then
+          Control.Position.Y := Cursor + Control.Margins.Top;
+        Cursor := Cursor + Control.Height + Control.Margins.Top + Control.Margins.Bottom;
+      end;
+    Layout.Height := Cursor + Layout.Padding.Bottom;
+  finally
+    Layout.EndUpdate
+  end;
 end;
 
 procedure ConfigureComboBox(const Combo: TComboBox);

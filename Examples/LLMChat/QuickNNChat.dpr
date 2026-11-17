@@ -65,9 +65,12 @@ var
     );
     if Usage.IsHybrid then
     begin
-      Console.WriteLine(Format('Qwen hybrid: %d слоёв в VRAM, %d подгружаются из RAM; рекуррентное состояние %.1f MiB.',
-        [Usage.ResidentLayers, Usage.StreamedLayers, Usage.RecurrentBytes / 1048576.0]));
-      if Usage.DenseQuantization = wqInt4 then
+      Console.WriteLine(Format('Qwen hybrid: %d слоёв на GPU, %d на CPU, %d подгружаются; рекуррентное состояние %.1f MiB.',
+        [Usage.ResidentLayers, Usage.CPULayers, Usage.StreamedLayers, Usage.RecurrentBytes / 1048576.0]));
+      if Usage.CPUPreparedWeightBytes>0 then
+        Console.WriteLine(Format('CPU SIMD-кеш весов: %.2f GiB.', [Usage.CPUPreparedWeightBytes/1073741824.0]));
+      if Usage.IsGGUF then Console.WriteLine('GGUF: исходное смешанное квантование файла, без повторной конвертации.')
+      else if Usage.DenseQuantization = wqInt4 then
         Console.WriteLine('INT4-кеш: ' + Usage.ExpertCacheDirectory);
     end;
     if Usage.IsMoE then
@@ -100,7 +103,8 @@ begin
       end;
   Console.WriteLine('QuickNN / Local LLM');
   Console.WriteLine('Model: ' + Settings.ModelDirectory);
-  Console.WriteLine('Tokenizer: ' + Settings.TokenizerDirectory);
+  if Settings.TokenizerDirectory = '' then Console.WriteLine('Tokenizer: встроен в GGUF')
+  else Console.WriteLine('Tokenizer: ' + Settings.TokenizerDirectory);
   Console.WriteLine('Загрузка модели и выделение состояния в VRAM…');
   Model := TQNNLLM.Create(Settings.ModelDirectory, Settings.TokenizerDirectory, Settings.MaxContext, Settings.Memory);
   try

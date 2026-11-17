@@ -11,7 +11,11 @@ type
 
   TChatPreferences = record
     ModelId, SystemPrompt: string;
+    ChatSettingsExpanded, VisionSettingsExpanded, ImageSettingsExpanded: Boolean;
     Context: Integer;
+    VisionContext, VisionMaxTokens: Integer;
+    VisionTemperature: Single;
+    VisionInstruction: string;
     Generation: TLLMGenerationOptions;
     Compaction: TChatCompactionOptions;
     GPUCacheGiB, RAMCacheGiB: Integer;
@@ -25,11 +29,12 @@ type
 
   TModelEntry = class
   public
-    Id, Name, Directory, TokenizerDirectory: string;
+    Id, Name, Directory, TokenizerDirectory, SourceFile: string;
+    IsGGUF: Boolean;
     ModelType, Validation, ResolvedTokenizer: string;
     Available, SupportsThinking, SupportsVision: Boolean;
     Layers, KVLayers, KVHeads, HeadDim, MaxContext: Integer;
-    RecurrentBytes: UInt64;
+    RecurrentBytes, ContextBytesPerToken: UInt64;
     constructor Create;
     procedure Inspect;
     function ToJSON: TJSONObject;
@@ -39,8 +44,9 @@ type
 
   TChatMessage = class
   public
-    Id, Text, ErrorText, ModelName, ModelId: string;
+    Id, Text, ErrorText, ModelName, ModelId, NegativePrompt: string;
     Images: TArray<TChatImage>;
+    ImageRequest: TChatImage;
     Continuation: TLLMContinuationState;
     Role: TLLMRole;
     State: TMessageState;
@@ -110,7 +116,8 @@ function DefaultStorePath: string;
 implementation
 
 uses
-  System.Classes, System.IOUtils, System.Math, Winapi.Windows;
+  System.Classes, System.IOUtils, System.Math, Winapi.Windows,
+  QuickNN.Models.LLM.GGUF, QuickNN.ModelFiles;
 
 function NewId: string;
 begin
@@ -133,7 +140,11 @@ class function TChatPreferences.Defaults: TChatPreferences;
 begin
   Result := Default(TChatPreferences);
   Result.ImageGeneration := TChatImageSettings.Defaults;
+  Result.ChatSettingsExpanded := True;
   Result.Context := 2048;
+  Result.VisionContext := 2048;
+  Result.VisionMaxTokens := 512;
+  Result.VisionTemperature := 0.2;
   Result.Generation := TLLMGenerationOptions.Defaults;
   Result.Compaction := TChatCompactionOptions.Defaults;
   Result.Generation.Temperature := 0.6;
@@ -152,10 +163,17 @@ function TChatPreferences.ToJSON: TJSONObject;
 begin
   Result := TJSONObject.Create;
   Result.AddPair('model_id', ModelId);
+  Result.AddPair('chat_settings_expanded', ChatSettingsExpanded);
+  Result.AddPair('vision_settings_expanded', VisionSettingsExpanded);
+  Result.AddPair('image_settings_expanded', ImageSettingsExpanded);
   Result.AddPair('image_generation', ImageGeneration.ToJSON);
   Result.AddPair('compaction', Compaction.ToJSON);
   Result.AddPair('system_prompt', SystemPrompt);
   Result.AddPair('context', TJSONNumber.Create(Context));
+  Result.AddPair('vision_context', TJSONNumber.Create(VisionContext));
+  Result.AddPair('vision_max_tokens', TJSONNumber.Create(VisionMaxTokens));
+  Result.AddPair('vision_temperature', TJSONNumber.Create(VisionTemperature));
+  Result.AddPair('vision_instruction', VisionInstruction);
   Result.AddPair('temperature', TJSONNumber.Create(Generation.Temperature));
   Result.AddPair('top_p', TJSONNumber.Create(Generation.TopP));
   Result.AddPair('top_k', TJSONNumber.Create(Generation.TopK));
@@ -177,10 +195,17 @@ begin
   if not (Value is TJSONObject) then
     Exit;
   Result.ModelId := Value.GetValue<string>('model_id', '');
+  Result.ChatSettingsExpanded := Value.GetValue<Boolean>('chat_settings_expanded', True);
+  Result.VisionSettingsExpanded := Value.GetValue<Boolean>('vision_settings_expanded', False);
+  Result.ImageSettingsExpanded := Value.GetValue<Boolean>('image_settings_expanded', False);
   Result.ImageGeneration := TChatImageSettings.FromJSON(Value.FindValue('image_generation'));
   Result.Compaction := TChatCompactionOptions.FromJSON(Value.FindValue('compaction'));
   Result.SystemPrompt := Value.GetValue<string>('system_prompt', Result.SystemPrompt);
   Result.Context := EnsureRange(Value.GetValue<Integer>('context', 2048), 512, 8192);
+  Result.VisionContext := EnsureRange(Value.GetValue<Integer>('vision_context', Result.Context), 512, 8192);
+  Result.VisionMaxTokens := EnsureRange(Value.GetValue<Integer>('vision_max_tokens', Value.GetValue<Integer>('max_tokens', 512)), 1, 8192);
+  Result.VisionTemperature := EnsureRange(Value.GetValue<Single>('vision_temperature', Value.GetValue<Single>('temperature', 0.2)), 0.0, 2.0);
+  Result.VisionInstruction := Value.GetValue<string>('vision_instruction', '');
   Result.Generation.Temperature := EnsureRange(Value.GetValue<Double>('temperature', 0.6), 0.0, 2.0);
   Result.Generation.TopP := EnsureRange(Value.GetValue<Double>('top_p', 0.95), 0.01, 1.0);
   Result.Generation.TopK := EnsureRange(Value.GetValue<Integer>('top_k', 20), 1, 64);
@@ -209,61 +234,81 @@ var
   LinearLayers: Integer;
   StateCount: UInt64;
   Candidate: string;
+  VisionWeights: Boolean;
 begin
   Available := False;
+  IsGGUF := False;
   Validation := '';
   SupportsThinking := False;
   SupportsVision := False;
   ModelType := '';
+  ContextBytesPerToken := 0;
   ResolvedTokenizer := '';
   Config := nil;
   Tokenizer := nil;
   try
-    if not TDirectory.Exists(Directory) then
-      raise EArgumentException.Create('Каталог модели не найден.');
+    if not TDirectory.Exists(Directory) and not TFile.Exists(Directory) then
+      raise EArgumentException.Create('Каталог или файл модели не найден.');
+    var GGUFFile := LLMGGUFCheckpoint(Directory);
+    IsGGUF := GGUFFile <> '';
     Candidate := TPath.Combine(Directory, 'config.json');
-    if not TFile.Exists(Candidate) then
-      raise EArgumentException.Create('В каталоге нет config.json.');
-    Config := TJSONValue.ParseJSONValue(TFile.ReadAllText(Candidate, TEncoding.UTF8));
+    if IsGGUF then
+      Config := LLMGGUFConfig(GGUFFile)
+    else
+    begin
+      if not TFile.Exists(Candidate) then
+        raise EArgumentException.Create('В каталоге нет config.json.');
+      Config := TJSONValue.ParseJSONValue(TFile.ReadAllText(Candidate, TEncoding.UTF8));
+    end;
     if not (Config is TJSONObject) then
       raise EArgumentException.Create('Некорректный config.json.');
     ModelType := Config.GetValue<string>('model_type', '');
-    SupportsVision := (ModelType = 'qwen3_5') and (Config.FindValue('vision_config') <> nil);
-    if (ModelType <> 'qwen3') and (ModelType <> 'qwen3_moe') and (ModelType <> 'qwen3_5') then
-      raise EArgumentException.Create('Этот движок поддерживает Qwen3, Qwen3 MoE и гибридные Qwen3.8 в safetensors.');
+    SupportsVision := False;
+    VisionWeights := False;
+    if (ModelType <> 'qwen3') and (ModelType <> 'qwen3_moe') and (ModelType <> 'qwen3_5') and (ModelType <> 'gemma2') and (ModelType <> 'qwen4exp') then
+      raise EArgumentException.Create('Этот движок поддерживает Qwen3, Qwen3 MoE, Qwen3.8 и Gemma 2 GGUF.');
     if (Config.FindValue('quantization_config') <> nil)
       and not (Config.FindValue('quantization_config') is TJSONNull) then
       raise EArgumentException.Create('Нужен исходный BF16/F32 checkpoint. INT4 экспертов создаётся самим QuickNN.');
-    if not TFile.Exists(TPath.Combine(Directory, 'model.safetensors'))
+    if not IsGGUF and not TFile.Exists(TPath.Combine(Directory, 'model.safetensors'))
       and not TFile.Exists(TPath.Combine(Directory, 'model.safetensors.index.json')) then
       raise EArgumentException.Create('Не найдены model.safetensors или индекс весов.');
     ResolvedTokenizer := TokenizerDirectory;
-    if ResolvedTokenizer = '' then
+    if not IsGGUF then
     begin
-      ResolvedTokenizer := Directory;
+      if ResolvedTokenizer = '' then
+      begin
+        ResolvedTokenizer := Directory;
+        if not TFile.Exists(TPath.Combine(ResolvedTokenizer, 'tokenizer.json')) then
+          ResolvedTokenizer := TPath.Combine(ExtractFileDir(Directory), 'tokenizer');
+      end;
       if not TFile.Exists(TPath.Combine(ResolvedTokenizer, 'tokenizer.json')) then
-        ResolvedTokenizer := TPath.Combine(ExtractFileDir(Directory), 'tokenizer');
-    end;
-    if not TFile.Exists(TPath.Combine(ResolvedTokenizer, 'tokenizer.json')) then
-      raise EArgumentException.Create('Не найден tokenizer.json. Укажите каталог токенизатора.');
+        raise EArgumentException.Create('Не найден tokenizer.json. Укажите каталог токенизатора.');
+    end
+    else
+      ResolvedTokenizer := ''; // GGUF owns its BPE vocabulary and merge ranks.
     var IndexPath := TPath.Combine(Directory, 'model.safetensors.index.json');
-    if TFile.Exists(IndexPath) then
+    if not IsGGUF and TFile.Exists(IndexPath) then
     begin
       var Index := TJSONValue.ParseJSONValue(TFile.ReadAllText(IndexPath, TEncoding.UTF8));
       try
         if (Index = nil) or not (Index.FindValue('weight_map') is TJSONObject) then
           raise EArgumentException.Create('Неверный индекс весов.');
         for var Pair in TJSONObject(Index.FindValue('weight_map')) do
+        begin
           if not TFile.Exists(TPath.Combine(Directory, Pair.JsonValue.Value)) then
             raise EArgumentException.Create('Загрузка весов не завершена: ' + Pair.JsonValue.Value);
+          if Pair.JsonString.Value = 'model.visual.patch_embed.proj.weight' then
+            VisionWeights := True;
+        end;
       finally
         Index.Free
       end;
     end
-    else if not TFile.Exists(TPath.Combine(Directory, 'model.safetensors')) then
+    else if not IsGGUF and not TFile.Exists(TPath.Combine(Directory, 'model.safetensors')) then
       raise EArgumentException.Create('В каталоге нет весов model.safetensors.');
     TextConfig := Config;
-    if ModelType = 'qwen3_5' then
+    if (ModelType = 'qwen3_5') or (ModelType = 'qwen4exp') then
     begin
       TextConfig := Config.FindValue('text_config');
       if TextConfig = nil then
@@ -279,7 +324,7 @@ begin
       raise EArgumentException.Create('Неверная геометрия attention.');
     KVLayers := Layers;
     RecurrentBytes := 0;
-    if ModelType = 'qwen3_5' then
+    if (ModelType = 'qwen3_5') or (ModelType = 'qwen4exp') then
     begin
       Kinds := TextConfig.FindValue('layer_types');
       if not (Kinds is TJSONArray) or (TJSONArray(Kinds).Count <> Layers) then
@@ -300,12 +345,49 @@ begin
       if (RecurrentBytes >= UInt64(1536) * 1024 * 1024) or (KVLayers < 1) then
         raise EArgumentException.Create('Состояние гибридной модели превышает доступный бюджет.');
     end;
+    if not IsGGUF and (ModelType = 'qwen3_5') then
+    begin
+      if TFile.Exists(TPath.Combine(Directory, 'model.safetensors')) then
+      begin
+        var Header := ReadModelTensorHeader(TPath.Combine(Directory, 'model.safetensors'));
+        try
+          VisionWeights := Header.GetValue('model.visual.patch_embed.proj.weight') <> nil
+        finally
+          Header.Free
+        end;
+      end;
+      var Vision := Config.FindValue('vision_config');
+      if Vision <> nil then
+        SupportsVision := VisionWeights and (Vision.GetValue<Integer>('depth', 0) = 27)
+          and (Vision.GetValue<Integer>('hidden_size', 0) = 1152)
+          and (Vision.GetValue<Integer>('out_hidden_size', 0) = 5120)
+          and (Vision.GetValue<Integer>('patch_size', 0) = 16)
+          and (Vision.GetValue<Integer>('num_heads', 0) = 16)
+          and (Vision.GetValue<Integer>('intermediate_size', 0) = 4304)
+          and (Vision.GetValue<Integer>('spatial_merge_size', 0) = 2)
+          and (Vision.GetValue<Integer>('temporal_patch_size', 0) = 2)
+          and (Vision.GetValue<string>('hidden_act', '') = 'gelu_pytorch_tanh');
+    end;
+    ContextBytesPerToken := UInt64(KVLayers)*2*UInt64(KVHeads)*UInt64(HeadDim)*4;
+    if ModelType = 'qwen4exp' then
+    begin
+      var Meta := Config.FindValue('architecture_metadata');
+      var IndexDim := LLMGGUFMetadata(Meta,'qwen4exp.attention.indexer.key_length').AsType<Integer>;
+      var Ratios := (LLMGGUFMetadata(Meta,'qwen4exp.attention.compress_ratios') as TJSONArray);
+      var Ratio := Ratios[Layers-1].AsType<Integer>;
+      if (Ratio < 2) or (IndexDim < 1) then raise EArgumentException.Create('Неверная геометрия QSA.');
+      Inc(ContextBytesPerToken,UInt64(KVLayers)*(128+UInt64(IndexDim)+UInt64((IndexDim+Ratio-1) div Ratio))*4);
+      Inc(RecurrentBytes,UInt64(LLMGGUFMetadata(Meta,'qwen4exp.hyper_connection.count').AsType<Integer>)
+        *UInt64(TextConfig.GetValue<Integer>('hidden_size'))
+        *UInt64((LLMGGUFMetadata(Meta,'qwen4exp.ple.conv_kernel').AsType<Integer>-1)*LLMGGUFMetadata(Meta,'qwen4exp.ple.ngram_size').AsType<Integer>+1)*4);
+      Inc(RecurrentBytes,UInt64(KVLayers)*UInt64(IndexDim)*4); // rounded pool rows
+    end;
     MaxContext :=
       Min(
       TextConfig.GetValue<Integer>('max_position_embeddings', 32768),
-      Integer((UInt64(1536) * 1024 * 1024 - RecurrentBytes) div (UInt64(KVLayers) * 2 * UInt64(KVHeads) * UInt64(HeadDim) * 4))
+      Integer((UInt64(1536) * 1024 * 1024 - RecurrentBytes) div ContextBytesPerToken)
     );
-    SupportsThinking := (ModelType = 'qwen3') or (ModelType = 'qwen3_5');
+    SupportsThinking := (ModelType = 'qwen3') or (ModelType = 'qwen3_5') or (ModelType = 'qwen4exp');
     Candidate := TPath.Combine(ResolvedTokenizer, 'tokenizer_config.json');
     if TFile.Exists(Candidate) then
     begin
@@ -314,12 +396,18 @@ begin
         SupportsThinking := Tokenizer.GetValue<string>('chat_template', '').Contains('<think>');
     end;
     Available := True;
-    if ModelType = 'qwen3_5' then
+    if ModelType = 'qwen4exp' then
+      Validation := 'Qwen3.8 Flash Next · HC / DeltaNet / QSA / PLE / MoE'
+    else if ModelType = 'gemma2' then
+      Validation := 'Gemma 2'
+    else if (ModelType = 'qwen3_5') or (ModelType = 'qwen4exp') then
       Validation := 'Qwen3.8 · Gated DeltaNet'
     else if ModelType = 'qwen3_moe' then
       Validation := 'Qwen3 MoE'
     else
       Validation := 'Qwen3';
+    if IsGGUF then
+      Validation := Validation + ' · GGUF (квантование файла)';
     Validation := Validation + Format(' · %d слоёв · до %d токенов', [Layers, MaxContext]);
   except
     on E: Exception do
@@ -331,8 +419,9 @@ end;
 
 function TModelEntry.KVBytes(const Context: Integer): UInt64;
 begin
-  Result :=
-    RecurrentBytes + UInt64(Max(0, KVLayers)) * 2 * UInt64(Max(0, Context)) * UInt64(Max(0, KVHeads)) * UInt64(Max(0, HeadDim)) * 4;
+  var PerToken := ContextBytesPerToken;
+  if PerToken=0 then PerToken := UInt64(Max(0,KVLayers))*2*UInt64(Max(0,KVHeads))*UInt64(Max(0,HeadDim))*4;
+  Result := RecurrentBytes+UInt64(Max(0,Context))*PerToken;
 end;
 
 function TModelEntry.ToJSON: TJSONObject;
@@ -342,6 +431,7 @@ begin
   Result.AddPair('name', Name);
   Result.AddPair('directory', Directory);
   Result.AddPair('tokenizer_directory', TokenizerDirectory);
+  Result.AddPair('source_file', SourceFile);
 end;
 
 class function TModelEntry.FromJSON(const Value: TJSONValue): TModelEntry;
@@ -352,6 +442,7 @@ begin
     Result.Name := Value.GetValue<string>('name', 'Модель');
     Result.Directory := Value.GetValue<string>('directory', '');
     Result.TokenizerDirectory := Value.GetValue<string>('tokenizer_directory', '');
+    Result.SourceFile := Value.GetValue<string>('source_file', '');
     Result.Inspect;
   except
     Result.Free;
@@ -446,6 +537,7 @@ begin
   Result := TJSONObject.Create;
   Result.AddPair('id', Id);
   Result.AddPair('text', Text);
+  Result.AddPair('negative_prompt', NegativePrompt);
   Result.AddPair('error', ErrorText);
   Result.AddPair('model_name', ModelName);
   Result.AddPair('model_id', ModelId);
@@ -461,6 +553,8 @@ begin
   for var Image in Images do
     Attachments.AddElement(Image.ToJSON);
   Result.AddPair('images', Attachments);
+  if ImageRequest.RelativePath <> '' then
+    Result.AddPair('image_request', ImageRequest.ToJSON);
 end;
 
 class function TChatMessage.FromJSON(const Value: TJSONValue): TChatMessage;
@@ -469,10 +563,16 @@ begin
   try
     Result.Id := Value.GetValue<string>('id', Result.Id);
     Result.Text := Value.GetValue<string>('text', '');
+    Result.NegativePrompt := Value.GetValue<string>('negative_prompt', '');
     var Attachments := Value.FindValue('images');
     if Attachments is TJSONArray then
       for var Attachment in TJSONArray(Attachments) do
         Result.Images := Result.Images + [TChatImage.FromJSON(Attachment)];
+    var ImageRequest := Value.FindValue('image_request');
+    if ImageRequest is TJSONObject then
+      Result.ImageRequest := TChatImage.FromJSON(ImageRequest)
+    else if (Length(Result.Images) > 0) and not Result.Images[0].IsUserImage then
+      Result.ImageRequest := Result.Images[0];
     Result.ErrorText := Value.GetValue<string>('error', '');
     Result.ModelName := Value.GetValue<string>('model_name', '');
     Result.ModelId := Value.GetValue<string>('model_id', '');
@@ -635,6 +735,13 @@ begin
     if Items is TJSONArray then
       for var Item in TJSONArray(Items) do
         Result.Messages.Add(TChatMessage.FromJSON(Item));
+    // Older image operations already saved their immutable settings on the reply.
+    // Recover only the matching preceding user prompt, never current preferences.
+    for var I := 1 to Result.Messages.Count - 1 do
+      if (Result.Messages[I - 1].Role = lrUser) and (Result.Messages[I].Role = lrAssistant)
+        and (Result.Messages[I].ImageRequest.RelativePath <> '')
+        and (Result.Messages[I - 1].NegativePrompt = '') then
+        Result.Messages[I - 1].NegativePrompt := Result.Messages[I].ImageRequest.Settings.NegativePrompt;
   except
     Result.Free;
     raise;
@@ -699,7 +806,7 @@ begin
     if Preferences.Directory.Trim = '' then
       Continue;
     if (Preferences.Kind = ipQwenImage) and (Preferences.AssetsDirectory = '') then
-      Preferences.AssetsDirectory := FindQwenImageAssets;
+      Preferences.AssetsDirectory := FindQwenImageAssets(Preferences.Directory);
     var Entry: TImageModelEntry := nil;
     for var Existing in ImageModels do
       if (Existing.Settings.Kind = Preferences.Kind)
@@ -719,7 +826,7 @@ begin
       Entry.Settings.ModelId := '';
       Entry.Settings.AnalysisModelId := '';
       if (Preferences.Kind = ipQwenImage) and (Entry.Settings.AssetsDirectory = '') then
-        Entry.Settings.AssetsDirectory := FindQwenImageAssets;
+        Entry.Settings.AssetsDirectory := FindQwenImageAssets(Entry.Settings.Directory);
       Entry.Inspect;
       ImageModels.Add(Entry);
     end;
@@ -881,13 +988,19 @@ end;
 function TChatStore.NewChat: TChatSession;
 begin
   Result := TChatSession.Create;
-  if Models.Count > 0 then
-    Result.Preferences.ModelId := Models[0].Id;
-  if ImageModels.Count > 0 then
-  begin
-    Result.Preferences.ImageGeneration := ImageModels[0].Settings;
-    Result.Preferences.ImageGeneration.ModelId := ImageModels[0].Id;
-  end;
+  for var Model in Models do
+    if Model.Available then
+    begin
+      Result.Preferences.ModelId := Model.Id;
+      Break
+    end;
+  for var Model in ImageModels do
+    if Model.Available then
+    begin
+      Result.Preferences.ImageGeneration := Model.Settings;
+      Result.Preferences.ImageGeneration.ModelId := Model.Id;
+      Break;
+    end;
   Chats.Insert(0, Result);
   ActiveChatId := Result.Id;
 end;

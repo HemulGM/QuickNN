@@ -461,6 +461,10 @@ object FrameImageViewer: TFrameImageViewer
     OnPopup = ImageMenuPopup
     Left = 384
     Top = 312
+    object MenuItemUseAsReference: TMenuItem
+      Text = #1048#1089#1087#1086#1083#1100#1079#1086#1074#1072#1090#1100' '#1082#1072#1082' '#1088#1077#1092#1077#1088#1077#1085#1089
+      OnClick = UseAsReferenceClick
+    end
     object MenuItemCopyImage: TMenuItem
       ShortCut = 16451
       Text = #1050#1086#1087#1080#1088#1086#1074#1072#1090#1100' '#1080#1079#1086#1073#1088#1072#1078#1077#1085#1080#1077

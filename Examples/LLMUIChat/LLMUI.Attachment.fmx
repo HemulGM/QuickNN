@@ -13,7 +13,25 @@ object FrameAttachment: TFrameAttachment
     Size.Height = 104.000000000000000000
     Size.PlatformDefault = False
     StyleLookup = 'chatpanel'
+    ParentShowHint = False
+    ShowHint = True
     OnClick = ImagePreviewClick
+    OnMouseDown = ImagePointerDown
+    OnMouseMove = ImagePointerMove
+    OnMouseUp = ImageContextMenu
+    object RectangleDropTarget: TRectangle
+      Align = Contents
+      Fill.Kind = None
+      HitTest = False
+      Size.Width = 136.000000000000000000
+      Size.Height = 92.000000000000000000
+      Size.PlatformDefault = False
+      Stroke.Color = xFF54CDA8
+      Stroke.Thickness = 2.000000000000000000
+      Visible = False
+      XRadius = 8.000000000000000000
+      YRadius = 8.000000000000000000
+    end
     object ImagePreview: TImage
       MultiResBitmap = <
         item
@@ -23,7 +41,12 @@ object FrameAttachment: TFrameAttachment
       Size.Width = 136.000000000000000000
       Size.Height = 92.000000000000000000
       Size.PlatformDefault = False
+      ParentShowHint = False
+      ShowHint = True
       OnClick = ImagePreviewClick
+      OnMouseDown = ImagePointerDown
+      OnMouseMove = ImagePointerMove
+      OnMouseUp = ImageContextMenu
       object LayoutCaption: TLayout
         Align = Bottom
         Position.Y = 66.000000000000000000
@@ -64,6 +87,36 @@ object FrameAttachment: TFrameAttachment
           TextSettings.WordWrap = False
           ParentShowHint = False
           ShowHint = True
+        end
+      end
+      object LayoutReferenceBadge: TLayout
+        Align = Contents
+        Size.Width = 136.000000000000000000
+        Size.Height = 92.000000000000000000
+        Size.PlatformDefault = False
+        object RectangleReferenceBadge: TRectangle
+          Align = TopLeft
+          Fill.Color = xE5193A32
+          HitTest = False
+          Size.Width = 82.000000000000000000
+          Size.Height = 24.000000000000000000
+          Size.PlatformDefault = False
+          Stroke.Color = xFF38685C
+          XRadius = 6.000000000000000000
+          YRadius = 6.000000000000000000
+          object LabelReference: TLabel
+            Align = Client
+            StyledSettings = []
+            Size.Width = 82.000000000000000000
+            Size.Height = 24.000000000000000000
+            Size.PlatformDefault = False
+            TextSettings.Font.Size = 11.000000000000000000
+            TextSettings.Font.StyleExt = {00070000000000000004000000}
+            TextSettings.FontColor = xFFE5EDEC
+            TextSettings.HorzAlign = Center
+            TextSettings.WordWrap = False
+            Text = '<image1>'
+          end
         end
       end
       object LayoutAttachmentOverlay: TLayout

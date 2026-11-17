@@ -82,6 +82,7 @@ begin
     Ctx.Kernel(GO_UNARY, Conv2.InputDim * Spatial, N2, N2, nil, nil, [0]);
     Ctx.Recycle(C1);
     Result := Conv2.ForwardGPU(Ctx, N2, Height, Width);
+    Ctx.Recycle(N2);
     if Shortcut.Weight.IsAssigned then
     begin
       Skip := Shortcut.ForwardGPU(Ctx, Src, Height, Width);
@@ -145,6 +146,62 @@ begin
     Ctx.Recycle(X);
     Ctx.Recycle(Next);
     Ctx.Recycle(Resized)
+  end;
+end;
+
+function TQwen21VAEUp.ForwardTiledGPU(const Ctx: TQNNGPUContext;
+  const Src: TQNNGPUTensor; var Height, Width: Integer; const TileSize: Integer): TQNNGPUTensor;
+const
+  // Six 3x3 convolutions, followed by nearest 2x + 3x3: radius <= 7.
+  // Channel RMS is local to a pixel; attention has already run globally.
+  HALO = 8;
+var
+  Tile, Decoded: TQNNGPUTensor;
+  InCh, OutCh, Scale, X, Y, Left, Top, TW, TH, CW, CH, DW, DH: Integer;
+begin
+  if (TileSize = 0) or ((Height <= TileSize) and (Width <= TileSize)) then
+    Exit(ForwardGPU(Ctx, Src, Height, Width));
+  if TileSize < 16 then
+    raise EArgumentOutOfRangeException.Create('VAE tile core must be at least 16 pixels');
+  InCh := Blocks[0].Conv1.InputDim;
+  OutCh := Blocks[2].Conv2.OutputDim;
+  Scale := 1 + Ord(Upsample.Weight.IsAssigned);
+  Result := Ctx.NewTensor(OutCh * Height * Width * Scale * Scale);
+  Tile := nil;
+  Decoded := nil;
+  try
+    Y := 0;
+    while Y < Height do
+    begin
+      CH := Min(TileSize, Height - Y);
+      Top := Max(0, Y - HALO);
+      TH := Min(Height, Y + CH + HALO) - Top;
+      X := 0;
+      while X < Width do
+      begin
+        CW := Min(TileSize, Width - X);
+        Left := Max(0, X - HALO);
+        TW := Min(Width, X + CW + HALO) - Left;
+        Tile := Ctx.NewTensor(InCh * TH * TW);
+        Ctx.CopyCHWRect(Tile, Src, InCh, Width, Height, TW, TH, Left, Top, 0, 0, TW, TH);
+        DW := TW;
+        DH := TH;
+        Decoded := ForwardGPU(Ctx, Tile, DH, DW);
+        Ctx.CopyCHWRect(Result, Decoded, OutCh, DW, DH, Width * Scale, Height * Scale,
+          (X - Left) * Scale, (Y - Top) * Scale, X * Scale, Y * Scale, CW * Scale, CH * Scale);
+        Ctx.Recycle(Decoded);
+        Ctx.Recycle(Tile);
+        Inc(X, CW);
+      end;
+      Inc(Y, CH);
+    end;
+    Height := Height * Scale;
+    Width := Width * Scale;
+  except
+    Ctx.Recycle(Decoded);
+    Ctx.Recycle(Tile);
+    Ctx.Recycle(Result);
+    raise;
   end;
 end;
 
@@ -327,18 +384,25 @@ end;
 function TQwen21VAE.DecodeGPU(
     const Ctx: TQNNGPUContext;
     const Latents: TQNNGPUTensor;
-    const Height, Width: Integer
+    const Height, Width: Integer;
+    const TileSize: Integer
 ): TQNNGPUTensor;
 var
   X, Next, N: TQNNGPUTensor;
-  H, W: Integer;
+  H, W, Core, TileH, TileW, X0, Y0, Left, Top, TH, TW: Integer;
+  Tile, TileN, TileOut: TQNNGPUTensor;
   Mean, Std: TMemoryBlock;
 begin
+  if (TileSize <> 0) and (TileSize < 16) then
+    raise EArgumentOutOfRangeException.Create('VAE tile core must be at least 16 pixels');
+  Ctx.TrimActivations;
+  Core := TileSize;
   H := Height;
   W := Width;
   X := nil;
   Next := nil;
   N := nil;
+  Tile := nil; TileN := nil; TileOut := nil;
   try
     Mean := TMemoryBlock.Create([64], 'GPU-latent-mean');
     Std := TMemoryBlock.Create([64], 'GPU-latent-std');
@@ -370,7 +434,15 @@ begin
     Next := nil;
     for var I := 0 to 4 do
     begin
-      Next := FUps[I].ForwardGPU(Ctx, X, H, W);
+      // A stage only borrows X. Previous stages' cached full-size maps
+      // must not inflate the working set of its small overlapping tiles.
+      Ctx.TrimActivations;
+      // Bound the per-tile working set when other GPU clients consume VRAM.
+      if Core > 32 then
+        while (Core > 32) and (UInt64(Core + 16) * UInt64(Core + 16)
+          * UInt64(FUps[I].Blocks[0].Conv1.InputDim) * 32 > Ctx.ActivationBudget div 2) do
+          Core := Max(32, Core div 2);
+      Next := FUps[I].ForwardTiledGPU(Ctx, X, H, W, Core);
       Ctx.Recycle(X);
       X := Next;
       Next := nil;
@@ -378,11 +450,49 @@ begin
       if Assigned(FStatus) then
         FStatus(Format('GPU VAE block %d/5: %dx%d', [I + 1, W, H]));
     end;
-    N := Ctx.NewTensor(FOut.InputDim * H * W);
-    Q21GPURMS(Ctx, N, X, FOutGamma, H * W, FOut.InputDim, False, True);
-    Ctx.Kernel(GO_UNARY, FOut.InputDim * H * W, N, N, nil, nil, [0]);
-    Ctx.Recycle(X);
-    X := FOut.ForwardGPU(Ctx, N, H, W);
+    Ctx.TrimActivations;
+    if (Core = 0) or ((H <= Core) and (W <= Core)) then
+    begin
+      N := Ctx.NewTensor(FOut.InputDim * H * W);
+      Q21GPURMS(Ctx, N, X, FOutGamma, H * W, FOut.InputDim, False, True);
+      Ctx.Kernel(GO_UNARY, N.Count, N, N, nil, nil, [0]);
+      Ctx.Recycle(X);
+      X := FOut.ForwardGPU(Ctx, N, H, W);
+      Ctx.Recycle(N);
+    end
+    else
+    begin
+      // The final channel norm + convolution needs only a one-pixel halo.
+      Next := Ctx.NewTensor(FOut.OutputDim * H * W);
+      Y0 := 0;
+      while Y0 < H do
+      begin
+        TileH := Min(Core, H - Y0);
+        Top := Max(0, Y0 - 1);
+        TH := Min(H, Y0 + TileH + 1) - Top;
+        X0 := 0;
+        while X0 < W do
+        begin
+          TileW := Min(Core, W - X0);
+          Left := Max(0, X0 - 1);
+          TW := Min(W, X0 + TileW + 1) - Left;
+          Tile := Ctx.NewTensor(FOut.InputDim * TH * TW);
+          TileN := Ctx.NewTensor(Tile.Count);
+          Ctx.CopyCHWRect(Tile, X, FOut.InputDim, W, H, TW, TH, Left, Top, 0, 0, TW, TH);
+          Q21GPURMS(Ctx, TileN, Tile, FOutGamma, TH * TW, FOut.InputDim, False, True);
+          Ctx.Kernel(GO_UNARY, TileN.Count, TileN, TileN, nil, nil, [0]);
+          TileOut := FOut.ForwardGPU(Ctx, TileN, TH, TW);
+          Ctx.CopyCHWRect(Next, TileOut, FOut.OutputDim, TW, TH, W, H,
+            X0 - Left, Y0 - Top, X0, Y0, TileW, TileH);
+          Ctx.Recycle(TileOut); Ctx.Recycle(TileN); Ctx.Recycle(Tile);
+          Inc(X0, TileW);
+        end;
+        Inc(Y0, TileH);
+      end;
+      Ctx.Recycle(X);
+      X := Next;
+      Next := nil;
+    end;
     Ctx.CheckFinite(X);
     Result := Ctx.NewTensor(H * W);
     Ctx.Kernel(GO_PIXEL_OUTPUT, H * W, Result, X, nil, nil, [H * W]);
@@ -390,6 +500,7 @@ begin
     Ctx.Recycle(X);
     Ctx.Recycle(Next);
     Ctx.Recycle(N);
+    Ctx.Recycle(Tile); Ctx.Recycle(TileN); Ctx.Recycle(TileOut);
     Mean.Free;
     Std.Free
   end;

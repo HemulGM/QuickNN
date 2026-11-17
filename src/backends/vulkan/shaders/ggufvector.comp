@@ -1,0 +1,52 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x=256) in;
+layout(set=0,binding=0,std430) readonly buffer A { float a[]; };
+layout(set=0,binding=1,std430) readonly buffer B { uint b[]; };
+layout(set=0,binding=2,std430) readonly buffer C { uint c[]; };
+layout(set=0,binding=3,std430) buffer D { float d[]; };
+layout(push_constant) uniform Params { uint op,n,u0,u1,u2,u3; uint v0,v1,v2,v3,v4,v5,v6,v7,v8,v9; } p;
+#include "gguf.glsl"
+// Instantiate the same verified decoder for the second immutable matrix.
+#define b c
+#define packedByte packedByteC
+#define packedHalf packedHalfC
+#define packedSigned packedSignedC
+#define iq4Value iq4ValueC
+#define readGGUF readGGUFC
+#define packedWord packedWordC
+#define packedLanes packedLanesC
+#define iq4Values iq4ValuesC
+#define readGGUF4 readGGUF4C
+#include "gguf.glsl"
+#undef b
+#undef packedByte
+#undef packedHalf
+#undef packedSigned
+#undef iq4Value
+#undef readGGUF
+#undef packedWord
+#undef packedLanes
+#undef iq4Values
+#undef readGGUF4
+shared vec2 sums[256];
+float silu(float x){return x>=20.0?x:(x<=-20.0?0.0:x/(1.0+exp(-x)));}
+void main() {
+    uint tid=gl_LocalInvocationID.x,lane=tid%32u;
+    bool paired=p.op==67u,upper=(tid%64u)>=32u;
+    uint row=paired?gl_WorkGroupID.x*4u+tid/64u:gl_WorkGroupID.x*8u+tid/32u;
+    vec4 sum=vec4(0.0);
+    if(row<p.v1)for(uint j=lane*4u;j<p.v0;j+=128u){
+        vec4 x=vec4(a[j],a[j+1u],a[j+2u],a[j+3u]);
+        vec4 w=paired&&upper?readGGUF4C(row*p.v0+j,p.v3):readGGUF4(row*p.v0+j,p.v2);
+        sum+=x*w;
+    }
+    sums[tid]=vec2((sum.x+sum.y)+(sum.z+sum.w),0.0);barrier();
+    for(uint stride=16u;stride>0u;stride>>=1u){
+        if(lane<stride)sums[tid]+=sums[tid+stride];barrier();
+    }
+    if(row<p.v1){
+        if(paired){if(tid%64u==0u)d[row]=silu(sums[tid].x)*sums[tid+32u].x;}
+        else if(lane==0u)d[row]=sums[tid].x;
+    }
+}

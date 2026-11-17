@@ -7,7 +7,7 @@
 interface
 
 uses
-  System.SysUtils, System.Classes;
+  System.SysUtils, System.Classes, System.JSON;
 
 const
   GGUF_MAGIC = $46554747;
@@ -26,9 +26,10 @@ type
     Version, Alignment: UInt32;
     Architecture: string;
     DataOffset: Int64;
+    VocabularySize: Integer;
     Tensors: TArray<TGGUFTensor>;
-    class function Read(const Stream: TStream): TGGUFHeader; static;
-    class function ReadFile(const FileName: string): TGGUFHeader; static;
+    class function Read(const Stream: TStream; const Metadata: TJSONObject = nil; const IncludeVocabulary: Boolean = True): TGGUFHeader; static;
+    class function ReadFile(const FileName: string; const Metadata: TJSONObject = nil; const IncludeVocabulary: Boolean = True): TGGUFHeader; static;
   end;
 
 implementation
@@ -45,15 +46,17 @@ type
   TGGUFReader = class
   private
     FStream: TStream;
-    FStart: Int64;
+    FStart, FStreamSize: Int64;
     procedure Require(const Size: Int64);
     function U32: UInt32;
     function U64: UInt64;
     function ReadString: string;
+    procedure SkipString;
+    function ReadValue(const Kind: UInt32; const Depth: Integer = 0): TJSONValue;
     procedure SkipValue(const Kind: UInt32; const Depth: Integer = 0);
   public
     constructor Create(const Stream: TStream);
-    function Read: TGGUFHeader;
+    function Read(const Metadata: TJSONObject; const IncludeVocabulary: Boolean): TGGUFHeader;
   end;
 
 constructor TGGUFReader.Create(const Stream: TStream);
@@ -61,12 +64,13 @@ begin
   inherited Create;
   FStream := Stream;
   FStart := Stream.Position;
+  FStreamSize := Stream.Size;
 end;
 
 procedure TGGUFReader.Require(const Size: Int64);
 begin
   if (Size < 0) or (FStream.Position < FStart)
-    or (Size > FStream.Size - FStream.Position)
+    or (Size > FStreamSize - FStream.Position)
     or (Size > MAX_HEADER_BYTES - (FStream.Position - FStart)) then
     raise EGGUFError.Create('Truncated or oversized GGUF header');
 end;
@@ -102,6 +106,61 @@ begin
     raise EGGUFError.Create('Invalid UTF-8 in GGUF header');
 end;
 
+procedure TGGUFReader.SkipString;
+begin
+  var Size := U64;
+  if Size>MAX_STRING_BYTES then raise EGGUFError.Create('Oversized GGUF string');
+  Require(Size); FStream.Position := FStream.Position+Int64(Size);
+end;
+
+function TGGUFReader.ReadValue(const Kind: UInt32; const Depth: Integer): TJSONValue;
+var
+  Bits: UInt64;
+  Signed: Int64;
+  Float32: Single;
+  Float64: Double;
+  Size: Integer;
+begin
+  if Depth > 16 then raise EGGUFError.Create('Excessive GGUF metadata nesting');
+  if Kind = 8 then Exit(TJSONString.Create(ReadString));
+  if Kind = 9 then
+  begin
+    var ElementType := U32;
+    var Count := U64;
+    if (Count > MAX_ITEMS) or (ElementType > 12) or (ElementType = 9) then
+      raise EGGUFError.Create('Invalid GGUF metadata array');
+    var Items := TJSONArray.Create;
+    try
+      if Count > 0 then
+        for var I: UInt64 := 0 to Count - 1 do Items.AddElement(ReadValue(ElementType, Depth + 1));
+      Result := Items;
+    except Items.Free; raise end;
+    Exit;
+  end;
+  case Kind of
+    0, 1, 7: Size := 1;
+    2, 3: Size := 2;
+    4, 5, 6: Size := 4;
+    10, 11, 12: Size := 8;
+  else raise EGGUFError.Create('Unknown GGUF metadata type') end;
+  Require(Size);
+  Bits := 0;
+  FStream.ReadBuffer(Bits, Size);
+  case Kind of
+    1: Signed := ShortInt(Bits);
+    3: Signed := SmallInt(Bits);
+    5: Signed := LongInt(Bits);
+    11: Signed := Int64(Bits);
+    6: begin Move(Bits, Float32, 4); Exit(TJSONNumber.Create(Float32)) end;
+    12: begin Move(Bits, Float64, 8); Exit(TJSONNumber.Create(Float64)) end;
+    7: begin
+      if Bits > 1 then raise EGGUFError.Create('Invalid GGUF Boolean');
+      Exit(TJSONBool.Create(Bits <> 0));
+    end;
+  else Exit(TJSONNumber.Create(UIntToStr(Bits))) end;
+  Result := TJSONNumber.Create(Signed);
+end;
+
 procedure TGGUFReader.SkipValue(const Kind: UInt32; const Depth: Integer);
 var
   Size: Int64;
@@ -118,6 +177,19 @@ begin
       var ElementType := U32;
       var Count := U64;
       if Count > MAX_ITEMS then raise EGGUFError.Create('Oversized GGUF metadata array');
+      var ItemBytes := 0;
+      case ElementType of
+        0,1,7: ItemBytes := 1;
+        2,3: ItemBytes := 2;
+        4,5,6: ItemBytes := 4;
+        10,11,12: ItemBytes := 8;
+      end;
+      if ItemBytes>0 then
+      begin
+        Require(Int64(Count)*ItemBytes);
+        FStream.Position := FStream.Position+Int64(Count)*ItemBytes;
+        Exit;
+      end;
       if Count > 0 then
         for var I: UInt64 := 0 to Count - 1 do SkipValue(ElementType, Depth + 1)
       else if ElementType > 12 then
@@ -131,7 +203,7 @@ begin
   FStream.Position := FStream.Position + Size;
 end;
 
-function TGGUFReader.Read: TGGUFHeader;
+function TGGUFReader.Read(const Metadata: TJSONObject; const IncludeVocabulary: Boolean): TGGUFHeader;
 begin
   Result := Default(TGGUFHeader);
   if U32 <> GGUF_MAGIC then raise EGGUFError.Create('Invalid GGUF magic (only little-endian GGUF is supported)');
@@ -155,6 +227,7 @@ begin
         begin
           if Kind <> 8 then raise EGGUFError.Create('GGUF architecture must be a string');
           Result.Architecture := ReadString;
+          if Metadata <> nil then Metadata.AddPair(Key, Result.Architecture);
         end
         else if Key = 'general.alignment' then
         begin
@@ -163,6 +236,29 @@ begin
           if (Result.Alignment = 0) or (Result.Alignment > 65536)
             or (Result.Alignment and (Result.Alignment - 1) <> 0) then
             raise EGGUFError.Create('Invalid GGUF alignment');
+        end
+        else if (Key = 'tokenizer.ggml.tokens') and not IncludeVocabulary then
+        begin
+          if (Kind <> 9) or (U32 <> 8) then raise EGGUFError.Create('Invalid GGUF vocabulary');
+          var Count := U64;
+          if Count > MAX_ITEMS then raise EGGUFError.Create('Oversized GGUF vocabulary');
+          Result.VocabularySize := Count;
+          if Count > 0 then for var J: UInt64 := 0 to Count - 1 do SkipString;
+        end
+        else if (Key = 'tokenizer.ggml.merges') and not IncludeVocabulary then
+        begin
+          if (Kind <> 9) or (U32 <> 8) then raise EGGUFError.Create('Invalid GGUF merges');
+          var Count := U64;
+          if Count>MAX_ITEMS then raise EGGUFError.Create('Oversized GGUF merges');
+          if Count>0 then for var J: UInt64 := 0 to Count-1 do SkipString;
+        end
+        else if (Metadata <> nil) and (IncludeVocabulary or not Key.StartsWith('tokenizer.ggml.merges')
+          and not Key.StartsWith('tokenizer.ggml.token_type') and not Key.StartsWith('tokenizer.ggml.scores')) then
+        begin
+          var Item := ReadValue(Kind);
+          Metadata.AddPair(Key, Item);
+          if (Key = 'tokenizer.ggml.tokens') and (Item is TJSONArray) then
+            Result.VocabularySize := TJSONArray(Item).Count;
         end
         else SkipValue(Kind);
       end;
@@ -194,9 +290,9 @@ begin
       case Tensor.StorageType of
         0: ElementBytes := 4; // GGML_TYPE_F32
         1, 30: ElementBytes := 2; // F16 / BF16
-        8, 12, 14: ElementBytes := 0; // Q8_0, Q4_K, Q6_K (Q4_K_M mixture)
+        8, 10, 11, 12, 13, 14, 16, 18, 20, 21, 22, 23, 42: ElementBytes := 0; // Q8_0, Q4_K, Q6_K (Q4_K_M mixture)
       else
-        raise EGGUFError.CreateFmt('GGUF tensor "%s": storage type %d is not supported; use BF16/F16/F32, Q8_0 or Q4_K_M weights', [Tensor.Name, Tensor.StorageType]);
+        raise EGGUFError.CreateFmt('GGUF tensor "%s": storage type %d is not supported; unsupported GGML block encoding', [Tensor.Name, Tensor.StorageType]);
       end;
       if Encoding <> weNative then
       begin
@@ -240,16 +336,16 @@ begin
   end;
 end;
 
-class function TGGUFHeader.Read(const Stream: TStream): TGGUFHeader;
+class function TGGUFHeader.Read(const Stream: TStream; const Metadata: TJSONObject = nil; const IncludeVocabulary: Boolean = True): TGGUFHeader;
 begin
   var Reader := TGGUFReader.Create(Stream);
-  try Result := Reader.Read finally Reader.Free end;
+  try Result := Reader.Read(Metadata, IncludeVocabulary) finally Reader.Free end;
 end;
 
-class function TGGUFHeader.ReadFile(const FileName: string): TGGUFHeader;
+class function TGGUFHeader.ReadFile(const FileName: string; const Metadata: TJSONObject = nil; const IncludeVocabulary: Boolean = True): TGGUFHeader;
 begin
-  var Stream := TFileStream.Create(FileName, fmOpenRead or fmShareDenyWrite);
-  try Result := Read(Stream) finally Stream.Free end;
+  var Stream := TBufferedFileStream.Create(FileName, fmOpenRead or fmShareDenyWrite, 1024*1024);
+  try Result := Read(Stream, Metadata, IncludeVocabulary) finally Stream.Free end;
 end;
 
 end.

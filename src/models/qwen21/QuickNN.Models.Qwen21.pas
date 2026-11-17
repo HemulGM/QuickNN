@@ -13,7 +13,7 @@ interface
 
 uses
   System.SysUtils, QuickNN.Common, QuickNN.Models.Qwen21.Math, QuickNN.LoRA,
-  QuickNN.Models.Qwen21.Conditioning;
+  QuickNN.Models.Qwen21.Conditioning, QuickNN.ModelFiles;
 
 type
   TQwen21Params = record
@@ -48,9 +48,12 @@ type
     function GenerateLegacy(const Params: TQwen21Params; const Inputs: TGenerationInputs): TQNNImage;
     function GenerateResident(const Params: TQwen21Params; const Inputs: TGenerationInputs): TQNNImage;
   public
+    Components: TQNNModelFiles;
     constructor Create(const ModelRoot, AssetsRoot: string; const UseInt8: Boolean = True; const Status: TQwen21Status = nil; const DiffusionCheckpoint: string = '');
     function Generate(const Params: TQwen21Params): TQNNImage;
   end;
+
+function Qwen21AssetsDirectory(const ModelRoot: string; const ConfiguredPath: string = ''): string;
 
 implementation
 
@@ -59,6 +62,30 @@ uses
   QuickNN.Models.Qwen21.Tokenizer, QuickNN.Models.Qwen21.Text,
   QuickNN.Models.Qwen21.Transformer, QuickNN.Models.Qwen21.VAE, QuickNN.Sampling,
   QuickNN.Vulkan, QuickNN.Models.Qwen21.Vision;
+
+function Qwen21AssetsDirectory(const ModelRoot, ConfiguredPath: string): string;
+  function Complete(const Directory: string): Boolean;
+  begin
+    Result := Directory <> '';
+    for var Name in TArray<string>.Create('tokenizer.json', 'encoder_config.json', 'vae_config.json', 'scheduler_config.json') do
+      Result := Result and TFile.Exists(TPath.Combine(Directory, Name));
+  end;
+begin
+  Result := ConfiguredPath;
+  if Complete(Result) then Exit;
+  // Relocate only the previous project-owned bundle. Explicit missing custom
+  // paths must still be reported instead of silently selecting another bundle.
+  var Legacy := Result.Replace('/', PathDelim).TrimRight([PathDelim]);
+  Legacy := Legacy.ToLowerInvariant;
+  if (Result <> '') and not Legacy.EndsWith('assets' + PathDelim + 'qwen-image-2.1') then Exit;
+  var Root := ModelRoot;
+  if Root = '' then Exit;
+  if TFile.Exists(Root) then Root := ExtractFileDir(Root);
+  if Complete(Root) then Exit(Root);
+  var Candidate := TPath.Combine(Root, 'Qwen-Image-2.1');
+  if Complete(Candidate) then Exit(Candidate);
+  if Result = '' then Result := Root;
+end;
 
 class function TQwen21Params.Defaults: TQwen21Params;
 begin
@@ -77,7 +104,7 @@ constructor TQwen21Pipeline.Create(const ModelRoot, AssetsRoot: string; const Us
 begin
   inherited Create;
   FModels := ExcludeTrailingPathDelimiter(ModelRoot);
-  FAssets := ExcludeTrailingPathDelimiter(AssetsRoot);
+  FAssets := ExcludeTrailingPathDelimiter(Qwen21AssetsDirectory(ModelRoot, AssetsRoot));
   FInt8 := UseInt8;
   FStatus := Status;
   FDiffusionCheckpoint := DiffusionCheckpoint;
@@ -106,11 +133,11 @@ begin
 {$ENDIF}
   if (Params.Width < 64)
     or (Params.Height < 64)
-    or (Params.Width > 1024)
-    or (Params.Height > 1024)
-    or (Params.Width mod 32 <> 0)
-    or (Params.Height mod 32 <> 0) then
-    raise EArgumentException.Create('Width/height must be multiples of 32 between 64 and 1024');
+    or (Params.Width > 2048)
+    or (Params.Height > 2048)
+    or (Params.Width mod 8 <> 0)
+    or (Params.Height mod 8 <> 0) then
+    raise EArgumentException.Create('Width/height must be multiples of 8 between 64 and 2048');
   if (Params.Steps < 1)
     or (Params.Steps > 1000)
     or IsNan(Params.Guidance)
@@ -131,6 +158,8 @@ begin
   if Inputs.DiffusionFile = '' then
     Inputs.DiffusionFile := TPath.Combine(FModels, 'diffusion_models/qwen_image_2.1_' + Inputs.Suffix + '.safetensors');
   Inputs.VAEFile := TPath.Combine(FModels, 'vae/qwen_image_2.1_vae_bf16.safetensors');
+  Inputs.TextFile := ModelComponentFile(Components.TextEncoder, Inputs.TextFile);
+  Inputs.VAEFile := ModelComponentFile(Components.VAE, Inputs.VAEFile);
   RequireFile(Inputs.TextFile);
   RequireFile(Inputs.DiffusionFile);
   RequireFile(Inputs.VAEFile);
@@ -147,8 +176,8 @@ begin
     RequireFile(Inputs.LoRAs[I].FileName);
   end;
 
-  Inputs.LatentHeight := Params.Height div 16;
-  Inputs.LatentWidth := Params.Width div 16;
+  Inputs.LatentHeight := ((Params.Height + 31) div 32) * 2;
+  Inputs.LatentWidth := ((Params.Width + 31) div 32) * 2;
   Inputs.Sigmas :=
     Q21Schedule(
     Params.Steps,
@@ -157,6 +186,8 @@ begin
   );
   SetLength(Inputs.Images, Length(Params.ReferenceImages));
   MinimumJointRows := Int64(Inputs.LatentHeight) * Inputs.LatentWidth;
+  if MinimumJointRows >= 6144 then
+    raise EArgumentException.Create('Target image exceeds the 6144-token joint budget');
   for var I := 0 to High(Inputs.Images) do
   begin
     RequireFile(Params.ReferenceImages[I]);
@@ -170,6 +201,7 @@ end;
 function TQwen21Pipeline.Generate(const Params: TQwen21Params): TQNNImage;
 var
   Inputs: TGenerationInputs;
+  Full: TQNNImage;
 begin
   try
     Prepare(Params, Inputs);
@@ -177,6 +209,19 @@ begin
       Result := GenerateResident(Params, Inputs)
     else
       Result := GenerateLegacy(Params, Inputs);
+    if (Result.Width <> Params.Width) or (Result.Height <> Params.Height) then
+    begin
+      Full := Result;
+      Result := Default(TQNNImage);
+      try
+        Result := TQNNImage.Create(Params.Width, Params.Height, 4);
+        for var Y := 0 to Params.Height - 1 do
+          Move(Full.Data[NativeInt(Y) * Full.Width * 4],
+            Result.Data[NativeInt(Y) * Params.Width * 4], Params.Width * 4);
+      finally
+        Full.Free;
+      end;
+    end;
   finally
     // Includes partially loaded references when preparation or inference fails.
     for var I := 0 to High(Inputs.Images) do

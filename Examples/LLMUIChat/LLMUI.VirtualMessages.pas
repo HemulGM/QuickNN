@@ -11,11 +11,12 @@ const
 type
   TMessageMetrics = class
   public
-    Id, Source: string;
+    Id, Source, NegativePrompt: string;
     State: TMessageState;
+    ImageCount: Integer;
     Height: Double;
     Width: Single;
-    Measured, ThinkingExpanded: Boolean;
+    Measured, ThinkingExpanded, NegativeExpanded: Boolean;
   end;
 
   // Lightweight metadata only: no frames, Markdown documents or GPU objects.
@@ -28,7 +29,7 @@ type
     FCache: TObjectDictionary<string, TMessageMetrics>;
     FIndices: TDictionary<string, Integer>;
     function GetCount: Integer;
-    function EstimateHeight(const Message: TChatMessage; const Expanded: Boolean): Double;
+    function EstimateHeight(const Message: TChatMessage; const Expanded: Boolean; const NegativeExpanded: Boolean): Double;
     procedure AddHeight(const Index: Integer; const Delta: Double);
     procedure SetHeight(const Index: Integer; const Height: Double);
   public
@@ -36,7 +37,7 @@ type
     destructor Destroy; override;
     procedure Bind(const Chat: TChatSession; const Width: Single);
     procedure MessageChanged(const Id: string; const KeepHeight: Boolean);
-    function Measure(const Index: Integer; const Width, Height: Single; const Expanded: Boolean): Boolean;
+    function Measure(const Index: Integer; const Width, Height: Single; const Expanded: Boolean; const NegativeExpanded: Boolean = False): Boolean;
     function Top(const Index: Integer): Double;
     function TotalHeight: Double;
     function FindRow(const Position: Double): Integer;
@@ -50,7 +51,7 @@ type
 implementation
 
 uses
-  System.Math, QuickNN.Models.LLM.Types, LLMUI.Markdown;
+  System.Math, QuickNN.Models.LLM.Types, LLMUI.Markdown, LLMUI.Controls;
 
 constructor TChatVirtualMessages.Create;
 begin
@@ -71,22 +72,33 @@ begin
   Result := Length(FItems);
 end;
 
-function TChatVirtualMessages.EstimateHeight(const Message: TChatMessage; const Expanded: Boolean): Double;
+function TChatVirtualMessages.EstimateHeight(const Message: TChatMessage; const Expanded: Boolean; const NegativeExpanded: Boolean): Double;
 var
   Source: string;
-  Available: Single;
+  Available, AttachmentWidth: Single;
   Columns, Column, Lines: Integer;
   Parts: TChatMarkdownParts;
 begin
   Source := Message.Text;
   if (Source = '') and (Message.State = msFailed) then
     Source := Message.ErrorText;
-  Available := Max(80, FWidth);
+  Available := Max(80, Min(CHAT_CONTENT_MAX_WIDTH, FWidth));
+  AttachmentWidth := Available;
   Result := 66 + MESSAGE_GAP;
   if Message.Role = lrUser then
   begin
-    Available := Max(80, Available * 0.87 - 82);
+    AttachmentWidth := Max(1, Available - Max(32, Available * 0.13) - 46);
+    Available := Max(80, AttachmentWidth - 36);
     Result := 54 + MESSAGE_GAP;
+    if Message.NegativePrompt.Trim <> '' then
+    begin
+      Result := Result + MESSAGE_NEGATIVE_HEADER_HEIGHT + MESSAGE_NEGATIVE_MARGIN;
+      if NegativeExpanded then
+      begin
+        Source := Source + #10 + Message.NegativePrompt;
+        Result := Result + 18;
+      end;
+    end;
   end
   else
   begin
@@ -119,7 +131,7 @@ begin
     end;
   Result := Result + Max(24, Lines * 23);
   if Length(Message.Images) > 0 then
-    Result := Result + 390;
+    Result := Result + MessageAttachmentHeight(Length(Message.Images), AttachmentWidth) + 10;
 end;
 
 procedure TChatVirtualMessages.Bind(const Chat: TChatSession; const Width: Single);
@@ -143,11 +155,14 @@ begin
       FCache.Add(Item.Id, Item);
     end;
     if not Item.Measured or not SameValue(Item.Width, Width, 0.1)
-      or (Item.Source <> Message.Text) or (Item.State <> Message.State) then
+      or (Item.Source <> Message.Text) or (Item.NegativePrompt <> Message.NegativePrompt) or (Item.State <> Message.State)
+      or (Item.ImageCount <> Length(Message.Images)) then
     begin
       Item.Source := Message.Text;
+      Item.NegativePrompt := Message.NegativePrompt;
       Item.State := Message.State;
-      Item.Height := EstimateHeight(Message, Item.ThinkingExpanded);
+      Item.ImageCount := Length(Message.Images);
+      Item.Height := EstimateHeight(Message, Item.ThinkingExpanded, Item.NegativeExpanded);
       Item.Width := Width;
       Item.Measured := False;
     end;
@@ -196,13 +211,15 @@ begin
   var Item := FItems[I];
   var Message := MessageAt(I);
   Item.Source := Message.Text;
+  Item.NegativePrompt := Message.NegativePrompt;
   Item.State := Message.State;
+  Item.ImageCount := Length(Message.Images);
   Item.Measured := False;
   if not KeepHeight then
-    SetHeight(I, EstimateHeight(Message, Item.ThinkingExpanded));
+    SetHeight(I, EstimateHeight(Message, Item.ThinkingExpanded, Item.NegativeExpanded));
 end;
 
-function TChatVirtualMessages.Measure(const Index: Integer; const Width, Height: Single; const Expanded: Boolean): Boolean;
+function TChatVirtualMessages.Measure(const Index: Integer; const Width, Height: Single; const Expanded, NegativeExpanded: Boolean): Boolean;
 begin
   var Item := FItems[Index];
   Result := not SameValue(Item.Height, Height, 0.1);
@@ -211,6 +228,7 @@ begin
   Item.Width := Width;
   Item.Measured := True;
   Item.ThinkingExpanded := Expanded;
+  Item.NegativeExpanded := NegativeExpanded;
 end;
 
 function TChatVirtualMessages.Top(const Index: Integer): Double;

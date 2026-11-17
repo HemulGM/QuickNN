@@ -9,7 +9,7 @@ layout(push_constant) uniform Params { uint op,n,unused0,unused1,unused2,unused3
 shared float int4Input[256];
 shared float int4Weights[1024];
 shared float reduction[256];
-shared float rotation[256];
+shared float rotation[512];
 shared uint candidates[256];
 shared uint topIds[64];
 shared float topValues[64];
@@ -23,15 +23,20 @@ void main(){
  // Qwen3 MoE router: full FP32 softmax, exact top-k and optional
  // renormalization. IDs precede a separate probability plane; only IDs need a host readback.
  if(p.op==52u){
-  uint experts=p.v1,k=p.v2;float score=lane<experts?av(row*experts+lane):-3.402823466e38;
+  uint experts=p.v1,k=p.v2; float score=-3.402823466e38;
+  for(uint e=lane;e<experts;e+=256u)score=max(score,av(row*experts+e));
   reduction[lane]=score;barrier();
   for(uint stride=128u;stride>0u;stride>>=1u){if(lane<stride)reduction[lane]=max(reduction[lane],reduction[lane+stride]);barrier();}
   float maximum=reduction[0];barrier();
-  float probability=lane<experts?exp(score-maximum):0.0;
+  float probability=0.0;
+  for(uint e=lane;e<experts;e+=256u){float v=exp(av(row*experts+e)-maximum);rotation[e]=v;probability+=v;}
   float denominator=sumGroup(probability);
-  rotation[lane]=lane<experts?probability/denominator:-1.0;barrier();
+  for(uint e=lane;e<experts;e+=256u)rotation[e]/=denominator;
+  barrier();
   for(uint rank=0u;rank<k;++rank){
-   reduction[lane]=rotation[lane];candidates[lane]=lane<experts?lane:0xffffffffu;barrier();
+   float best=-1.0;uint bestId=0xffffffffu;
+   for(uint e=lane;e<experts;e+=256u){float v=rotation[e];if(v>best || (v==best && e<bestId)){best=v;bestId=e;}}
+   reduction[lane]=best;candidates[lane]=bestId;barrier();
    for(uint stride=128u;stride>0u;stride>>=1u){
     if(lane<stride){float other=reduction[lane+stride];uint otherId=candidates[lane+stride];
      if(other>reduction[lane] || (other==reduction[lane] && otherId<candidates[lane])){reduction[lane]=other;candidates[lane]=otherId;}
@@ -45,12 +50,12 @@ void main(){
  }
  // INT4 group-32 matvec: eight independent warp-sized row reductions.
  // Scales and nibbles are decoded in registers; no expanded weight buffer exists.
- if(p.op==55u){
+ if(p.op==55u || p.op==69u){
   uint outputRow=row*8u+lane/32u,localLane=lane%32u;
   vec4 acc0=vec4(0.0),acc1=vec4(0.0);
   if(outputRow<p.v1){
    for(uint j=localLane*8u;j<p.v0;j+=256u){
-    uint base=outputRow*p.v3+(j/32u)*5u;
+    uint stride=p.op==69u?p.v2:p.v3;uint base=outputRow*stride+(j/32u)*5u;
     float scale=uintBitsToFloat(b[base]);uint packed=b[base+1u+(j%32u)/8u];
     vec4 q0=vec4(int(packed&15u)-8,int((packed>>4u)&15u)-8,int((packed>>8u)&15u)-8,int((packed>>12u)&15u)-8);
     vec4 q1=vec4(int((packed>>16u)&15u)-8,int((packed>>20u)&15u)-8,int((packed>>24u)&15u)-8,int(packed>>28u)-8);
@@ -61,7 +66,9 @@ void main(){
   }
   vec4 acc=acc0+acc1;reduction[lane]=(acc.x+acc.y)+(acc.z+acc.w);barrier();
   for(uint stride=16u;stride>0u;stride>>=1u){if(localLane<stride)reduction[lane]+=reduction[lane+stride];barrier();}
-  if(localLane==0u && outputRow<p.v1)put(outputRow,reduction[lane]);
+  if(localLane==0u && outputRow<p.v1){
+   float value=reduction[lane];if(p.op==69u)value=dv(outputRow)+value*cv(p.v3);put(outputRow,value);
+  }
   return;
  }
  // Multi-row expert prefill uses an 8x32 output tile. Dequantization is
@@ -90,6 +97,26 @@ void main(){
   return;
  }
 
+
+ // Decode gate/up together, sharing the input vector and reduction barriers.
+ if(p.op==68u){
+  uint outputRow=row*8u+lane/32u,ll=lane%32u;vec4 g0=vec4(0.0),g1=vec4(0.0),u0=vec4(0.0),u1=vec4(0.0);
+  if(outputRow<p.v1)for(uint j=ll*8u;j<p.v0;j+=256u){
+   uint base=outputRow*p.v2+(j/32u)*5u;
+   float gs=uintBitsToFloat(b[base]),us=uintBitsToFloat(c[base]);
+   uint gp=b[base+1u+(j%32u)/8u],up=c[base+1u+(j%32u)/8u];
+   vec4 gq0=vec4(int(gp&15u)-8,int((gp>>4u)&15u)-8,int((gp>>8u)&15u)-8,int((gp>>12u)&15u)-8);
+   vec4 gq1=vec4(int((gp>>16u)&15u)-8,int((gp>>20u)&15u)-8,int((gp>>24u)&15u)-8,int(gp>>28u)-8);
+   vec4 uq0=vec4(int(up&15u)-8,int((up>>4u)&15u)-8,int((up>>8u)&15u)-8,int((up>>12u)&15u)-8);
+   vec4 uq1=vec4(int((up>>16u)&15u)-8,int((up>>20u)&15u)-8,int((up>>24u)&15u)-8,int(up>>28u)-8);
+   vec4 x0=vec4(av(j),j+1u<p.v0?av(j+1u):0.0,j+2u<p.v0?av(j+2u):0.0,j+3u<p.v0?av(j+3u):0.0);
+   vec4 x1=vec4(j+4u<p.v0?av(j+4u):0.0,j+5u<p.v0?av(j+5u):0.0,j+6u<p.v0?av(j+6u):0.0,j+7u<p.v0?av(j+7u):0.0);
+   g0+=x0*(gq0*gs);g1+=x1*(gq1*gs);u0+=x0*(uq0*us);u1+=x1*(uq1*us);
+  }
+  vec4 g=g0+g1,u=u0+u1;reduction[lane]=(g.x+g.y)+(g.z+g.w);rotation[lane]=(u.x+u.y)+(u.z+u.w);barrier();
+  for(uint stride=16u;stride>0u;stride>>=1u){if(ll<stride){reduction[lane]+=reduction[lane+stride];rotation[lane]+=rotation[lane+stride];}barrier();}
+  if(ll==0u && outputRow<p.v1){float g=reduction[lane];float activated=g>=20.0?g:(g<=-20.0?0.0:g/(1.0+exp(-g)));put(outputRow,activated*rotation[lane]);}return;
+ }
 
  if(id>=p.n)return;
  // Packed dispatch indices are CPU control metadata. Activations and

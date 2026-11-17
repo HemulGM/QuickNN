@@ -10,7 +10,7 @@
 interface
 
 uses
-  System.SysUtils, System.Math, QuickNN.SafeTensors, QuickNN.Common,
+  System.SysUtils, System.Math, System.Generics.Collections, QuickNN.LoRA, QuickNN.Quantization, QuickNN.SafeTensors, QuickNN.Common,
   QuickNN.Models.VAE, QuickNN.Models.Qwen3, System.JSON
 {$IFDEF USE_MULTITHREADING}
     , QuickNN.Threading
@@ -299,9 +299,14 @@ type
     CachedCombinedTOffset: LongInt;
 
     UseMmap, ResidentOnly: Boolean;
+    LoRALinears: TDictionary<string, PQNNLinearWeight>;
     SfFiles: TSafeTensorFiles;
     NumSfFiles: LongInt;
     Eps: Single;
+    procedure AttachLoRAs(const Adapters: TQNNLoRASet);
+    procedure ClearLoRAs;
+    function LoRALinear(const Target: string): PQNNLinearWeight;
+    function ResolveLoRALinear(const Target: string; out Offset: Integer): PQNNLinearWeight;
     class function Parse(const ModelDir: string): TTransformerFlux; static;
     constructor Load(const ModelDir: string; const AUseMMAP: Boolean = True; const resident: Boolean = False);
     function IsLoaded(): Boolean;
@@ -919,10 +924,72 @@ begin
   WorkSeqAlloc := TotalSeq;
 end;
 
+function TTransformerFlux.LoRALinear(const Target: string): PQNNLinearWeight;
+begin
+  Result := nil;
+  if LoRALinears <> nil then LoRALinears.TryGetValue(Target, Result);
+end;
+
+function TTransformerFlux.ResolveLoRALinear(const Target: string; out Offset: Integer): PQNNLinearWeight;
+begin
+  Offset := 0;
+  Result := LoRALinear(Target);
+  if Result <> nil then Exit;
+  var Tensor := SfFiles.GetTensor(Target + '.weight');
+  if (Tensor = nil) or (Tensor.Ndim <> 2) then Exit;
+  // These are exactly the projection sites covered by the resident path below.
+  var Allowed := (Target = 'x_embedder') or (Target = 'context_embedder')
+    or (Target = 'time_guidance_embed.timestep_embedder.linear_1')
+    or (Target = 'time_guidance_embed.timestep_embedder.linear_2')
+    or (Target = 'double_stream_modulation_img.linear') or (Target = 'double_stream_modulation_txt.linear')
+    or (Target = 'single_stream_modulation.linear') or (Target = 'norm_out.linear') or (Target = 'proj_out');
+  var Parts := Target.Split(['.']); var Index: Integer;
+  if (Length(Parts) >= 4) and TryStrToInt(Parts[1], Index) then
+  begin
+    var Suffix := string.Join('.', Parts, 2, Length(Parts) - 2);
+    if (Parts[0] = 'transformer_blocks') and (Index >= 0) and (Index < NumDoubleLayers) then
+      Allowed := (Suffix = 'attn.to_q') or (Suffix = 'attn.to_k') or (Suffix = 'attn.to_v')
+        or (Suffix = 'attn.to_out.0') or (Suffix = 'attn.add_q_proj') or (Suffix = 'attn.add_k_proj')
+        or (Suffix = 'attn.add_v_proj') or (Suffix = 'attn.to_add_out')
+        or (Suffix = 'ff.linear_in') or (Suffix = 'ff.linear_out')
+        or (Suffix = 'ff_context.linear_in') or (Suffix = 'ff_context.linear_out')
+    else if (Parts[0] = 'single_transformer_blocks') and (Index >= 0) and (Index < NumSingleLayers) then
+      Allowed := (Suffix = 'attn.to_qkv_mlp_proj') or (Suffix = 'attn.to_out');
+  end;
+  if not Allowed then Exit;
+  New(Result);
+  try
+    Result.Load(SfFiles, Target);
+    LoRALinears.Add(Target, Result);
+  except Result.Free; Dispose(Result); raise end;
+end;
+
+procedure TTransformerFlux.ClearLoRAs;
+begin
+  if LoRALinears = nil then Exit;
+  for var Weight in LoRALinears.Values do begin Weight.Free; Dispose(Weight) end;
+  LoRALinears.Free;
+  LoRALinears := nil;
+end;
+
+procedure TTransformerFlux.AttachLoRAs(const Adapters: TQNNLoRASet);
+begin
+  ClearLoRAs;
+  if (Adapters = nil) or (Adapters.ModuleCount = 0) then Exit;
+  if not ResidentOnly then raise ENotSupportedException.Create('FLUX.2 LoRA requires resident GPU execution');
+  LoRALinears := TDictionary<string, PQNNLinearWeight>.Create;
+  var Model := @Self;
+  try
+    Adapters.Attach(function(const Target: string; out Offset: Integer): PQNNLinearWeight
+      begin Result := Model^.ResolveLoRALinear(Target, Offset) end);
+  except ClearLoRAs; raise end;
+end;
+
 procedure TTransformerFlux.Free();
 var
   I: LongInt;
 begin
+  ClearLoRAs;
   QNNGPUClearWeightCache;
   ImgInWeight.Free;
   TxtInWeight.Free;

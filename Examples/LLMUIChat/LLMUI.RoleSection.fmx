@@ -1,0 +1,101 @@
+object FrameRoleSection: TFrameRoleSection
+  Size.Width = 278.000000000000000000
+  Size.Height = 80.000000000000000000
+  Size.PlatformDefault = False
+  TabOrder = 0
+  object LayoutHeader: TLayout
+    Align = Top
+    Size.Width = 278.000000000000000000
+    Size.Height = 64.000000000000000000
+    Size.PlatformDefault = False
+    object ButtonToggle: TButton
+      Align = Client
+      Size.Width = 278.000000000000000000
+      Size.Height = 64.000000000000000000
+      Size.PlatformDefault = False
+      StyleLookup = 'chatghostbutton'
+      ParentShowHint = False
+      ShowHint = True
+      OnClick = ButtonToggleClick
+      object LayoutChevron: TLayout
+        Align = Right
+        Position.X = 250.000000000000000000
+        Size.Width = 28.000000000000000000
+        Size.Height = 64.000000000000000000
+        Size.PlatformDefault = False
+        object PathChevron: TPath
+          Align = Center
+          Data.Path = {
+            1700000000000000E17A78413D0A874002000000C5287D410169904002000000
+            C5287D41FF969F4002000000E17A7841C2F5A84001000000C3F50C4100004041
+            01000000E27A78418FC2954102000000C7B07B4179419741020000001A037D41
+            2A8299410200000023ED7B4164A29B41020000002CD77A419EC29D4102000000
+            3F857741956B9F4102000000CA44734191F69F410200000055046F418D81A041
+            02000000F4826A4162D89F410200000020856741703D9E4101000000400AE740
+            E07A4841020000007AAEDD407FCB43410200000079AEDD407F343C4102000000
+            400AE7401E85374101000000208567413C0A87400200000081346C41EB5C7B40
+            0200000081CB7341EB5C7B4002000000E27A78413C0A8740}
+          Fill.Color = xFF7CD5B7
+          HitTest = False
+          Size.Width = 16.000000000000000000
+          Size.Height = 16.000000000000000000
+          Size.PlatformDefault = False
+          Stroke.Kind = None
+          WrapMode = Fit
+        end
+      end
+      object LayoutCaption: TLayout
+        Align = Client
+        Padding.Left = 6.000000000000000000
+        Padding.Top = 8.000000000000000000
+        Padding.Bottom = 8.000000000000000000
+        Size.Width = 250.000000000000000000
+        Size.Height = 64.000000000000000000
+        Size.PlatformDefault = False
+        object LabelTitle: TLabel
+          Align = Top
+          StyledSettings = []
+          Position.X = 6.000000000000000000
+          Position.Y = 8.000000000000000000
+          Size.Width = 244.000000000000000000
+          Size.Height = 24.000000000000000000
+          Size.PlatformDefault = False
+          TextSettings.Font.Size = 15.000000000000000000
+          TextSettings.FontColor = xFFE5EDEC
+          Text = #1056#1086#1083#1100
+        end
+        object LabelSummary: TLabel
+          Align = Top
+          StyledSettings = []
+          Position.X = 6.000000000000000000
+          Position.Y = 32.000000000000000000
+          Size.Width = 244.000000000000000000
+          Size.Height = 24.000000000000000000
+          Size.PlatformDefault = False
+          TextSettings.Font.Size = 13.000000000000000000
+          TextSettings.FontColor = xFFB1C2C0
+          TextSettings.WordWrap = False
+          Text = #1052#1086#1076#1077#1083#1100' '#1085#1077' '#1074#1099#1073#1088#1072#1085#1072
+        end
+      end
+    end
+  end
+  object RectangleDivider: TRectangle
+    Align = Bottom
+    Fill.Color = xFF273638
+    HitTest = False
+    Position.Y = 79.000000000000000000
+    Size.Width = 278.000000000000000000
+    Size.Height = 1.000000000000000000
+    Size.PlatformDefault = False
+    Stroke.Kind = None
+  end
+  object LayoutBody: TLayout
+    Align = Top
+    Padding.Bottom = 16.000000000000000000
+    Position.Y = 64.000000000000000000
+    Size.Width = 278.000000000000000000
+    Size.Height = 15.000000000000000000
+    Size.PlatformDefault = False
+  end
+end

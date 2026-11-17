@@ -5,16 +5,90 @@ interface
 uses
   System.SysUtils, System.Types, System.UITypes, System.Classes,
   System.Generics.Collections, FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics,
-  FMX.Dialogs, FMX.Filter.Effects, FMX.Layouts, FMX.StdCtrls, FMX.Objects,
-  FMX.TabControl, FMX.Edit, FMX.EditBox, FMX.NumberBox, FMX.ListBox,
+  FMX.Dialogs, FMX.Menus, FMX.Filter.Effects, FMX.Layouts, FMX.StdCtrls,
+  FMX.Objects, FMX.TabControl, FMX.Edit, FMX.EditBox, FMX.NumberBox, FMX.ListBox,
   FMX.Memo.Types, FMX.TextLayout, FMX.ScrollBox, FMX.Memo,
   FMX.Controls.Presentation, LLMUI.Data, LLMUI.Engine, LLMUI.Images,
   LLMUI.Attachments, LLMUI.Attachment, LLMUI.Message, LLMUI.Entry,
-  LLMUI.VirtualMessages, LLMUI.ImageViewer;
+  LLMUI.VirtualMessages, LLMUI.ImageViewer, LLMUI.ModelDiscovery,
+  LLMUI.RoleSection;
 
 type
-  TFormMain = class(TForm)
+  TFormMain = class(TForm, IChatImageReferenceHost)
+    PopupMenuImageReference: TPopupMenu;
+    MenuItemUseImageReference: TMenuItem;
+    MenuItemCopyAttachment: TMenuItem;
     FrameImageViewer: TFrameImageViewer;
+    LayoutVisionContext: TLayout;
+    LabelVisionContext: TLabel;
+    NumberBoxVisionContext: TNumberBox;
+    LayoutVisionMaxTokens: TLayout;
+    LabelVisionMaxTokens: TLabel;
+    NumberBoxVisionMaxTokens: TNumberBox;
+    LayoutVisionTemperature: TLayout;
+    LabelVisionTemperature: TLabel;
+    NumberBoxVisionTemperature: TNumberBox;
+    LayoutVisionInstruction: TLayout;
+    LabelVisionInstruction: TLabel;
+    MemoVisionInstruction: TMemo;
+    ButtonBrowseModelFolder: TButton;
+    FrameRoleSectionConversation: TFrameRoleSection;
+    FrameRoleSectionVision: TFrameRoleSection;
+    LabelVisionRoleHint: TLabel;
+    FrameRoleSectionImages: TFrameRoleSection;
+    ComboBoxImageAdapter: TComboBox;
+    LabelWizardStep: TLabel;
+    LayoutWizardHeader: TLayout;
+    LayoutWizardFooter: TLayout;
+    LayoutWizardNavigation: TLayout;
+    LayoutWizardSource: TLayout;
+    LabelWizardSourceHint: TLabel;
+    LabelModelCapabilities: TLabel;
+    LayoutWizardFiles: TLayout;
+    LayoutModelRoot: TLayout;
+    LabelModelRoot: TLabel;
+    LayoutModelRootInput: TLayout;
+    ButtonBrowseModelRoot: TButton;
+    EditModelRoot: TEdit;
+    LayoutModelTextEncoder: TLayout;
+    LabelModelTextEncoder: TLabel;
+    LayoutModelTextEncoderInput: TLayout;
+    ButtonBrowseModelTextEncoder: TButton;
+    EditModelTextEncoder: TEdit;
+    LayoutModelTextEncoder2: TLayout;
+    LabelModelTextEncoder2: TLabel;
+    LayoutModelTextEncoder2Input: TLayout;
+    ButtonBrowseModelTextEncoder2: TButton;
+    EditModelTextEncoder2: TEdit;
+    LayoutModelTokenizer: TLayout;
+    LabelModelTokenizer: TLabel;
+    LayoutModelTokenizerInput: TLayout;
+    ButtonBrowseModelTokenizer: TButton;
+    EditModelTokenizer: TEdit;
+    LayoutModelTokenizer2: TLayout;
+    LabelModelTokenizer2: TLabel;
+    LayoutModelTokenizer2Input: TLayout;
+    ButtonBrowseModelTokenizer2: TButton;
+    EditModelTokenizer2: TEdit;
+    LayoutModelVAE: TLayout;
+    LabelModelVAE: TLabel;
+    LayoutModelVAEInput: TLayout;
+    ButtonBrowseModelVAE: TButton;
+    EditModelVAE: TEdit;
+    LayoutModelAdapters: TLayout;
+    LabelModelAdapters: TLabel;
+    ListBoxModelAdapters: TListBox;
+    LayoutModelAdapterActions: TLayout;
+    ButtonAddModelAdapter: TButton;
+    ButtonRemoveModelAdapter: TButton;
+    LayoutWizardDefaults: TLayout;
+    LabelWizardSummary: TLabel;
+    ButtonWizardNext: TButton;
+    ButtonWizardBack: TButton;
+    OpenDialogModelSource: TOpenDialog;
+    OpenDialogModelComponent: TOpenDialog;
+    OpenDialogModelAdapters: TOpenDialog;
+    TimerModelInspect: TTimer;
     LayoutModelTokenizerSlot: TLayout;
     LayoutModelCheckpointSlot: TLayout;
     LayoutModelImageOptionsSlot: TLayout;
@@ -25,11 +99,7 @@ type
     ButtonBrowseCheckpoint: TButton;
     PathBrowseCheckpointIcon: TPath;
     OpenDialogModelCheckpoint: TOpenDialog;
-    ComboBoxCatalogKind: TComboBox;
     LayoutImageModelDefaults: TLayout;
-    LayoutImageModelKind: TLayout;
-    LabelImageModelKind: TLabel;
-    ComboBoxImageModelKind: TComboBox;
     CheckBoxImageModelInt8: TCheckBox;
     LayoutImageModelDimensions: TLayout;
     LayoutImageModelSampling: TLayout;
@@ -80,8 +150,17 @@ type
     NumberBoxImageGuidance: TNumberBox;
     LabelImageGuidance: TLabel;
     LayoutImageGuidance: TLayout;
+    LayoutImageLoRA: TLayout;
+    LabelImageLoRA: TLabel;
+    EditImageLoRAFile: TEdit;
+    LayoutImageLoRAActions: TLayout;
+    ButtonBrowseImageLoRA: TButton;
+    ButtonClearImageLoRA: TButton;
+    LayoutImageLoRAStrength: TLayout;
+    LabelImageLoRAStrength: TLabel;
+    NumberBoxImageLoRAStrength: TNumberBox;
+    OpenDialogImageLoRA: TOpenDialog;
     LayoutImagePreferences: TLayout;
-    LabelImageWorkflow: TLabel;
     ComboBoxComposerMode: TComboBox;
     RectangleCanvas: TRectangle;
     LayoutRoot: TLayout;
@@ -218,6 +297,7 @@ type
     LayoutComposerMode: TLayout;
     LabelSendHint: TLabel;
     ButtonSend: TButton;
+    SpeedButtonNegativePrompt: TSpeedButton;
     PathSendIcon: TPath;
     PathStopIcon: TPath;
     MemoComposer: TMemo;
@@ -226,6 +306,7 @@ type
     PathUnloadModelIcon: TPath;
     LabelMemory: TLabel;
     LabelStatus: TLabel;
+    LayoutStatusContent: TLayout;
     VertScrollBoxMessages: TVertScrollBox;
     LayoutMessageItems: TLayout;
     LayoutMessagesBefore: TLayout;
@@ -288,8 +369,23 @@ type
     PathOpenStorageIcon: TPath;
     SaveDialogExport: TSaveDialog;
     TimerUI: TTimer;
+    procedure BrowseModelFolder(Sender: TObject);
+    procedure ModelSourceChanged(Sender: TObject);
+    procedure ModelBundleChanged(Sender: TObject);
+    procedure ModelInspectTimer(Sender: TObject);
+    procedure WizardNextClick(Sender: TObject);
+    procedure WizardBackClick(Sender: TObject);
+    procedure WizardFilesChanged(Sender: TObject);
+    procedure BrowseModelComponent(Sender: TObject);
+    procedure AddModelAdapter(Sender: TObject);
+    procedure RemoveModelAdapter(Sender: TObject);
+    procedure ImageAdapterChanged(Sender: TObject);
+    procedure RoleExpandedChanged(Sender: TObject);
     procedure ButtonAttachClick(Sender: TObject);
     procedure ButtonBrowseImageModelClick(Sender: TObject);
+    procedure ImageReferenceMenuPopup(Sender: TObject);
+    procedure UseImageReferenceClick(Sender: TObject);
+    procedure CopyAttachmentClick(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
     procedure FormResize(Sender: TObject);
@@ -303,6 +399,7 @@ type
     procedure EditChatTitleExit(Sender: TObject);
     procedure PreferencesChanged(Sender: TObject);
     procedure ComposerModeChanged(Sender: TObject);
+    procedure NegativePromptClick(Sender: TObject);
     procedure MemoComposerResize(Sender: TObject);
     procedure MemoComposerChangeTracking(Sender: TObject);
     procedure MemoComposerKeyDown(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
@@ -312,10 +409,10 @@ type
     procedure ButtonUnloadModelClick(Sender: TObject);
     procedure ButtonSuggestionClick(Sender: TObject);
     procedure ButtonNewModelClick(Sender: TObject);
+    procedure ButtonBrowseImageLoRAClick(Sender: TObject);
+    procedure ButtonClearImageLoRAClick(Sender: TObject);
     procedure ButtonBrowseCheckpointClick(Sender: TObject);
     procedure ImageCheckpointChanged(Sender: TObject);
-    procedure CatalogKindChanged(Sender: TObject);
-    procedure ImageModelKindChanged(Sender: TObject);
     procedure ButtonSaveModelClick(Sender: TObject);
     procedure ButtonRemoveModelClick(Sender: TObject);
     procedure ButtonBrowseModelClick(Sender: TObject);
@@ -329,6 +426,19 @@ type
     procedure LayoutComposerDockResize(Sender: TObject);
     procedure LayoutMessageItemsResize(Sender: TObject);
   private
+    FEditingNegativePrompt: Boolean;
+    FReferenceDragPending, FReferenceDragActive: Boolean;
+    FReferenceDragChatId, FReferenceDragPath: string;
+    FReferenceDragTicket: TObject;
+    FReferenceDragScrollAt: UInt64;
+    FReferenceMenuImage: TChatImage;
+    FReferenceMenuChatId: string;
+    FReferenceMenuPosition: TPointF;
+    FReferenceMenuPending: Boolean;
+    FDetectedModel: TDetectedModel;
+    FWizardStep: Integer;
+    FAdapterFiles: TList<string>;
+    FModelInspectPending: Boolean;
     FStore: TChatStore;
     FEngine: TInferenceWorker;
     FFrames: TDictionary<string, TFrameMessage>;
@@ -352,6 +462,14 @@ type
     FComposerTextLayout: TTextLayout;
     FUpdatingComposerHeight: Boolean;
     procedure UpdateComposerHeight;
+    procedure BeginDraftImageDrag(Sender: TObject);
+    procedure StartDraftImageDrag;
+    function ReferenceDropIndex(const Data: TDragObject; const Point: TPointF): Integer;
+    procedure HighlightReferenceDrop(const Index: Integer);
+    procedure MoveDraftImage(const TargetIndex: Integer);
+    procedure SetNegativePromptEditing(const Value: Boolean);
+    procedure UpdateNegativePromptState;
+    function ComposerPromptText: string;
     procedure RenderDraftImages;
     procedure RemoveDraftImage(Sender: TObject);
     procedure AddImportedImage(const Image: TChatImage);
@@ -374,6 +492,10 @@ type
     procedure SelectModelEditor(const Id: string);
     procedure SaveImageModel;
     procedure UpdateImageEditor;
+    procedure AnalyzeModelSource(const UseBundle: Boolean = False);
+    procedure SetWizardStep(const Value: Integer);
+    procedure RecalculateSettings;
+    function WizardImageSettings: TChatImageSettings;
     procedure Send(const Retry: Boolean; const ContinueAnswer: Boolean = False);
     function CanContinueMessage(const Chat: TChatSession; const Message: TChatMessage): Boolean;
     procedure ContinueResponse(Sender: TObject);
@@ -397,6 +519,8 @@ type
     procedure ShowStatus(const Text: string; const IsError: Boolean = False);
     procedure SetActivePage(const Settings: Boolean);
   public
+    procedure UseImageAsReference(const Image: TChatImage);
+    procedure ShowImageReferenceMenu(const Image: TChatImage; const ScreenPosition: TPointF);
     procedure AttachImageFiles(const Files: TArray<string>);
     function PasteImageAttachments: Boolean;
     procedure DragEnter(const Data: TDragObject; const Point: TPointF); override;
@@ -415,9 +539,10 @@ var
 implementation
 
 uses
-  System.Math, System.IOUtils, System.Diagnostics, Winapi.Windows,
-  Winapi.ShellAPI, FMX.Platform, FMX.Platform.Win, LLMUI.Theme, LLMUI.Dialogs,
-  LLMUI.Controls, QuickNN.Models.LLM.Types, LLMUI.Context.Types, LLMUI.Context;
+  System.Math, System.Rtti, QuickNN.ModelFiles, System.IOUtils,
+  System.Diagnostics, Winapi.Windows, Winapi.ShellAPI, FMX.Platform,
+  FMX.Platform.Win, LLMUI.Theme, LLMUI.Dialogs, LLMUI.Controls,
+  QuickNN.Models.LLM.Types, LLMUI.Context.Types, LLMUI.Context;
 
 {$R *.fmx}
 
@@ -510,6 +635,11 @@ begin
   FFirstVisibleMessage := -1;
   FLastVisibleMessage := -1;
   FModelIds := TList<string>.Create;
+  FAdapterFiles := TList<string>.Create;
+  FrameRoleSectionConversation.OnExpandedChanged := RoleExpandedChanged;
+  FrameRoleSectionVision.OnExpandedChanged := RoleExpandedChanged;
+  FrameRoleSectionImages.OnExpandedChanged := RoleExpandedChanged;
+  ListBoxModelAdapters.DefaultItemStyles.ItemStyle := 'chatcomboitem';
   FVisionModelIds := TList<string>.Create;
   FImageModelIds := TList<string>.Create;
   FStore := TChatStore.Create(DefaultStorePath);
@@ -558,8 +688,14 @@ end;
 
 procedure TFormMain.FormDestroy(Sender: TObject);
 begin
+  FReferenceDragPending := False;
+  FReferenceMenuPending := False;
+  if MenuItemUseImageReference.View <> nil then
+    MenuItemUseImageReference.View.Loop := False;
+  FReferenceMenuImage := Default(TChatImage);
   TimerUI.Enabled := False;
   TimerMessages.Enabled := False;
+  TimerModelInspect.Enabled := False;
   if FReady then
     SaveState;
   FReady := False;
@@ -569,12 +705,19 @@ begin
   FImageModelIds.Free;
   FVisionModelIds.Free;
   FModelIds.Free;
+  FAdapterFiles.Free;
   FStore.Free;
   FComposerTextLayout.Free;
 end;
 
 procedure TFormMain.FormCloseQuery(Sender: TObject; var CanClose: Boolean);
 begin
+  // OLE is pumping the form's timer; keep it alive until the drag unwinds.
+  if FReferenceDragActive then
+  begin
+    CanClose := False;
+    Exit
+  end;
   if FReady then
     EditChatTitleExit(Self);
   CanClose := not FReady or (FJobId = '');
@@ -726,6 +869,7 @@ begin
     FUpdating := True;
     try
       EditChatTitle.Text := Chat.Title;
+      FEditingNegativePrompt := False;
       MemoComposer.Text := Chat.Draft;
     finally
       FUpdating := False;
@@ -776,12 +920,16 @@ begin
     ComboBoxImageModel.Items.Clear;
     for var ImageModel in FStore.ImageModels do
     begin
+      if not ImageModel.Available then
+        Continue;
       ComboBoxImageModel.Items.Add(ImageModel.Name);
       FImageModelIds.Add(ImageModel.Id);
     end;
     FModelIds.Clear;
     for var Model in FStore.Models do
     begin
+      if not Model.Available then
+        Continue;
       ComboBoxModel.Items.Add(Model.Name);
       if Model.Available and Model.SupportsVision then
       begin
@@ -809,6 +957,10 @@ begin
   try
     ComboBoxContext.ItemIndex := ComboBoxContext.Items.IndexOf(Chat.Preferences.Context.ToString);
     TrackBarTemperature.Value := Chat.Preferences.Generation.Temperature;
+    NumberBoxVisionContext.Value := Chat.Preferences.VisionContext;
+    NumberBoxVisionMaxTokens.Value := Chat.Preferences.VisionMaxTokens;
+    NumberBoxVisionTemperature.Value := Chat.Preferences.VisionTemperature;
+    MemoVisionInstruction.Text := Chat.Preferences.VisionInstruction;
     NumberBoxMaxTokens.Value := Chat.Preferences.Generation.MaxNewTokens;
     NumberBoxHardMaxTokens.Value := Chat.Preferences.Generation.HardMaxNewTokens;
     SwitchAutoContinue.IsChecked := Chat.Preferences.Generation.AutoContinue;
@@ -831,21 +983,55 @@ begin
     EditImageDirectory.Text := '';
     if ImageModel <> nil then
       EditImageDirectory.Text := ImageModel.Settings.Directory;
+    NumberBoxImageWidth.Max := 1024;
+    NumberBoxImageHeight.Max := 1024;
     NumberBoxImageWidth.VertIncrement := 16;
     NumberBoxImageHeight.VertIncrement := 16;
     if (ImageModel <> nil) and (ImageModel.Settings.Kind = ipQwenImage) then
     begin
-      NumberBoxImageWidth.VertIncrement := 32;
-      NumberBoxImageHeight.VertIncrement := 32;
+      NumberBoxImageWidth.Max := 2048;
+      NumberBoxImageHeight.Max := 2048;
+      NumberBoxImageWidth.VertIncrement := 8;
+      NumberBoxImageHeight.VertIncrement := 8;
     end;
+    if (ImageModel <> nil) and (ImageModel.Settings.Kind = ipFlux1) then
+    begin
+      NumberBoxImageWidth.Max := 2048;
+      NumberBoxImageHeight.Max := 2048
+    end;
+    LayoutImageLoRA.Visible := (ImageModel <> nil) and ImageSupportsLoRA(ImageModel.Settings);
+    EditImageLoRAFile.Text := Chat.Preferences.ImageGeneration.LoRAFile;
+    EditImageLoRAFile.Hint := EditImageLoRAFile.Text;
+    NumberBoxImageLoRAStrength.Value := Chat.Preferences.ImageGeneration.LoRAStrength;
+    ComboBoxImageAdapter.Items.Clear;
+    FAdapterFiles.Clear;
+    ComboBoxImageAdapter.Items.Add('Без адаптера');
+    FAdapterFiles.Add('');
+    if ImageModel <> nil then
+      for var FileName in ImageModel.Settings.Adapters + FindModelAdapters(ImageModel.Settings.Directory) do
+        if FAdapterFiles.IndexOf(FileName) < 0 then
+        begin
+          ComboBoxImageAdapter.Items.Add(ChangeFileExt(ExtractFileName(FileName), ''));
+          FAdapterFiles.Add(FileName)
+        end;
+    var AdapterIndex := FAdapterFiles.IndexOf(EditImageLoRAFile.Text);
+    if (AdapterIndex < 0) and (EditImageLoRAFile.Text <> '') then
+    begin
+      ComboBoxImageAdapter.Items.Add(ChangeFileExt(ExtractFileName(EditImageLoRAFile.Text), ''));
+      FAdapterFiles.Add(EditImageLoRAFile.Text);
+      AdapterIndex := FAdapterFiles.Count - 1;
+    end;
+    ComboBoxImageAdapter.ItemIndex := Max(0, AdapterIndex);
+    ConfigureComboBox(ComboBoxImageAdapter);
+    FrameRoleSectionConversation.Expanded := Chat.Preferences.ChatSettingsExpanded;
+    FrameRoleSectionVision.Expanded := Chat.Preferences.VisionSettingsExpanded;
+    FrameRoleSectionImages.Expanded := Chat.Preferences.ImageSettingsExpanded;
     NumberBoxImageWidth.Value := Chat.Preferences.ImageGeneration.Width;
     NumberBoxImageHeight.Value := Chat.Preferences.ImageGeneration.Height;
     NumberBoxImageSteps.Value := Chat.Preferences.ImageGeneration.Steps;
     NumberBoxImageSeed.Value := Chat.Preferences.ImageGeneration.Seed;
     NumberBoxImageGuidance.Value := Chat.Preferences.ImageGeneration.Guidance;
     ComboBoxImageAnalysis.ItemIndex := FVisionModelIds.IndexOf(Chat.Preferences.ImageGeneration.AnalysisModelId);
-    if (ComboBoxImageAnalysis.ItemIndex < 0) and (FVisionModelIds.Count > 0) then
-      ComboBoxImageAnalysis.ItemIndex := 0;
     ConfigureComboBox(ComboBoxImageAnalysis);
     ConfigureComboBox(ComboBoxImageModel);
     ConfigureComboBox(ComboBoxComposerMode);
@@ -856,6 +1042,7 @@ begin
   finally
     FUpdating := False
   end;
+  RecalculateSettings;
   UpdateKVLabel;
 end;
 
@@ -869,11 +1056,44 @@ begin
   Chat := ActiveChat;
   if Chat = nil then
     Exit;
+  if (Sender = ComboBoxImageModel) and (Chat.Preferences.ImageGeneration.NegativePrompt <> '') then
+  begin
+    var Target: TImageModelEntry := nil;
+    if (ComboBoxImageModel.ItemIndex >= 0) and (ComboBoxImageModel.ItemIndex < FImageModelIds.Count) then
+      Target := FStore.FindImageModel(FImageModelIds[ComboBoxImageModel.ItemIndex]);
+    if (Target = nil) or not Target.SupportsNegativePrompt then
+    begin
+      var Name := 'Не выбрана модель';
+      if Target <> nil then
+        Name := Target.Name;
+      var Accepted := TChatDialogs.Confirm(Self, 'Сбросить негативный промпт?',
+        'Модель «' + Name + '» не поддерживает негативный промпт. При смене модели он будет сброшен. Основной промпт и вложения сохранятся.',
+        'Сбросить и сменить');
+      if not FReady or (ActiveChat <> Chat) then
+        Exit;
+      if not Accepted then
+      begin
+        FUpdating := True;
+        try
+          ComboBoxImageModel.ItemIndex := FImageModelIds.IndexOf(Chat.Preferences.ImageGeneration.ModelId)
+        finally
+          FUpdating := False
+        end;
+        Exit;
+      end;
+      SetNegativePromptEditing(False);
+      Chat.Preferences.ImageGeneration.NegativePrompt := '';
+    end;
+  end;
   if (ComboBoxModel.ItemIndex >= 0) and (ComboBoxModel.ItemIndex < FModelIds.Count) then
     Chat.Preferences.ModelId := FModelIds[ComboBoxModel.ItemIndex];
   if ComboBoxContext.ItemIndex >= 0 then
     Chat.Preferences.Context := StrToIntDef(ComboBoxContext.Selected.Text, 2048);
   Chat.Preferences.Generation.Temperature := TrackBarTemperature.Value;
+  Chat.Preferences.VisionContext := Round(NumberBoxVisionContext.Value);
+  Chat.Preferences.VisionMaxTokens := Round(NumberBoxVisionMaxTokens.Value);
+  Chat.Preferences.VisionTemperature := NumberBoxVisionTemperature.Value;
+  Chat.Preferences.VisionInstruction := MemoVisionInstruction.Text;
   Chat.Preferences.Generation.MaxNewTokens := Round(NumberBoxMaxTokens.Value);
   Chat.Preferences.Generation.HardMaxNewTokens :=
     Max(Chat.Preferences.Generation.MaxNewTokens, Round(NumberBoxHardMaxTokens.Value));
@@ -905,29 +1125,40 @@ begin
       if ImageModel <> nil then
       begin
         var AnalysisId := Chat.Preferences.ImageGeneration.AnalysisModelId;
+        var NegativePrompt := Chat.Preferences.ImageGeneration.NegativePrompt;
         Chat.Preferences.ImageGeneration := ImageModel.Resolve(ImageModel.Settings);
         Chat.Preferences.ImageGeneration.AnalysisModelId := AnalysisId;
+        Chat.Preferences.ImageGeneration.NegativePrompt := NegativePrompt;
         LoadPreferences;
       end;
     end
     else
       Chat.Preferences.ImageGeneration.ModelId := '';
   end;
-  Chat.Preferences.ImageGeneration.Width := Round(NumberBoxImageWidth.Value) div 16 * 16;
-  Chat.Preferences.ImageGeneration.Height := Round(NumberBoxImageHeight.Value) div 16 * 16;
+  var ImageStep := 16;
+  if Chat.Preferences.ImageGeneration.Kind = ipQwenImage then
+    ImageStep := 8;
+  Chat.Preferences.ImageGeneration.Width := Round(NumberBoxImageWidth.Value) div ImageStep * ImageStep;
+  Chat.Preferences.ImageGeneration.Height := Round(NumberBoxImageHeight.Value) div ImageStep * ImageStep;
+  Chat.Preferences.ImageGeneration.LoRAFile := EditImageLoRAFile.Text;
+  Chat.Preferences.ImageGeneration.LoRAStrength := NumberBoxImageLoRAStrength.Value;
   Chat.Preferences.ImageGeneration.Steps := Round(NumberBoxImageSteps.Value);
   Chat.Preferences.ImageGeneration.Seed := Round(NumberBoxImageSeed.Value);
   Chat.Preferences.ImageGeneration.Guidance := NumberBoxImageGuidance.Value;
   if (ComboBoxImageAnalysis.ItemIndex >= 0) and (ComboBoxImageAnalysis.ItemIndex < FVisionModelIds.Count) then
-    Chat.Preferences.ImageGeneration.AnalysisModelId := FVisionModelIds[ComboBoxImageAnalysis.ItemIndex];
-  Chat.Preferences.Int4Experts := ComboBoxPrecision.ItemIndex = 0;
+    Chat.Preferences.ImageGeneration.AnalysisModelId := FVisionModelIds[ComboBoxImageAnalysis.ItemIndex]
+  else if Sender = ComboBoxImageAnalysis then
+    Chat.Preferences.ImageGeneration.AnalysisModelId := '';
   Model := FStore.FindModel(Chat.Preferences.ModelId);
+  if (Sender = ComboBoxPrecision) and ((Model = nil) or not Model.IsGGUF) then
+    Chat.Preferences.Int4Experts := ComboBoxPrecision.ItemIndex = 0;
   if (Model <> nil) and Model.SupportsThinking then
     Chat.Preferences.Generation.EnableThinking := CheckBoxThinking.IsChecked
   else
     Chat.Preferences.Generation.EnableThinking := False;
   UpdateKVLabel;
   UpdateAvailability;
+  RecalculateSettings;
   MarkDirty;
 end;
 
@@ -991,7 +1222,18 @@ begin
     try
       CheckBoxThinking.Enabled := Model.SupportsThinking;
       CheckBoxThinking.IsChecked := Chat.Preferences.Generation.EnableThinking and Model.SupportsThinking;
-      ComboBoxPrecision.Enabled := (Model.ModelType = 'qwen3_moe') or (Model.ModelType = 'qwen3_5');
+      ComboBoxPrecision.Enabled := not Model.IsGGUF and ((Model.ModelType = 'qwen3_moe') or (Model.ModelType = 'qwen3_5'));
+      ComboBoxPrecision.Items[0] := 'INT4 · меньше памяти';
+      ComboBoxPrecision.Items[1] := 'Исходная точность';
+      if Model.IsGGUF then
+      begin
+        ComboBoxPrecision.Items[1] := 'GGUF · квантование файла';
+        ComboBoxPrecision.ItemIndex := 1;
+      end
+      else if Chat.Preferences.Int4Experts then
+        ComboBoxPrecision.ItemIndex := 0
+      else
+        ComboBoxPrecision.ItemIndex := 1;
     finally
       FUpdating := False
     end;
@@ -1006,6 +1248,7 @@ begin
   if not FReady then
     Exit;
   Chat := ActiveChat;
+  UpdateNegativePromptState;
   Model := nil;
   if Chat <> nil then
     Model := FStore.FindModel(Chat.Preferences.ModelId);
@@ -1019,12 +1262,22 @@ begin
   else
   begin
     var ModelReady := (Model <> nil) and Model.Available;
-    if (Chat <> nil) and (ComboBoxComposerMode.ItemIndex = 1) and (Length(Chat.DraftImages) = 0) then
+    if (Chat <> nil) and (ComboBoxComposerMode.ItemIndex = 1) then
     begin
       var ImageModel := FStore.FindImageModel(Chat.Preferences.ImageGeneration.ModelId);
       ModelReady := (ImageModel <> nil) and ImageModel.Available;
+      if ModelReady and (Length(Chat.DraftImages) > 0) and not ImageSupportsReferences(ImageModel.Settings.Kind) then
+      begin
+        var VisionModel := FStore.FindModel(Chat.Preferences.ImageGeneration.AnalysisModelId);
+        ModelReady := (VisionModel <> nil) and VisionModel.Available and VisionModel.SupportsVision;
+      end;
     end;
-    ButtonSend.Enabled := (Chat <> nil) and ModelReady and ((Trim(MemoComposer.Text) <> '') or (Length(Chat.DraftImages) > 0));
+    if (Chat <> nil) and (ComboBoxComposerMode.ItemIndex <> 1) and (Length(Chat.DraftImages) > 0) then
+    begin
+      var VisionModel := FStore.FindModel(Chat.Preferences.ImageGeneration.AnalysisModelId);
+      ModelReady := (VisionModel <> nil) and VisionModel.Available and VisionModel.SupportsVision;
+    end;
+    ButtonSend.Enabled := (Chat <> nil) and ModelReady and ((Trim(ComposerPromptText) <> '') or (Length(Chat.DraftImages) > 0));
     PathStopIcon.Visible := False;
     PathSendIcon.Visible := True;
     ButtonSend.Hint := 'Отправить · Enter';
@@ -1078,10 +1331,91 @@ begin
   MarkDirty;
 end;
 
+function TFormMain.ComposerPromptText: string;
+begin
+  if FEditingNegativePrompt and (ActiveChat <> nil) then
+    Result := ActiveChat.Draft
+  else
+    Result := MemoComposer.Text;
+end;
+
+procedure TFormMain.SetNegativePromptEditing(const Value: Boolean);
+begin
+  if (FEditingNegativePrompt = Value) or (ActiveChat = nil) then
+    Exit;
+  var Chat := ActiveChat;
+  if FEditingNegativePrompt then
+    Chat.Preferences.ImageGeneration.NegativePrompt := MemoComposer.Text
+  else
+    Chat.Draft := MemoComposer.Text;
+  FEditingNegativePrompt := Value;
+  var Updating := FUpdating;
+  FUpdating := True;
+  try
+    if Value then
+      MemoComposer.Text := Chat.Preferences.ImageGeneration.NegativePrompt
+    else
+      MemoComposer.Text := Chat.Draft;
+  finally
+    FUpdating := Updating
+  end;
+  UpdateComposerHeight;
+  MarkDirty;
+end;
+
+procedure TFormMain.UpdateNegativePromptState;
+begin
+  var Chat := ActiveChat;
+  var Model: TImageModelEntry := nil;
+  if Chat <> nil then
+    Model := FStore.FindImageModel(Chat.Preferences.ImageGeneration.ModelId);
+  var CanEdit := (ComboBoxComposerMode.ItemIndex = 1) and (Model <> nil)
+    and Model.Available and Model.SupportsNegativePrompt;
+  if not CanEdit then
+    SetNegativePromptEditing(False);
+  SpeedButtonNegativePrompt.Enabled := CanEdit;
+  SpeedButtonNegativePrompt.IsPressed := FEditingNegativePrompt;
+  var Style := 'chatsecondarybutton';
+  if FEditingNegativePrompt then
+    Style := 'chatprimarybutton';
+  if SpeedButtonNegativePrompt.StyleLookup <> Style then
+    SpeedButtonNegativePrompt.StyleLookup := Style;
+  if FEditingNegativePrompt then
+  begin
+    SpeedButtonNegativePrompt.Hint := 'Вернуться к основному промпту';
+    MemoComposer.TextPrompt := 'Опишите, чего не должно быть в изображении…';
+    LabelSendHint.Text := 'Негативный промпт · Shift+Enter — новая строка';
+  end
+  else
+  begin
+    SpeedButtonNegativePrompt.Hint := 'Редактировать негативный промпт';
+    if not CanEdit then
+      SpeedButtonNegativePrompt.Hint := 'Негативный промпт доступен в режиме изображения для совместимой модели';
+    MemoComposer.TextPrompt := 'Напишите сообщение…';
+    LabelSendHint.Text := 'Enter — отправить · Shift+Enter — новая строка';
+  end;
+  if CanEdit and (Chat.Preferences.ImageGeneration.Guidance <= 1) then
+    SpeedButtonNegativePrompt.Hint := SpeedButtonNegativePrompt.Hint + '. Для применения нужен guidance больше 1';
+end;
+
+procedure TFormMain.NegativePromptClick(Sender: TObject);
+begin
+  if not FReady or FUpdating or not SpeedButtonNegativePrompt.Enabled then
+    Exit;
+  SetNegativePromptEditing(not FEditingNegativePrompt);
+  UpdateAvailability;
+  if MemoComposer.CanFocus then
+    MemoComposer.SetFocus;
+end;
+
 procedure TFormMain.ComposerModeChanged(Sender: TObject);
 begin
   if FReady and not FUpdating then
+  begin
+    if ComboBoxComposerMode.ItemIndex <> 1 then
+      SetNegativePromptEditing(False);
     UpdateAvailability;
+  end;
 end;
 
 procedure TFormMain.MemoComposerResize(Sender: TObject);
@@ -1095,7 +1429,10 @@ begin
   if not FReady or FUpdating then
     Exit;
   if ActiveChat <> nil then
-    ActiveChat.Draft := MemoComposer.Text;
+    if FEditingNegativePrompt then
+      ActiveChat.Preferences.ImageGeneration.NegativePrompt := MemoComposer.Text
+    else
+      ActiveChat.Draft := MemoComposer.Text;
   UpdateComposerHeight;
   MarkDirty;
   UpdateAvailability;
@@ -1133,7 +1470,7 @@ begin
     KeyChar := #0;
     Exit
   end;
-  if (Key = vkReturn) and not (ssCtrl in Shift) then
+  if (Key = vkReturn) and not (ssShift in Shift) then
   begin
     Key := 0;
     KeyChar := #0;
@@ -1149,7 +1486,10 @@ var
   Request: TInferenceRequest;
   LastUser: Integer;
   ImageModel: TImageModelEntry;
-  ImageRequest: Boolean;
+  ImageRequest, VisionRequest: Boolean;
+  EffectiveContext: Integer;
+  OriginalImageRequest: TChatImage;
+  AnalysisModel: TModelEntry;
 begin
   if not FReady or (FJobId <> '') then
     Exit;
@@ -1161,6 +1501,8 @@ begin
   Chat := ActiveChat;
   if Chat = nil then
     Exit;
+  if FEditingNegativePrompt then
+    Chat.Preferences.ImageGeneration.NegativePrompt := MemoComposer.Text;
   Model := FStore.FindModel(Chat.Preferences.ModelId);
   if ContinueAnswer and (Chat.Messages.Count > 0) and ((Length(Chat.Messages.Last.Images) > 0)
     or (Chat.Messages.Last.Continuation.VisionSignature <> '')) then
@@ -1173,15 +1515,23 @@ begin
         HasUpload := Length(Chat.Messages[I].Images) > 0;
         Break
       end;
-  ImageRequest := (ComboBoxComposerMode.ItemIndex = 1) and not ContinueAnswer and not HasUpload;
-  if Retry and not HasUpload and (Chat.Messages.Count > 0) then
+  OriginalImageRequest := Default(TChatImage);
+  ImageRequest := (ComboBoxComposerMode.ItemIndex = 1) and not ContinueAnswer;
+  if Retry and (Chat.Messages.Count > 0) then
   begin
     var Last := Chat.Messages.Last;
-    if (Last.Role = lrAssistant) and (Last.Text = '') and (Length(Last.Images) > 0)
-      and not Last.Images[0].IsUserImage then
-      ImageRequest := True;
+    if Last.Role = lrAssistant then
+    begin
+      OriginalImageRequest := Last.ImageRequest;
+      if (OriginalImageRequest.RelativePath = '') and (Length(Last.Images) > 0) and not Last.Images[0].IsUserImage then
+        OriginalImageRequest := Last.Images[0];
+      ImageRequest := OriginalImageRequest.RelativePath <> '';
+    end;
   end;
-  if not ImageRequest then
+  VisionRequest := HasUpload and not ImageRequest;
+  if ContinueAnswer and (Chat.Messages.Count > 0) then
+    VisionRequest := Chat.Messages.Last.Continuation.VisionSignature <> '';
+  if not ImageRequest and not VisionRequest then
   begin
     if (Model = nil) or not Model.Available then
     begin
@@ -1193,9 +1543,12 @@ begin
     end;
   end;
   ImageModel := nil;
+  AnalysisModel := nil;
   if ImageRequest then
   begin
     ImageModel := FStore.FindImageModel(Chat.Preferences.ImageGeneration.ModelId);
+    if OriginalImageRequest.RelativePath <> '' then
+      ImageModel := FStore.FindImageModel(OriginalImageRequest.Settings.ModelId);
     if ImageModel <> nil then
       ImageModel.Inspect;
     if (ImageModel = nil) or not ImageModel.Available then
@@ -1206,8 +1559,32 @@ begin
       ShowStatus(Reason, True);
       Exit;
     end;
+    if HasUpload and not ImageSupportsReferences(ImageModel.Settings.Kind)
+      and (OriginalImageRequest.ReferenceDescription.Trim = '') then
+    begin
+      var AnalysisId := Chat.Preferences.ImageGeneration.AnalysisModelId;
+      if OriginalImageRequest.ReferenceAnalysis.ModelId <> '' then
+        AnalysisId := OriginalImageRequest.ReferenceAnalysis.ModelId;
+      AnalysisModel := FStore.FindModel(AnalysisId);
+      if (AnalysisModel = nil) or not AnalysisModel.Available or not AnalysisModel.SupportsVision then
+      begin
+        ShowStatus('Для референсов этой модели выберите доступную модель в разделе «Анализ изображений».', True);
+        Exit;
+      end;
+      var AnalysisContext := Chat.Preferences.VisionContext;
+      if OriginalImageRequest.ReferenceAnalysis.ModelId <> '' then
+        AnalysisContext := OriginalImageRequest.ReferenceAnalysis.Context;
+      if AnalysisContext > AnalysisModel.MaxContext then
+      begin
+        ShowStatus(Format('Для анализа этой моделью выберите контекст не больше %d токенов.', [AnalysisModel.MaxContext]), True);
+        Exit;
+      end;
+    end;
     try
-      ValidateImageSettings(ImageModel.Resolve(Chat.Preferences.ImageGeneration));
+      if OriginalImageRequest.RelativePath <> '' then
+        ValidateImageSettings(OriginalImageRequest.Settings)
+      else
+        ValidateImageSettings(ImageModel.Resolve(Chat.Preferences.ImageGeneration));
     except
       on E: Exception do
       begin
@@ -1216,7 +1593,7 @@ begin
       end;
     end;
   end;
-  if HasUpload and not ContinueAnswer then
+  if VisionRequest and not ContinueAnswer then
   begin
     var AnalysisIndex := ComboBoxImageAnalysis.ItemIndex;
     if (AnalysisIndex < 0) or (AnalysisIndex >= FVisionModelIds.Count) then
@@ -1225,13 +1602,21 @@ begin
       Exit
     end;
     Model := FStore.FindModel(FVisionModelIds[AnalysisIndex]);
-    if (Model = nil) or not Model.Available or (Model.ModelType <> 'qwen3_5') then
+    if (Model = nil) or not Model.Available or not Model.SupportsVision then
     begin
       ShowStatus('Для анализа требуется доступная Qwen hybrid vision-модель.', True);
       Exit
     end;
   end;
-  if not ImageRequest and (Chat.Preferences.Context > Model.MaxContext) then
+  if not ImageRequest and ((Model = nil) or not Model.Available) then
+  begin
+    ShowStatus('Выбранная модель недоступна.', True);
+    Exit
+  end;
+  EffectiveContext := Chat.Preferences.Context;
+  if VisionRequest then
+    EffectiveContext := Chat.Preferences.VisionContext;
+  if not ImageRequest and (EffectiveContext > Model.MaxContext) then
   begin
     ShowStatus(
       Format(
@@ -1241,17 +1626,6 @@ begin
       True
     );
     Exit;
-  end;
-  if HasUpload and (Chat.Preferences.ModelId <> Model.Id) then
-  begin
-    Chat.Preferences.ModelId := Model.Id;
-    FUpdating := True;
-    try
-      ComboBoxModel.ItemIndex := FModelIds.IndexOf(Model.Id)
-    finally
-      FUpdating := False
-    end;
-    UpdateKVLabel;
   end;
   if ContinueAnswer then
   begin
@@ -1274,17 +1648,20 @@ begin
   end
   else
   begin
-    if (Trim(MemoComposer.Text) = '') and (Length(Chat.DraftImages) = 0) then
+    if (Trim(ComposerPromptText) = '') and (Length(Chat.DraftImages) = 0) then
       Exit;
     // Only the last reply can be resumed. Avoid storing a full prompt per old reply.
     for var Previous in Chat.Messages do
       Previous.Continuation := Default(TLLMContinuationState);
     Message := TChatMessage.Create;
     Message.Role := lrUser;
-    Message.Text := MemoComposer.Text.Trim;
+    Message.Text := ComposerPromptText.Trim;
     Message.Images := Copy(Chat.DraftImages);
     if Message.Text = '' then
-      Message.Text := 'Кратко опиши содержимое прикреплённых изображений.';
+      if ImageRequest then
+        Message.Text := 'Создай изображение на основе прикреплённых референсов.'
+      else
+        Message.Text := 'Кратко опиши содержимое прикреплённых изображений.';
     Chat.DraftImages := nil;
     RenderDraftImages;
     Chat.Messages.Add(Message);
@@ -1294,6 +1671,7 @@ begin
       EditChatTitle.Text := Chat.Title;
     end;
     Chat.Draft := '';
+    FEditingNegativePrompt := False;
     FUpdating := True;
     try
       MemoComposer.Lines.Clear
@@ -1312,6 +1690,18 @@ begin
     Request.IsMoE := Model.ModelType = 'qwen3_moe';
   end;
   Request.Preferences := Chat.Preferences;
+  if VisionRequest then
+  begin
+    Request.Preferences.Context := Chat.Preferences.VisionContext;
+    Request.Preferences.Generation := TLLMGenerationOptions.Defaults;
+    Request.Preferences.Generation.EnableThinking := False;
+    Request.Preferences.Generation.AutoContinue := False;
+    Request.Preferences.Generation.MaxNewTokens := Chat.Preferences.VisionMaxTokens;
+    Request.Preferences.Generation.HardMaxNewTokens := Chat.Preferences.VisionMaxTokens;
+    Request.Preferences.Generation.Temperature := Chat.Preferences.VisionTemperature;
+    if Chat.Preferences.VisionInstruction <> '' then
+      Request.Preferences.SystemPrompt := Request.Preferences.SystemPrompt + sLineBreak + Chat.Preferences.VisionInstruction;
+  end;
   Request.ContinueResponse := ContinueAnswer;
   Request.ContextMemory := Chat.ContextMemory;
   Request.GenerateImage := ImageRequest;
@@ -1319,9 +1709,36 @@ begin
   begin
     Request.Image := Default(TChatImage);
     Request.Image.Settings := ImageModel.Resolve(Chat.Preferences.ImageGeneration);
+    if OriginalImageRequest.RelativePath <> '' then
+    begin
+      Request.Image.Settings := OriginalImageRequest.Settings;
+      Request.Image.ReferencePaths := Copy(OriginalImageRequest.ReferencePaths);
+      Request.Image.ReferenceAnalysis := OriginalImageRequest.ReferenceAnalysis;
+      Request.Image.ReferenceDescription := OriginalImageRequest.ReferenceDescription;
+    end
+    else
+      for var Reference in Chat.Messages.Last.Images do
+        Request.Image.ReferencePaths := Request.Image.ReferencePaths + [Reference.RelativePath];
+    if (AnalysisModel <> nil) and (Request.Image.ReferenceAnalysis.ModelId = '') then
+    begin
+      Request.Image.ReferenceAnalysis.ModelId := AnalysisModel.Id;
+      Request.Image.ReferenceAnalysis.ModelName := AnalysisModel.Name;
+      Request.Image.ReferenceAnalysis.Directory := AnalysisModel.Directory;
+      Request.Image.ReferenceAnalysis.TokenizerDirectory := AnalysisModel.ResolvedTokenizer;
+      Request.Image.ReferenceAnalysis.Context := Chat.Preferences.VisionContext;
+      Request.Image.ReferenceAnalysis.MaxTokens := Chat.Preferences.VisionMaxTokens;
+      Request.Image.ReferenceAnalysis.Temperature := Chat.Preferences.VisionTemperature;
+      Request.Image.ReferenceAnalysis.Instruction := Chat.Preferences.VisionInstruction;
+    end;
     Request.Image.Prompt := Chat.Messages.Last.Text;
     Request.Image.ModelName := ImageModel.Name;
     Request.Image.RelativePath := 'images/' + Chat.Id + '/' + NewId + '.png';
+    for var I := Chat.Messages.Count - 1 downto 0 do
+      if Chat.Messages[I].Role = lrUser then
+      begin
+        Chat.Messages[I].NegativePrompt := Request.Image.Settings.NegativePrompt;
+        Break;
+      end;
   end;
   if ContinueAnswer then
   begin
@@ -1338,7 +1755,10 @@ begin
     Message := TChatMessage.Create;
     Message.Role := lrAssistant;
     if ImageRequest then
-      Message.ModelName := ImageModel.Name
+    begin
+      Message.ModelName := ImageModel.Name;
+      Message.ImageRequest := Request.Image;
+    end
     else
     begin
       Message.ModelName := Model.Name;
@@ -1358,8 +1778,6 @@ begin
   end
   else
   begin
-    if Request.GenerateImage then
-      ComboBoxComposerMode.ItemIndex := 0;
     FJobId := Request.JobId;
     FJobChatId := Chat.Id;
     FJobMessageId := Message.Id;
@@ -1399,10 +1817,18 @@ begin
     or ((Length(Message.Images) = 0) and (Message.Continuation.VisionSignature = '')
     and (Message.ModelId <> Chat.Preferences.ModelId)) then
     Exit;
-  if (Length(Message.Continuation.Tokens) >= Chat.Preferences.Context)
+  var EffectiveContext := Chat.Preferences.Context;
+  var SystemPrompt := Chat.Preferences.SystemPrompt;
+  if Message.Continuation.VisionSignature <> '' then
+  begin
+    EffectiveContext := Chat.Preferences.VisionContext;
+    if Chat.Preferences.VisionInstruction <> '' then
+      SystemPrompt := SystemPrompt + sLineBreak + Chat.Preferences.VisionInstruction;
+  end;
+  if (Length(Message.Continuation.Tokens) >= EffectiveContext)
     and not ContextCanCompact(
       Chat.ContextHistory(Message.Id),
-      Chat.Preferences.SystemPrompt,
+      SystemPrompt,
       Chat.Preferences.Compaction,
       Chat.ContextMemory) then
     Exit;
@@ -1630,7 +2056,7 @@ begin
       var Index := FVirtualMessages.IndexOf(Pair.Key);
       if Index >= 0 then
         FVirtualMessages.Measure(Index, Pair.Value.LayoutRow.Width,
-          Pair.Value.Height + MESSAGE_GAP, Pair.Value.ExpanderThinking.IsExpanded);
+          Pair.Value.Height + MESSAGE_GAP, Pair.Value.ExpanderThinking.IsExpanded, Pair.Value.NegativePromptExpanded);
     end;
     Pair.Value.OnHeightChanged := nil;
     Pair.Value.OnRetry := nil;
@@ -1652,7 +2078,7 @@ begin
       var Frame := FFrames[Id];
       if Index >= 0 then
         FVirtualMessages.Measure(Index, Frame.LayoutRow.Width, Frame.Height + MESSAGE_GAP,
-          Frame.ExpanderThinking.IsExpanded);
+          Frame.ExpanderThinking.IsExpanded, Frame.NegativePromptExpanded);
       FFrames.Remove(Id);
       Frame.OnHeightChanged := nil;
       Frame.OnRetry := nil;
@@ -1678,6 +2104,7 @@ begin
         (FJobId = '') and (Message = Chat.Messages.Last) and (Message.Role = lrAssistant),
         CanContinueMessage(Chat, Message));
       Frame.ExpanderThinking.IsExpanded := Metric.ThinkingExpanded;
+      Frame.NegativePromptExpanded := Metric.NegativeExpanded;
       Frame.OnHeightChanged := MessageHeightChanged;
       Frame.OnRetry := RetryResponse;
       Frame.OnContinue := ContinueResponse;
@@ -1772,7 +2199,7 @@ begin
           if Frame.SyncContentHeight(AllowResize) then
             GeometryChanged := True;
           if FVirtualMessages.Measure(Index, Frame.LayoutRow.Width, Frame.Height + MESSAGE_GAP,
-            Frame.ExpanderThinking.IsExpanded) then
+            Frame.ExpanderThinking.IsExpanded, Frame.NegativePromptExpanded) then
             GeometryChanged := True;
         end;
         Position := TargetMessagePosition;
@@ -1856,6 +2283,11 @@ begin
   // Match the message column's center, excluding the outer scrollbar lane.
   PanelComposer.Margins.Right := Max(0, LayoutComposerDock.Width - AvailableWidth);
   PanelComposer.Width := Min(AvailableWidth, CHAT_CONTENT_MAX_WIDTH);
+  if LayoutStatusContent <> nil then
+  begin
+    LayoutStatusContent.Margins.Right := PanelComposer.Margins.Right;
+    LayoutStatusContent.Width := PanelComposer.Width;
+  end;
   if LayoutLatestButtonDock <> nil then
   begin
     LayoutLatestButtonDock.Margins.Right := PanelComposer.Margins.Right;
@@ -1969,6 +2401,7 @@ end;
 
 procedure TFormMain.ButtonSuggestionClick(Sender: TObject);
 begin
+  SetNegativePromptEditing(False);
   if Sender = ButtonSuggestionCode then
     MemoComposer.Text :=
       'Помоги написать понятную функцию Python с примером использования.'
@@ -2032,6 +2465,11 @@ begin
                   Source.Images[I].Description := Observation.Text;
                   MarkDirty
                 end;
+        if Snapshot.ImageRequestUpdated or Snapshot.ImageReady then
+        begin
+          Message.ImageRequest := Snapshot.Image;
+          FStore.Save; // Keep a completed reference analysis even if generation is interrupted.
+        end;
         if Snapshot.ImageReady then
         begin
           Message.Images := [Snapshot.Image];
@@ -2127,222 +2565,24 @@ begin
   finally
     Dec(FUpdatingViewport);
   end;
-end;
-
-procedure TFormMain.RenderModels;
-
-  procedure AddEntry(const Id, Name, Directory, Badge: string);
+  if FReferenceDragPending then
+    StartDraftImageDrag;
+  if FReferenceMenuPending then
   begin
-    var Frame := TFrameEntry.Create(Self);
-    Frame.Name := 'FrameModelEntry' + Id.Replace('{', '').Replace('}', '').Replace('-', '');
-    Frame.Parent := LayoutModelItems;
-    Frame.Align := TAlignLayout.Top;
-    Frame.Margins.Bottom := 8;
-    Frame.SetEntry(Id, Name, Directory, Badge, Id = FEditingModelId);
-    Frame.OnSelect := ModelSelected;
-  end;
-
-begin
-  if not FReady then
-    Exit;
-  LayoutModelItems.BeginUpdate;
-  try
-    ClearControls(LayoutModelItems);
-    if ComboBoxCatalogKind.ItemIndex = 1 then
+    FReferenceMenuPending := False;
+    if FReady and not FClosing and not TChatImageViewer.IsOpen(Self)
+      and (ActiveChat <> nil) and (ActiveChat.Id = FReferenceMenuChatId) then
     begin
-      for var Model in FStore.ImageModels do
-      begin
-        var Badge := '';
-        if not Model.Available then
-          Badge := '!';
-        AddEntry(Model.Id, Model.Name, Model.Settings.Directory, Badge);
-      end;
-      LayoutModelItems.Height := FStore.ImageModels.Count * 86;
-    end
-    else
-    begin
-      for var Model in FStore.Models do
-      begin
-        var Badge := '';
-        if not Model.Available then
-          Badge := '!'
-        else if Model.ModelType = 'qwen3_moe' then
-          Badge := 'MoE';
-        AddEntry(Model.Id, Model.Name, Model.Directory, Badge);
-      end;
-      LayoutModelItems.Height := FStore.Models.Count * 86;
+      if Captured <> nil then
+        SetCaptured(nil);
+      PopupMenuImageReference.Popup(FReferenceMenuPosition.X, FReferenceMenuPosition.Y);
     end;
-  finally
-    LayoutModelItems.EndUpdate
   end;
-end;
-
-procedure TFormMain.CatalogKindChanged(Sender: TObject);
-begin
-  if not FReady or FUpdating then
-    Exit;
-  var Id := '';
-  if ComboBoxCatalogKind.ItemIndex = 1 then
-  begin
-    if FStore.ImageModels.Count > 0 then
-      Id := FStore.ImageModels[0].Id;
-  end
-  else if FStore.Models.Count > 0 then
-    Id := FStore.Models[0].Id;
-  SelectModelEditor(Id);
-end;
-
-procedure TFormMain.UpdateImageEditor;
-begin
-  var IsImage := ComboBoxCatalogKind.ItemIndex = 1;
-  var IsQwen := IsImage and (ComboBoxImageModelKind.ItemIndex = Ord(ipQwenImage));
-  LayoutModelEditorFields.BeginUpdate;
-  try
-    LayoutModelTokenizerSlot.Height := 0;
-    if not IsImage or IsQwen then
-      LayoutModelTokenizerSlot.Height := 124;
-    LayoutModelCheckpointSlot.Height := 0;
-    if IsQwen then
-      LayoutModelCheckpointSlot.Height := 94;
-    LayoutModelImageOptionsSlot.Height := 0;
-    if IsImage then
-      LayoutModelImageOptionsSlot.Height := 252;
-    if IsQwen then
-      LayoutModelImageOptionsSlot.Height := 292;
-    LayoutImageModelDefaults.Visible := IsImage;
-    LayoutTokenizerDirectory.Visible := not IsImage or IsQwen;
-    LayoutModelCheckpoint.Visible := IsQwen;
-    CheckBoxImageModelInt8.Text := 'INT8 ConvRot (выключено: BF16)';
-    if IsQwen and (EditModelCheckpoint.Text.Trim <> '') then
-      CheckBoxImageModelInt8.Text := 'INT8 ConvRot для text encoder (выключено: BF16)';
-    CheckBoxImageModelInt8.Visible := IsQwen;
-    LabelModelDirectory.Text := 'Каталог модели';
-    LabelTokenizerDirectory.Text := 'Каталог токенизатора';
-    LabelTokenizerHint.Text := 'Укажите отдельно, если tokenizer.json хранится в другой папке.';
-    if IsImage then
-    begin
-      LabelModelDirectory.Text := 'Каталог модели (transformer, text_encoder, vae, tokenizer)';
-      LabelTokenizerDirectory.Text := 'Конфигурации и токенизатор Qwen-Image';
-      LabelTokenizerHint.Text := 'tokenizer.json, encoder_config.json, vae_config.json, scheduler_config.json';
-      if IsQwen then
-      begin
-        LabelModelDirectory.Text := 'Каталог весов (diffusion_models, text_encoders, vae)';
-        if EditModelCheckpoint.Text.Trim <> '' then
-          LabelModelDirectory.Text := 'Каталог text encoder и VAE (text_encoders, vae)';
-      end;
-    end;
-    LayoutModelEditorFields.Height := 776;
-    if IsImage then
-      LayoutModelEditorFields.Height := 1076;
-    if IsQwen then
-      LayoutModelEditorFields.Height := 1170;
-    NumberBoxImageModelWidth.VertIncrement := 16;
-    NumberBoxImageModelHeight.VertIncrement := 16;
-    if IsQwen then
-    begin
-      NumberBoxImageModelWidth.VertIncrement := 32;
-      NumberBoxImageModelHeight.VertIncrement := 32;
-    end;
-  finally
-    LayoutModelEditorFields.EndUpdate
-  end;
-end;
-
-procedure TFormMain.ImageModelKindChanged(Sender: TObject);
-begin
-  if not FReady or FUpdating then
-    Exit;
-  case ComboBoxImageModelKind.ItemIndex of
-    0:
-      begin
-        NumberBoxImageModelSteps.Value := 4;
-        NumberBoxImageModelGuidance.Value := 1
-      end;
-    1:
-      begin
-        NumberBoxImageModelSteps.Value := 20;
-        NumberBoxImageModelGuidance.Value := 4;
-        if EditTokenizerDirectory.Text.Trim = '' then
-          EditTokenizerDirectory.Text := FindQwenImageAssets;
-      end;
-    2:
-      begin
-        NumberBoxImageModelSteps.Value := 9;
-        NumberBoxImageModelGuidance.Value := 0
-      end;
-  end;
-  UpdateImageEditor;
 end;
 
 procedure TFormMain.ModelSelected(Sender: TObject);
 begin
   SelectModelEditor(TFrameEntry(Sender).EntryId);
-end;
-
-procedure TFormMain.SelectModelEditor(const Id: string);
-begin
-  FEditingModelId := Id;
-  FUpdating := True;
-  try
-    LabelModelEditorTitle.Text := 'Добавить модель';
-    EditModelName.Text := '';
-    EditModelDirectory.Text := '';
-    EditTokenizerDirectory.Text := '';
-    EditModelCheckpoint.Text := '';
-    ButtonRemoveModel.Enabled := False;
-    if ComboBoxCatalogKind.ItemIndex = 1 then
-    begin
-      var Settings := TChatImageSettings.Defaults;
-      var Model := FStore.FindImageModel(Id);
-      LabelModelValidation.Text := 'Выберите поддерживаемую архитектуру и каталог весов. Параметры по умолчанию можно изменить в каждом чате.';
-      if Model <> nil then
-      begin
-        Model.Inspect;
-        Settings := Model.Settings;
-        LabelModelEditorTitle.Text := Model.Name;
-        EditModelName.Text := Model.Name;
-        LabelModelValidation.Text := Model.Validation;
-        ButtonRemoveModel.Enabled := True;
-      end;
-      EditModelDirectory.Text := Settings.Directory;
-      EditTokenizerDirectory.Text := Settings.AssetsDirectory;
-      EditModelCheckpoint.Text := Settings.DiffusionCheckpoint;
-      ComboBoxImageModelKind.ItemIndex := Ord(Settings.Kind);
-      CheckBoxImageModelInt8.IsChecked := Settings.UseInt8;
-      NumberBoxImageModelWidth.Value := Settings.Width;
-      NumberBoxImageModelHeight.Value := Settings.Height;
-      NumberBoxImageModelSteps.Value := Settings.Steps;
-      NumberBoxImageModelSeed.Value := Settings.Seed;
-      NumberBoxImageModelGuidance.Value := Settings.Guidance;
-    end
-    else
-    begin
-      var Model := FStore.FindModel(Id);
-      LabelModelValidation.Text := 'Поддерживаются Qwen3, Qwen3 MoE и Qwen hybrid в формате safetensors.';
-      if Model <> nil then
-      begin
-        Model.Inspect;
-        LabelModelEditorTitle.Text := Model.Name;
-        EditModelName.Text := Model.Name;
-        EditModelDirectory.Text := Model.Directory;
-        EditTokenizerDirectory.Text := Model.TokenizerDirectory;
-        LabelModelValidation.Text := Model.Validation;
-        ButtonRemoveModel.Enabled := True;
-      end;
-    end;
-    UpdateImageEditor;
-    ConfigureComboBox(ComboBoxCatalogKind);
-    ConfigureComboBox(ComboBoxImageModelKind);
-  finally
-    FUpdating := False
-  end;
-  RenderModels;
-end;
-
-procedure TFormMain.ButtonNewModelClick(Sender: TObject);
-begin
-  SelectModelEditor('');
-  EditModelName.SetFocus;
 end;
 
 procedure TFormMain.UpdateComposerHeight;
@@ -2420,7 +2660,10 @@ begin
   if LayoutDraftImages.ChildrenCount > 0 then
     for var Child in LayoutDraftImages.Children do
       if Child is TFrameAttachment then
+      begin
         TFrameAttachment(Child).OnRemove := nil;
+        TFrameAttachment(Child).OnBeginReferenceDrag := nil;
+      end;
   ClearControls(LayoutDraftImages);
   var Chat := ActiveChat;
   var Count := 0;
@@ -2433,14 +2676,151 @@ begin
     begin
       var Frame := TFrameAttachment.Create(Self);
       Frame.Name := 'FrameDraftImage' + I.ToString;
-      Frame.Parent := LayoutDraftImages;
       Frame.Align := TAlignLayout.Left;
+      // Left alignment sorts siblings by their initial X; seed it in reference order.
+      Frame.Position.X := I * 154;
+      Frame.Parent := LayoutDraftImages;
       Frame.Margins.Right := 6;
       Frame.SetImages(Chat.DraftImages, I);
       Frame.OnRemove := RemoveDraftImage;
+      Frame.OnBeginReferenceDrag := BeginDraftImageDrag;
+      Frame.RectangleDropTarget.BringToFront;
     end;
   LayoutComposerDockResize(Self);
   QueueMessageLayout;
+end;
+
+procedure TFormMain.BeginDraftImageDrag(Sender: TObject);
+begin
+  if not FReady or FClosing or FReferenceDragActive or not (Sender is TFrameAttachment)
+    or (ActiveChat = nil) or (TFrameAttachment(Sender).Parent <> LayoutDraftImages) then
+    Exit;
+  var Index := TFrameAttachment(Sender).ImageIndex;
+  if (Index < 0) or (Index >= Length(ActiveChat.DraftImages)) then
+    Exit;
+  FReferenceDragChatId := ActiveChat.Id;
+  FReferenceDragPath := ActiveChat.DraftImages[Index].RelativePath;
+  FReferenceDragPending := True;
+end;
+
+procedure TFormMain.StartDraftImageDrag;
+var
+  Service: IFMXDragDropService;
+begin
+  FReferenceDragPending := False;
+  if not FReady or FClosing or (ActiveChat = nil) or (ActiveChat.Id <> FReferenceDragChatId)
+    or FrameImageViewer.Visible or (GetAsyncKeyState(VK_LBUTTON) >= 0)
+    or not TPlatformServices.Current.SupportsPlatformService(IFMXDragDropService, Service) then
+    Exit;
+  var Source := -1;
+  for var I := 0 to High(ActiveChat.DraftImages) do
+    if ActiveChat.DraftImages[I].RelativePath = FReferenceDragPath then
+    begin
+      Source := I;
+      Break
+    end;
+  if Source < 0 then
+    Exit;
+  try
+    var Bitmap := FMX.Graphics.TBitmap.Create;
+    try
+      var FileName := ActiveChat.DraftImages[Source].FileName;
+      if TFile.Exists(FileName) then
+        Bitmap.LoadThumbnailFromFile(FileName, 148, 104, False);
+      if Bitmap.IsEmpty then
+        Bitmap.SetSize(148, 104);
+      var Ticket := TObject.Create;
+      try
+        var Data := Default(TDragObject);
+        Data.Source := Self; // Never pass a transient thumbnail into OLE.
+        // An opaque object offers only the private FMX drag format, no text or
+        // file data that could be inserted into a memo or another application.
+        Data.Data := TValue.From<TObject>(Ticket);
+        if Captured <> nil then
+          SetCaptured(nil);
+        FReferenceDragTicket := Ticket;
+        FReferenceDragActive := True;
+        FReferenceDragScrollAt := 0;
+        try
+          Service.BeginDragDrop(Self, Data, Bitmap)
+        finally
+          FReferenceDragActive := False;
+          FReferenceDragTicket := nil;
+          FReferenceDragPath := '';
+          FReferenceDragChatId := '';
+          HighlightReferenceDrop(-1);
+        end;
+      finally
+        Ticket.Free
+      end;
+    finally
+      Bitmap.Free
+    end;
+  except
+    on E: Exception do
+      ShowStatus('Не удалось переместить референс: ' + E.Message, True);
+  end;
+end;
+
+function TFormMain.ReferenceDropIndex(const Data: TDragObject; const Point: TPointF): Integer;
+begin
+  Result := -1;
+  if not FReferenceDragActive or (Data.Source <> Self) or not Data.Data.IsObject
+    or (FReferenceDragTicket = nil) or (Data.Data.AsObject <> FReferenceDragTicket)
+    or not FReady or FClosing or (ActiveChat = nil) or (ActiveChat.Id <> FReferenceDragChatId)
+    or FrameImageViewer.Visible or (TabControlMain.ActiveTab <> TabItemChats)
+    or not HorzScrollBoxAttachments.AbsoluteRect.Contains(ScreenToClient(Point)) then
+    Exit;
+  var local := LayoutDraftImages.ScreenToLocal(Point);
+  var Distance := MaxSingle;
+  for var Child in LayoutDraftImages.Children do
+    if Child is TFrameAttachment then
+    begin
+      var Frame := TFrameAttachment(Child);
+      var Delta := Abs(local.X - Frame.Position.X - Frame.Width / 2);
+      if Delta < Distance then
+      begin
+        Distance := Delta;
+        Result := Frame.ImageIndex
+      end;
+    end;
+end;
+
+procedure TFormMain.HighlightReferenceDrop(const Index: Integer);
+begin
+  for var Child in LayoutDraftImages.Children do
+    if Child is TFrameAttachment then
+      TFrameAttachment(Child).RectangleDropTarget.Visible := TFrameAttachment(Child).ImageIndex = Index;
+end;
+
+procedure TFormMain.MoveDraftImage(const TargetIndex: Integer);
+begin
+  var Chat := ActiveChat;
+  if (Chat = nil) or (Chat.Id <> FReferenceDragChatId) or (TargetIndex < 0)
+    or (TargetIndex >= Length(Chat.DraftImages)) then
+    Exit;
+  var Source := -1;
+  for var I := 0 to High(Chat.DraftImages) do
+    if Chat.DraftImages[I].RelativePath = FReferenceDragPath then
+    begin
+      Source := I;
+      Break
+    end;
+  if (Source < 0) or (Source = TargetIndex) then
+    Exit;
+  var Image := Chat.DraftImages[Source];
+  if Source < TargetIndex then
+    for var I := Source to TargetIndex - 1 do
+      Chat.DraftImages[I] := Chat.DraftImages[I + 1]
+  else
+    for var I := Source downto TargetIndex + 1 do
+      Chat.DraftImages[I] := Chat.DraftImages[I - 1];
+  Chat.DraftImages[TargetIndex] := Image;
+  var Position := HorzScrollBoxAttachments.ViewportPosition;
+  RenderDraftImages;
+  HorzScrollBoxAttachments.ViewportPosition := Position;
+  MarkDirty;
+  ShowStatus(Format('Изображение перемещено: <image%d>.', [TargetIndex + 1]));
 end;
 
 procedure TFormMain.RemoveDraftImage(Sender: TObject);
@@ -2459,6 +2839,112 @@ begin
   MarkDirty;
 end;
 
+procedure TFormMain.ShowImageReferenceMenu(const Image: TChatImage; const ScreenPosition: TPointF);
+begin
+  if not FReady or FClosing or (ActiveChat = nil) then
+    Exit;
+  FReferenceMenuImage := Image;
+  FReferenceMenuChatId := ActiveChat.Id;
+  FReferenceMenuPosition := ScreenPosition;
+  FReferenceMenuPending := True;
+end;
+
+procedure TFormMain.ImageReferenceMenuPopup(Sender: TObject);
+begin
+  MenuItemUseImageReference.Enabled := False;
+  MenuItemCopyAttachment.Enabled := False;
+  if not FReady or FClosing or (ActiveChat = nil) or (ActiveChat.Id <> FReferenceMenuChatId) then
+    Exit;
+  try
+    MenuItemUseImageReference.Enabled := TFile.Exists(FReferenceMenuImage.FileName)
+  except
+    on E: EArgumentException do
+      MenuItemUseImageReference.Enabled := False
+  end;
+  MenuItemCopyAttachment.Enabled := MenuItemUseImageReference.Enabled;
+end;
+
+procedure TFormMain.CopyAttachmentClick(Sender: TObject);
+begin
+  var Image := FReferenceMenuImage;
+  FReferenceMenuImage := Default(TChatImage);
+  FReferenceMenuChatId := '';
+  if MenuItemCopyAttachment.View <> nil then
+    MenuItemCopyAttachment.View.Loop := False;
+  if not FReady or FClosing then
+    Exit;
+  try
+    var Bitmap := FMX.Graphics.TBitmap.Create;
+    try
+      Bitmap.LoadFromFile(Image.FileName);
+      CopyImageToClipboard(Bitmap, WindowHandleToPlatform(Handle).Wnd);
+    finally
+      Bitmap.Free
+    end;
+    ShowStatus('Изображение скопировано в буфер обмена.');
+  except
+    on E: Exception do
+      ShowStatus('Не удалось скопировать изображение: ' + E.Message, True);
+  end;
+end;
+
+procedure TFormMain.UseImageReferenceClick(Sender: TObject);
+begin
+  var Image := FReferenceMenuImage;
+  var ChatId := FReferenceMenuChatId;
+  FReferenceMenuImage := Default(TChatImage);
+  FReferenceMenuChatId := '';
+  if MenuItemUseImageReference.View <> nil then
+    MenuItemUseImageReference.View.Loop := False;
+  if not FReady or FClosing or (ActiveChat = nil) or (ActiveChat.Id <> ChatId) then
+    Exit;
+  UseImageAsReference(Image);
+end;
+
+procedure TFormMain.UseImageAsReference(const Image: TChatImage);
+begin
+  if not FReady or FClosing or (ActiveChat = nil) then
+    Exit;
+  try
+    var Reference := Image.AsReference;
+    var Chat := ActiveChat;
+    var Index := -1;
+    for var I := 0 to High(Chat.DraftImages) do
+      if (Chat.DraftImages[I].ContentHash = Reference.ContentHash)
+        or SameFileName(Chat.DraftImages[I].FileName, Reference.FileName) then
+      begin
+        Index := I;
+        Break
+      end;
+    var Added := Index < 0;
+    if Added then
+    begin
+      if Length(Chat.DraftImages) >= MAX_MESSAGE_IMAGES then
+        raise EArgumentException.Create('К одному сообщению можно прикрепить до четырёх изображений.');
+      Index := Length(Chat.DraftImages);
+      Chat.DraftImages := Chat.DraftImages + [Reference];
+    end;
+    // Reuse the archived file. Import deduplication must never delete a file
+    // owned by an existing history message, even when its bytes match a draft.
+    SetActivePage(False);
+    SetNegativePromptEditing(False);
+    ComboBoxComposerMode.ItemIndex := 1;
+    if Added then
+      RenderDraftImages;
+    UpdateAvailability;
+    MarkDirty;
+    if MemoComposer.CanFocus then
+      MemoComposer.SetFocus;
+    if Added then
+      ShowStatus(Format('Референс <image%d> добавлен. Дополните запрос и отправьте.', [Index + 1]))
+    else
+      ShowStatus(Format('Это изображение уже прикреплено как <image%d>.', [Index + 1]));
+  except
+    on E: Exception do
+      ShowStatus('Не удалось добавить референс: ' + E.Message, True);
+  end;
+end;
+
 procedure TFormMain.AddImportedImage(const Image: TChatImage);
 begin
   var Chat := ActiveChat;
@@ -2472,7 +2958,6 @@ begin
       Exit;
     end;
   Chat.DraftImages := Chat.DraftImages + [Image];
-  ComboBoxComposerMode.ItemIndex := 0;
 end;
 
 procedure TFormMain.AttachImageFiles(const Files: TArray<string>);
@@ -2552,6 +3037,13 @@ end;
 
 procedure TFormMain.DragEnter(const Data: TDragObject; const Point: TPointF);
 begin
+  if ReferenceDropIndex(Data, Point) >= 0 then
+  begin
+    HighlightReferenceDrop(ReferenceDropIndex(Data, Point));
+    Exit;
+  end;
+  if FReferenceDragActive and (Data.Source = Self) then
+    Exit;
   if AcceptImageDrop(Data, Point) then
     RectangleImageDrop.Visible := True
   else
@@ -2560,6 +3052,32 @@ end;
 
 procedure TFormMain.DragOver(const Data: TDragObject; const Point: TPointF; var Operation: TDragOperation);
 begin
+  var Target := ReferenceDropIndex(Data, Point);
+  HighlightReferenceDrop(Target);
+  if Target >= 0 then
+  begin
+    Operation := TDragOperation.Move;
+    // Keep clipped references reachable while holding the pointer at an edge.
+    if GetTickCount64 >= FReferenceDragScrollAt then
+    begin
+      FReferenceDragScrollAt := GetTickCount64 + 30;
+      var local := HorzScrollBoxAttachments.ScreenToLocal(Point);
+      var Step: Single := 0;
+      if local.X < 28 then
+        Step := -10
+      else if local.X > HorzScrollBoxAttachments.Width - 28 then
+        Step := 10;
+      if Step <> 0 then
+        HorzScrollBoxAttachments.ViewportPosition := PointF(Max(0,
+            HorzScrollBoxAttachments.ViewportPosition.X + Step), 0);
+    end;
+    Exit;
+  end;
+  if FReferenceDragActive and (Data.Source = Self) then
+  begin
+    Operation := TDragOperation.None;
+    Exit
+  end;
   RectangleImageDrop.Visible := AcceptImageDrop(Data, Point);
   if RectangleImageDrop.Visible then
     Operation := TDragOperation.Copy
@@ -2570,6 +3088,16 @@ end;
 procedure TFormMain.DragDrop(const Data: TDragObject; const Point: TPointF);
 begin
   RectangleImageDrop.Visible := False;
+  var Target := ReferenceDropIndex(Data, Point);
+  HighlightReferenceDrop(-1);
+  if Target >= 0 then
+  begin
+    MoveDraftImage(Target);
+    FReferenceDragTicket := nil; // A native drop can only be applied once.
+    Exit;
+  end;
+  if FReferenceDragActive and (Data.Source = Self) then
+    Exit;
   if AcceptImageDrop(Data, Point) then
     AttachImageFiles(Data.Files)
   else
@@ -2578,21 +3106,32 @@ end;
 
 procedure TFormMain.DragLeave;
 begin
+  HighlightReferenceDrop(-1);
   RectangleImageDrop.Visible := False;
   inherited;
-end;
-
-procedure TFormMain.ButtonBrowseImageModelClick(Sender: TObject);
-begin
-  SetActivePage(True);
-  ComboBoxCatalogKind.ItemIndex := 1;
-  CatalogKindChanged(ComboBoxCatalogKind);
 end;
 
 procedure TFormMain.ImageCheckpointChanged(Sender: TObject);
 begin
   if FReady and not FUpdating then
     UpdateImageEditor;
+end;
+
+procedure TFormMain.ButtonBrowseImageLoRAClick(Sender: TObject);
+begin
+  OpenDialogImageLoRA.FileName := EditImageLoRAFile.Text;
+  if OpenDialogImageLoRA.Execute then
+  begin
+    EditImageLoRAFile.Text := OpenDialogImageLoRA.FileName;
+    EditImageLoRAFile.Hint := EditImageLoRAFile.Text;
+    PreferencesChanged(ButtonBrowseImageLoRA);
+  end;
+end;
+
+procedure TFormMain.ButtonClearImageLoRAClick(Sender: TObject);
+begin
+  EditImageLoRAFile.Text := '';
+  PreferencesChanged(ButtonClearImageLoRA);
 end;
 
 procedure TFormMain.ButtonBrowseCheckpointClick(Sender: TObject);
@@ -2602,29 +3141,464 @@ begin
     EditModelCheckpoint.Text := OpenDialogModelCheckpoint.FileName;
 end;
 
-procedure TFormMain.ButtonBrowseModelClick(Sender: TObject);
-var
-  Directory: string;
+procedure TFormMain.ButtonOpenStorageClick(Sender: TObject);
 begin
-  Directory := EditModelDirectory.Text;
-  if SelectDirectory('Каталог весов модели', '', Directory) then
-    EditModelDirectory.Text := Directory;
+  TDirectory.CreateDirectory(ExtractFileDir(FStore.Path));
+  ShellExecute(0, 'open', PChar(ExtractFileDir(FStore.Path)), nil, nil, SW_SHOWNORMAL);
+end;
+
+procedure TFormMain.RenderModels;
+
+  procedure AddEntry(const Id, Name, Location, Capabilities: string);
+  begin
+    var Frame := TFrameEntry.Create(Self);
+    Frame.Name := 'FrameModelEntry' + Id.Replace('{', '').Replace('}', '').Replace('-', '');
+    Frame.Parent := LayoutModelItems;
+    Frame.Align := TAlignLayout.Top;
+    Frame.Margins.Bottom := 8;
+    Frame.SetEntry(Id, Name, Capabilities + ' · ' + Location, '', Id = FEditingModelId);
+    Frame.OnSelect := ModelSelected;
+  end;
+
+begin
+  if not FReady then
+    Exit;
+  LayoutModelItems.BeginUpdate;
+  try
+    ClearControls(LayoutModelItems);
+    for var Model in FStore.Models do
+    begin
+      var Capabilities := 'Переписка';
+      if Model.SupportsVision then
+        Capabilities := Capabilities + ' · Vision';
+      if not Model.Available then
+        Capabilities := 'Недоступна';
+      AddEntry(Model.Id, Model.Name, Model.Directory, Capabilities);
+    end;
+    for var Model in FStore.ImageModels do
+    begin
+      var Capabilities := 'Изображения';
+      if not Model.Available then
+        Capabilities := 'Недоступна';
+      AddEntry(Model.Id, Model.Name, Model.Settings.Directory, Capabilities);
+    end;
+    LayoutModelItems.Height := (FStore.Models.Count + FStore.ImageModels.Count) * 86;
+  finally
+    LayoutModelItems.EndUpdate
+  end;
+end;
+
+procedure TFormMain.SetWizardStep(const Value: Integer);
+begin
+  FWizardStep := EnsureRange(Value, 0, 2);
+  LayoutWizardSource.Visible := FWizardStep = 0;
+  LayoutWizardFiles.Visible := FWizardStep = 1;
+  LayoutWizardDefaults.Visible := FWizardStep = 2;
+  ButtonWizardBack.Visible := FWizardStep > 0;
+  ButtonWizardNext.Visible := FWizardStep < 2;
+  ButtonSaveModel.Visible := FWizardStep = 2;
+  case FWizardStep of
+    0:
+      LabelWizardStep.Text := '1 / 3 · Основной файл';
+    1:
+      LabelWizardStep.Text := '2 / 3 · Файлы и адаптеры';
+    2:
+      LabelWizardStep.Text := '3 / 3 · Название и настройки';
+  end;
+  UpdateImageEditor;
+  VertScrollBoxModelEditor.ViewportPosition := PointF(0, 0);
+end;
+
+procedure TFormMain.UpdateImageEditor;
+begin
+  LayoutModelEditorFields.BeginUpdate;
+  try
+    var IsImage := FDetectedModel.Kind = dkImage;
+    var IsQwen := IsImage and (FDetectedModel.Image.Kind = ipQwenImage);
+    var IsFlux1 := IsImage and (FDetectedModel.Image.Kind = ipFlux1);
+    LayoutImageModelDefaults.Visible := IsImage;
+    LayoutModelImageOptionsSlot.Visible := IsImage;
+    LayoutModelTokenizerSlot.Visible := ((FDetectedModel.Kind = dkLanguage)
+      and not SameText(ExtractFileExt(FDetectedModel.SourceFile), '.gguf')) or IsQwen;
+    LayoutTokenizerDirectory.Visible := LayoutModelTokenizerSlot.Visible;
+    LayoutModelCheckpointSlot.Visible := False;
+    LayoutModelRoot.Visible := IsImage;
+    LayoutModelTextEncoder.Visible := IsImage;
+    LayoutModelTextEncoder2.Visible := IsFlux1;
+    LayoutModelTokenizer.Visible := IsImage and not IsQwen;
+    LayoutModelTokenizer2.Visible := IsFlux1;
+    LayoutModelVAE.Visible := IsImage;
+    LayoutModelAdapters.Visible := mcLoRA in FDetectedModel.Capabilities;
+    CheckBoxImageModelInt8.Visible := IsQwen and (EditModelTextEncoder.Text = '');
+    CheckBoxImageModelInt8.Enabled := IsQwen and (EditModelTextEncoder.Text = '');
+    LabelModelTextEncoder.Text := 'Текстовый энкодер (каталог с весами)';
+    LabelModelTextEncoder2.Text := 'T5-XXL (каталог с весами)';
+    LabelModelVAE.Text := 'VAE (файл или каталог с config.json)';
+    if IsFlux1 then
+      LabelModelTextEncoder.Text := 'CLIP-L (каталог с весами)';
+    if IsQwen then
+    begin
+      LabelModelTextEncoder.Text := 'Текстовый энкодер (файл safetensors)';
+      LabelModelVAE.Text := 'VAE (файл safetensors)';
+    end;
+    LabelTokenizerDirectory.Text := 'Каталог токенизатора';
+    LabelTokenizerHint.Text := 'Для GGUF словарь встроен; отдельный токенизатор не требуется.';
+    if IsQwen then
+    begin
+      LabelTokenizerDirectory.Text := 'Конфигурации и токенизатор Qwen-Image';
+      LabelTokenizerHint.Text := 'tokenizer.json, encoder_config.json, vae_config.json, scheduler_config.json';
+    end;
+    LabelModelCapabilities.Text := FDetectedModel.Architecture + sLineBreak + FDetectedModel.CapabilityText;
+    if FDetectedModel.Kind in [dkUnknown, dkAdapter, dkComponent] then
+      LabelModelCapabilities.Text := FDetectedModel.Notice;
+    LabelWizardSummary.Text := FDetectedModel.Architecture + sLineBreak + FDetectedModel.CapabilityText
+      + sLineBreak + 'Модель будет доступна только для совместимых ролей. Настройки можно менять отдельно в каждом чате.';
+    var MaxSize := 1024;
+    var SizeStep := 16;
+    if IsFlux1 or IsQwen then
+      MaxSize := 2048;
+    if IsQwen then
+      SizeStep := 8;
+    NumberBoxImageModelWidth.Max := MaxSize;
+    NumberBoxImageModelHeight.Max := MaxSize;
+    NumberBoxImageModelWidth.VertIncrement := SizeStep;
+    NumberBoxImageModelHeight.VertIncrement := SizeStep;
+    FitVerticalLayout(LayoutImageModelDefaults);
+    FitVerticalLayout(LayoutModelImageOptionsSlot);
+    FitVerticalLayout(LayoutWizardSource);
+    FitVerticalLayout(LayoutWizardFiles);
+    FitVerticalLayout(LayoutWizardDefaults);
+    FitVerticalLayout(LayoutModelEditorFields);
+    FitVerticalLayout(LayoutWizardFooter);
+    ButtonWizardNext.Enabled := not FModelInspectPending and (FDetectedModel.Kind in [dkLanguage, dkImage]);
+    ButtonRemoveModel.Visible := FEditingModelId <> '';
+  finally
+    LayoutModelEditorFields.EndUpdate
+  end;
+end;
+
+function TFormMain.WizardImageSettings: TChatImageSettings;
+begin
+  Result := FDetectedModel.Image;
+  Result.SourceFile := FDetectedModel.SourceFile;
+  Result.Directory := EditModelRoot.Text.Trim.Trim(['"']);
+  Result.AssetsDirectory := EditTokenizerDirectory.Text.Trim.Trim(['"']);
+  Result.Components.TextEncoder := EditModelTextEncoder.Text.Trim.Trim(['"']);
+  Result.Components.TextEncoder2 := EditModelTextEncoder2.Text.Trim.Trim(['"']);
+  Result.Components.Tokenizer := EditModelTokenizer.Text.Trim.Trim(['"']);
+  Result.Components.Tokenizer2 := EditModelTokenizer2.Text.Trim.Trim(['"']);
+  Result.Components.VAE := EditModelVAE.Text.Trim.Trim(['"']);
+  Result.Adapters := ListBoxModelAdapters.Items.ToStringArray;
+  Result.UseInt8 := CheckBoxImageModelInt8.IsChecked;
+  Result.Width := Round(NumberBoxImageModelWidth.Value);
+  Result.Height := Round(NumberBoxImageModelHeight.Value);
+  Result.Steps := Round(NumberBoxImageModelSteps.Value);
+  Result.Seed := Round(NumberBoxImageModelSeed.Value);
+  Result.Guidance := NumberBoxImageModelGuidance.Value;
+end;
+
+procedure TFormMain.AnalyzeModelSource(const UseBundle: Boolean);
+begin
+  TimerModelInspect.Enabled := False;
+  FModelInspectPending := False;
+  var Root := '';
+  if UseBundle then
+    Root := EditModelRoot.Text.Trim;
+  FDetectedModel := DetectLocalModel(EditModelDirectory.Text, Root);
+  FUpdating := True;
+  try
+    if EditModelName.Text.Trim = '' then
+      EditModelName.Text := FDetectedModel.SuggestedName;
+    EditModelRoot.Text := FDetectedModel.Image.Directory;
+    EditModelCheckpoint.Text := FDetectedModel.Image.DiffusionCheckpoint;
+    EditTokenizerDirectory.Text := FDetectedModel.TokenizerDirectory;
+    if FDetectedModel.Kind = dkImage then
+      EditTokenizerDirectory.Text := FDetectedModel.Image.AssetsDirectory;
+    EditModelTextEncoder.Text := FDetectedModel.Image.Components.TextEncoder;
+    EditModelTextEncoder2.Text := FDetectedModel.Image.Components.TextEncoder2;
+    EditModelTokenizer.Text := FDetectedModel.Image.Components.Tokenizer;
+    EditModelTokenizer2.Text := FDetectedModel.Image.Components.Tokenizer2;
+    EditModelVAE.Text := FDetectedModel.Image.Components.VAE;
+    ListBoxModelAdapters.Items.Clear;
+    for var FileName in FDetectedModel.Image.Adapters do
+      ListBoxModelAdapters.Items.Add(FileName);
+    CheckBoxImageModelInt8.IsChecked := FDetectedModel.Image.UseInt8;
+    UpdateImageEditor;
+    NumberBoxImageModelWidth.Value := FDetectedModel.Image.Width;
+    NumberBoxImageModelHeight.Value := FDetectedModel.Image.Height;
+    NumberBoxImageModelSteps.Value := FDetectedModel.Image.Steps;
+    NumberBoxImageModelSeed.Value := FDetectedModel.Image.Seed;
+    NumberBoxImageModelGuidance.Value := FDetectedModel.Image.Guidance;
+    LabelModelValidation.Text := FDetectedModel.Notice;
+    if FDetectedModel.Kind in [dkLanguage, dkImage] then
+    begin
+      var Error := FDetectedModel.Validate;
+      if Error = '' then
+        LabelModelValidation.Text := 'Комплект найден. Проверьте файлы и параметры на следующих шагах.'
+      else
+        LabelModelValidation.Text := 'Нужно дополнить комплект: ' + Error;
+    end;
+  finally
+    FUpdating := False
+  end;
+end;
+
+procedure TFormMain.ModelSourceChanged(Sender: TObject);
+begin
+  if not FReady or FUpdating then
+    Exit;
+  FModelInspectPending := True;
+  TimerModelInspect.Enabled := False;
+  TimerModelInspect.Enabled := True;
+  ButtonWizardNext.Enabled := False;
+end;
+
+procedure TFormMain.ModelInspectTimer(Sender: TObject);
+begin
+  TimerModelInspect.Enabled := False;
+  if FReady and not FUpdating then
+    AnalyzeModelSource;
+end;
+
+procedure TFormMain.ModelBundleChanged(Sender: TObject);
+begin
+  if FReady and not FUpdating then
+    AnalyzeModelSource(True);
+end;
+
+procedure TFormMain.WizardFilesChanged(Sender: TObject);
+begin
+  if not FReady or FUpdating then
+    Exit;
+  if FDetectedModel.Kind = dkImage then
+    FDetectedModel.Image := WizardImageSettings
+  else
+    FDetectedModel.TokenizerDirectory := EditTokenizerDirectory.Text.Trim;
+  LabelModelValidation.Text := FDetectedModel.Validate;
+  if LabelModelValidation.Text = '' then
+    LabelModelValidation.Text := 'Комплект готов к сохранению.';
+  UpdateImageEditor;
+end;
+
+procedure TFormMain.WizardNextClick(Sender: TObject);
+begin
+  if FModelInspectPending then
+    AnalyzeModelSource;
+  if not (FDetectedModel.Kind in [dkLanguage, dkImage]) then
+  begin
+    LabelModelValidation.Text := FDetectedModel.Notice;
+    Exit
+  end;
+  if FWizardStep = 1 then
+  begin
+    WizardFilesChanged(Sender);
+    var Error := FDetectedModel.Validate;
+    if Error <> '' then
+    begin
+      LabelModelValidation.Text := Error;
+      Exit
+    end;
+  end;
+  SetWizardStep(FWizardStep + 1);
+end;
+
+procedure TFormMain.WizardBackClick(Sender: TObject);
+begin
+  SetWizardStep(FWizardStep - 1);
+end;
+
+procedure TFormMain.BrowseModelComponent(Sender: TObject);
+var
+  Target: TEdit;
+begin
+  var Tag := TComponent(Sender).Tag;
+  case Tag of
+    0:
+      Target := EditModelRoot;
+    1:
+      Target := EditModelTextEncoder;
+    2:
+      Target := EditModelTextEncoder2;
+    3:
+      Target := EditModelTokenizer;
+    4:
+      Target := EditModelTokenizer2;
+  else
+    Target := EditModelVAE
+  end;
+  // Component directories carry their own config and shard index. Qwen-Image
+  // has separate single-file encoder/VAE checkpoints.
+  if (Tag = 0) or ((FDetectedModel.Image.Kind <> ipQwenImage) and (Tag in [1, 2, 5]))
+    or ((FDetectedModel.Kind = dkImage) and (FDetectedModel.Image.Kind = ipFlux1) and (Tag = 3)) then
+  begin
+    var Directory := ModelComponentDirectory(Target.Text, '');
+    if SelectDirectory('Каталог компонента модели', '', Directory) then
+      Target.Text := Directory;
+  end
+  else
+  begin
+    OpenDialogModelComponent.FileName := Target.Text;
+    if OpenDialogModelComponent.Execute then
+      Target.Text := OpenDialogModelComponent.FileName;
+  end;
+  if Tag = 0 then
+    ModelBundleChanged(Target)
+  else
+    WizardFilesChanged(Target);
+end;
+
+procedure TFormMain.AddModelAdapter(Sender: TObject);
+begin
+  if not (mcLoRA in FDetectedModel.Capabilities) then
+    Exit;
+  if not OpenDialogModelAdapters.Execute then
+    Exit;
+  if ListBoxModelAdapters.Count + OpenDialogModelAdapters.Files.Count > 128 then
+  begin
+    LabelModelValidation.Text := 'Допускается до 128 адаптеров на модель.';
+    Exit
+  end;
+  try
+    for var FileName in OpenDialogModelAdapters.Files do
+    begin
+      var Error := AdapterValidation(FileName, FDetectedModel.Image.Kind);
+      if Error <> '' then
+      begin
+        LabelModelValidation.Text := Error;
+        Exit
+      end;
+      if ListBoxModelAdapters.Items.IndexOf(FileName) < 0 then
+        ListBoxModelAdapters.Items.Add(FileName);
+    end;
+    WizardFilesChanged(Sender);
+  except
+    on E: Exception do
+      LabelModelValidation.Text := E.Message
+  end;
+end;
+
+procedure TFormMain.RemoveModelAdapter(Sender: TObject);
+begin
+  if ListBoxModelAdapters.ItemIndex >= 0 then
+    ListBoxModelAdapters.Items.Delete(ListBoxModelAdapters.ItemIndex);
+  WizardFilesChanged(Sender);
+end;
+
+procedure TFormMain.SelectModelEditor(const Id: string);
+begin
+  FEditingModelId := Id;
+  FUpdating := True;
+  try
+    EditModelName.Text := '';
+    EditModelDirectory.Text := '';
+    EditModelRoot.Text := '';
+    LabelModelEditorTitle.Text := 'Добавить модель';
+    ButtonRemoveModel.Enabled := False;
+    var Model := FStore.FindModel(Id);
+    var ImageModel := FStore.FindImageModel(Id);
+    if Model <> nil then
+    begin
+      EditModelName.Text := Model.Name;
+      EditModelDirectory.Text := Model.SourceFile;
+      if EditModelDirectory.Text = '' then
+        EditModelDirectory.Text := Model.Directory;
+    end
+    else if ImageModel <> nil then
+    begin
+      EditModelName.Text := ImageModel.Name;
+      EditModelDirectory.Text := ImageModel.Settings.SourceFile;
+      if EditModelDirectory.Text = '' then
+        EditModelDirectory.Text := ImageModel.Settings.DiffusionCheckpoint;
+      if EditModelDirectory.Text = '' then
+        EditModelDirectory.Text := ImageModel.Settings.Directory;
+    end;
+  finally
+    FUpdating := False
+  end;
+  AnalyzeModelSource;
+  FUpdating := True;
+  try
+    var Model := FStore.FindModel(Id);
+    if Model <> nil then
+    begin
+      EditTokenizerDirectory.Text := Model.TokenizerDirectory;
+      LabelModelEditorTitle.Text := Model.Name;
+      ButtonRemoveModel.Enabled := True;
+    end;
+    var ImageModel := FStore.FindImageModel(Id);
+    if ImageModel <> nil then
+    begin
+      FDetectedModel.Kind := dkImage;
+      FDetectedModel.Image := ImageModel.Settings;
+      LabelModelEditorTitle.Text := ImageModel.Name;
+      ButtonRemoveModel.Enabled := True;
+      EditModelRoot.Text := ImageModel.Settings.Directory;
+      EditTokenizerDirectory.Text := ImageModel.Settings.AssetsDirectory;
+      if ImageModel.Settings.Components.TextEncoder <> '' then
+        EditModelTextEncoder.Text := ImageModel.Settings.Components.TextEncoder;
+      if ImageModel.Settings.Components.TextEncoder2 <> '' then
+        EditModelTextEncoder2.Text := ImageModel.Settings.Components.TextEncoder2;
+      if ImageModel.Settings.Components.Tokenizer <> '' then
+        EditModelTokenizer.Text := ImageModel.Settings.Components.Tokenizer;
+      if ImageModel.Settings.Components.Tokenizer2 <> '' then
+        EditModelTokenizer2.Text := ImageModel.Settings.Components.Tokenizer2;
+      if ImageModel.Settings.Components.VAE <> '' then
+        EditModelVAE.Text := ImageModel.Settings.Components.VAE;
+      ListBoxModelAdapters.Items.Clear;
+      for var FileName in ImageModel.Settings.Adapters do
+        ListBoxModelAdapters.Items.Add(FileName);
+      NumberBoxImageModelWidth.Value := ImageModel.Settings.Width;
+      NumberBoxImageModelHeight.Value := ImageModel.Settings.Height;
+      NumberBoxImageModelSteps.Value := ImageModel.Settings.Steps;
+      NumberBoxImageModelSeed.Value := ImageModel.Settings.Seed;
+      NumberBoxImageModelGuidance.Value := ImageModel.Settings.Guidance;
+      CheckBoxImageModelInt8.IsChecked := ImageModel.Settings.UseInt8;
+    end;
+  finally
+    FUpdating := False
+  end;
+  SetWizardStep(0);
+  RenderModels;
+end;
+
+procedure TFormMain.ButtonNewModelClick(Sender: TObject);
+begin
+  SelectModelEditor('');
+  EditModelDirectory.SetFocus;
+end;
+
+procedure TFormMain.ButtonBrowseImageModelClick(Sender: TObject);
+begin
+  SetActivePage(True);
+  if ActiveChat <> nil then
+    SelectModelEditor(ActiveChat.Preferences.ImageGeneration.ModelId);
+end;
+
+procedure TFormMain.ButtonBrowseModelClick(Sender: TObject);
+begin
+  OpenDialogModelSource.FileName := EditModelDirectory.Text;
+  if OpenDialogModelSource.Execute then
+  begin
+    EditModelDirectory.Text := OpenDialogModelSource.FileName;
+    AnalyzeModelSource
+  end;
 end;
 
 procedure TFormMain.ButtonBrowseTokenizerClick(Sender: TObject);
-var
-  Directory: string;
 begin
-  Directory := EditTokenizerDirectory.Text;
+  var Directory := EditTokenizerDirectory.Text;
   if SelectDirectory('Каталог токенизатора и конфигураций', '', Directory) then
+  begin
     EditTokenizerDirectory.Text := Directory;
+    WizardFilesChanged(Sender)
+  end;
 end;
 
 procedure TFormMain.SaveImageModel;
 begin
-  if EditModelName.Text.Trim = '' then
+  if FStore.FindModel(FEditingModelId) <> nil then
   begin
-    LabelModelValidation.Text := 'Укажите название модели.';
+    LabelModelValidation.Text := 'Добавьте модель с другой архитектурой отдельной записью.';
     Exit
   end;
   for var Model in FStore.ImageModels do
@@ -2635,144 +3609,131 @@ begin
     end;
   var Candidate := TImageModelEntry.Create;
   try
-    try
-      Candidate.Name := EditModelName.Text.Trim;
-      if EditModelDirectory.Text.Trim.Trim(['"']) = '' then
+    Candidate.Name := EditModelName.Text.Trim;
+    Candidate.Settings := WizardImageSettings;
+    for var FileName in Candidate.Settings.Adapters do
+    begin
+      var Error := AdapterValidation(FileName, Candidate.Settings.Kind);
+      if Error <> '' then
       begin
-        LabelModelValidation.Text := 'Укажите каталог модели.';
+        LabelModelValidation.Text := Error;
         Exit
       end;
-      Candidate.Settings.Directory := ExcludeTrailingPathDelimiter(TPath.GetFullPath(EditModelDirectory.Text.Trim.Trim(['"'])));
-      Candidate.Settings.Kind := TImagePipelineKind(Max(0, ComboBoxImageModelKind.ItemIndex));
-      Candidate.Settings.UseInt8 := CheckBoxImageModelInt8.IsChecked;
-      if (Candidate.Settings.Kind = ipQwenImage) and (EditModelCheckpoint.Text.Trim.Trim(['"']) <> '') then
-        Candidate.Settings.DiffusionCheckpoint := TPath.GetFullPath(EditModelCheckpoint.Text.Trim.Trim(['"']));
-      if EditTokenizerDirectory.Text.Trim.Trim(['"']) <> '' then
-        Candidate.Settings.AssetsDirectory := TPath.GetFullPath(EditTokenizerDirectory.Text.Trim.Trim(['"']));
-      Candidate.Settings.Width := Round(NumberBoxImageModelWidth.Value);
-      Candidate.Settings.Height := Round(NumberBoxImageModelHeight.Value);
-      Candidate.Settings.Steps := Round(NumberBoxImageModelSteps.Value);
-      Candidate.Settings.Seed := Round(NumberBoxImageModelSeed.Value);
-      Candidate.Settings.Guidance := NumberBoxImageModelGuidance.Value;
-      Candidate.Inspect;
-      if not Candidate.Available then
-      begin
-        LabelModelValidation.Text := Candidate.Validation;
-        Exit
-      end;
-      var Edited := FStore.FindImageModel(FEditingModelId);
-      if Edited = nil then
-      begin
-        Edited := Candidate;
-        Candidate := nil;
-        FStore.ImageModels.Add(Edited);
-      end
-      else
-      begin
-        Edited.Name := Candidate.Name;
-        Edited.Settings := Candidate.Settings;
-        Edited.Inspect;
-      end;
-      if (ActiveChat <> nil) and (ActiveChat.Preferences.ImageGeneration.ModelId = '') then
-      begin
-        var AnalysisId := ActiveChat.Preferences.ImageGeneration.AnalysisModelId;
-        ActiveChat.Preferences.ImageGeneration := Edited.Resolve(Edited.Settings);
-        ActiveChat.Preferences.ImageGeneration.AnalysisModelId := AnalysisId;
-      end;
-      SelectModelEditor(Edited.Id);
-      LoadPreferences;
-      UpdateAvailability;
-      MarkDirty;
-      LabelModelValidation.Text := Edited.Validation + sLineBreak + 'Модель сохранена.';
-    except
-      on E: Exception do
-        LabelModelValidation.Text := E.Message;
     end;
+    Candidate.Inspect;
+    if not Candidate.Available then
+    begin
+      LabelModelValidation.Text := Candidate.Validation;
+      Exit
+    end;
+    var Edited := FStore.FindImageModel(FEditingModelId);
+    if Edited = nil then
+    begin
+      Edited := Candidate;
+      Candidate := nil;
+      FStore.ImageModels.Add(Edited)
+    end
+    else
+    begin
+      Edited.Name := Candidate.Name;
+      Edited.Settings := Candidate.Settings;
+      Edited.Inspect
+    end;
+    if (ActiveChat <> nil) and (ActiveChat.Preferences.ImageGeneration.ModelId = '') then
+      ActiveChat.Preferences.ImageGeneration := Edited.Resolve(Edited.Settings);
+    FEditingModelId := Edited.Id;
+    LoadPreferences;
+    UpdateAvailability;
+    MarkDirty;
+    RenderModels;
+    LabelModelValidation.Text := Edited.Validation + sLineBreak + 'Модель сохранена.';
   finally
     Candidate.Free
   end;
 end;
 
 procedure TFormMain.ButtonSaveModelClick(Sender: TObject);
-var
-  Edited, Candidate: TModelEntry;
 begin
-  if ComboBoxCatalogKind.ItemIndex = 1 then
-  begin
-    SaveImageModel;
-    Exit;
-  end;
-  if Trim(EditModelName.Text) = '' then
-  begin
-    LabelModelValidation.Text := 'Укажите название модели.';
-    Exit
-  end;
-  if Trim(EditModelDirectory.Text) = '' then
-  begin
-    LabelModelValidation.Text := 'Укажите каталог модели.';
-    Exit
-  end;
-  for var Model in FStore.Models do
-    if (Model.Id <> FEditingModelId) and SameText(Model.Name, Trim(EditModelName.Text)) then
+  try
+    if FModelInspectPending then
+      AnalyzeModelSource;
+    if EditModelName.Text.Trim = '' then
+      EditModelName.Text := FDetectedModel.SuggestedName;
+    if EditModelName.Text.Trim = '' then
     begin
-      LabelModelValidation.Text := 'Модель с таким названием уже есть.';
+      LabelModelValidation.Text := 'Укажите название модели.';
       Exit
     end;
-  Candidate := TModelEntry.Create;
-  try
+    if FDetectedModel.Kind = dkImage then
+    begin
+      SaveImageModel;
+      Exit
+    end;
+    if FDetectedModel.Kind <> dkLanguage then
+    begin
+      LabelModelValidation.Text := FDetectedModel.Notice;
+      Exit
+    end;
+    if FStore.FindImageModel(FEditingModelId) <> nil then
+    begin
+      LabelModelValidation.Text := 'Добавьте модель с другой архитектурой отдельной записью.';
+      Exit
+    end;
+    for var Model in FStore.Models do
+      if (Model.Id <> FEditingModelId) and SameText(Model.Name, EditModelName.Text.Trim) then
+      begin
+        LabelModelValidation.Text := 'Модель с таким названием уже есть.';
+        Exit
+      end;
+    var Candidate := TModelEntry.Create;
     try
-      Candidate.Name := Trim(EditModelName.Text);
-      Candidate.Directory :=
-        ExcludeTrailingPathDelimiter(System.IOUtils.TPath.GetFullPath(Trim(EditModelDirectory.Text).Trim(['"'])));
-      Candidate.TokenizerDirectory := Trim(EditTokenizerDirectory.Text).Trim(['"']);
-      if Candidate.TokenizerDirectory <> '' then
-        Candidate.TokenizerDirectory := System.IOUtils.TPath.GetFullPath(Candidate.TokenizerDirectory);
+      Candidate.Name := EditModelName.Text.Trim;
+      Candidate.Directory := FDetectedModel.Directory;
+      Candidate.SourceFile := FDetectedModel.SourceFile;
+      Candidate.TokenizerDirectory := EditTokenizerDirectory.Text.Trim;
       Candidate.Inspect;
       if not Candidate.Available then
       begin
         LabelModelValidation.Text := Candidate.Validation;
-        Exit;
+        Exit
       end;
-      Edited := FStore.FindModel(FEditingModelId);
+      var Edited := FStore.FindModel(FEditingModelId);
       if Edited = nil then
       begin
         Edited := Candidate;
         Candidate := nil;
-        FStore.Models.Add(Edited);
+        FStore.Models.Add(Edited)
       end
       else
       begin
         Edited.Name := Candidate.Name;
         Edited.Directory := Candidate.Directory;
+        Edited.SourceFile := Candidate.SourceFile;
         Edited.TokenizerDirectory := Candidate.TokenizerDirectory;
         Edited.Inspect;
       end;
       FEditingModelId := Edited.Id;
       if (ActiveChat <> nil) and (ActiveChat.Preferences.ModelId = '') then
         ActiveChat.Preferences.ModelId := Edited.Id;
-      SelectModelEditor(Edited.Id);
       LoadPreferences;
       UpdateAvailability;
       MarkDirty;
+      RenderModels;
       LabelModelValidation.Text := Edited.Validation + sLineBreak + 'Модель сохранена.';
-    except
-      on E: Exception do
-        LabelModelValidation.Text := E.Message;
+    finally
+      Candidate.Free
     end;
-  finally
-    Candidate.Free
+  except
+    on E: Exception do
+      LabelModelValidation.Text := E.Message
   end;
 end;
 
 procedure TFormMain.ButtonRemoveModelClick(Sender: TObject);
-var
-  Id: string;
-  IsImage: Boolean;
 begin
-  Id := FEditingModelId;
-  IsImage := ComboBoxCatalogKind.ItemIndex = 1;
-  if (IsImage and (FStore.FindImageModel(Id) = nil))
-    or (not IsImage and (FStore.FindModel(Id) = nil)) then
+  var Id := FEditingModelId;
+  var IsImage := FStore.FindImageModel(Id) <> nil;
+  if not IsImage and (FStore.FindModel(Id) = nil) then
     Exit;
   if not TChatDialogs.Confirm(Self, 'Убрать модель?',
     'Модель будет удалена из каталога. Файлы модели и история чатов сохранятся.', 'Убрать') or not FReady then
@@ -2787,10 +3748,57 @@ begin
   MarkDirty;
 end;
 
-procedure TFormMain.ButtonOpenStorageClick(Sender: TObject);
+procedure TFormMain.RecalculateSettings;
 begin
-  TDirectory.CreateDirectory(ExtractFileDir(FStore.Path));
-  ShellExecute(0, 'open', PChar(ExtractFileDir(FStore.Path)), nil, nil, SW_SHOWNORMAL);
+  FitVerticalLayout(LayoutImagePreferences);
+  var Model := FStore.FindModel(ActiveChat.Preferences.ModelId);
+  FrameRoleSectionConversation.LabelSummary.Text := 'Нет доступных моделей';
+  if Model <> nil then
+    FrameRoleSectionConversation.LabelSummary.Text := Model.Name;
+  Model := FStore.FindModel(ActiveChat.Preferences.ImageGeneration.AnalysisModelId);
+  FrameRoleSectionVision.LabelSummary.Text := 'Нет доступных vision-моделей';
+  if Model <> nil then
+    FrameRoleSectionVision.LabelSummary.Text := Model.Name;
+  var ImageModel := FStore.FindImageModel(ActiveChat.Preferences.ImageGeneration.ModelId);
+  FrameRoleSectionImages.LabelSummary.Text := 'Нет доступных генераторов';
+  if ImageModel <> nil then
+    FrameRoleSectionImages.LabelSummary.Text := ImageModel.Name;
+  FrameRoleSectionConversation.UpdateSize;
+  FrameRoleSectionVision.UpdateSize;
+  FrameRoleSectionImages.UpdateSize;
+  FitVerticalLayout(LayoutPreferenceFields);
+end;
+
+procedure TFormMain.RoleExpandedChanged(Sender: TObject);
+begin
+  if FUpdating or not FReady or (ActiveChat = nil) then
+    Exit;
+  ActiveChat.Preferences.ChatSettingsExpanded := FrameRoleSectionConversation.Expanded;
+  ActiveChat.Preferences.VisionSettingsExpanded := FrameRoleSectionVision.Expanded;
+  ActiveChat.Preferences.ImageSettingsExpanded := FrameRoleSectionImages.Expanded;
+  RecalculateSettings;
+  MarkDirty;
+end;
+
+procedure TFormMain.ImageAdapterChanged(Sender: TObject);
+begin
+  if FUpdating or not FReady then
+    Exit;
+  if (ComboBoxImageAdapter.ItemIndex < 0) or (ComboBoxImageAdapter.ItemIndex >= FAdapterFiles.Count) then
+    Exit;
+  EditImageLoRAFile.Text := FAdapterFiles[ComboBoxImageAdapter.ItemIndex];
+  EditImageLoRAFile.Hint := EditImageLoRAFile.Text;
+  PreferencesChanged(Sender);
+end;
+
+procedure TFormMain.BrowseModelFolder(Sender: TObject);
+begin
+  var Directory := ExtractFileDir(EditModelDirectory.Text);
+  if SelectDirectory('Каталог модели', '', Directory) then
+  begin
+    EditModelDirectory.Text := Directory;
+    AnalyzeModelSource
+  end;
 end;
 
 end.

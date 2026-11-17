@@ -480,7 +480,7 @@ end;
 procedure TSafeTensorFile.OpenGGUF(const Stream: TFileStream);
 begin
   Stream.Position := 0;
-  var Header := TGGUFHeader.Read(Stream);
+  var Header := TGGUFHeader.Read(Stream, nil, False);
   IsGGUF := True;
   Architecture := Header.Architecture;
   Offset := Header.DataOffset;
@@ -500,7 +500,7 @@ begin
       0: Tensors[I].DType := StF32;
       1: Tensors[I].DType := StF16;
       30: Tensors[I].DType := StBF16;
-      8, 12, 14: Tensors[I].DType := StU8;
+      8, 10, 11, 12, 13, 14, 16, 18, 20, 21, 22, 23, 42: Tensors[I].DType := StU8;
     end;
     Tensors[I].DataOffset := Offset + Source.Offset;
     Tensors[I].DataSize := Source.ByteSize;
@@ -542,7 +542,7 @@ begin
   Resource := TSafeTensorResource.Create;
   MappingOwner := Resource;
   try
-    Stream := TFileStream.Create(Apath, FmOpenRead or FmShareDenyWrite);
+    Stream := TBufferedFileStream.Create(Apath, FmOpenRead or FmShareDenyWrite, 1024*1024);
     try
       FileSize := Stream.Size;
       if (FileSize < 8) or (FileSize > High(NativeInt)) then

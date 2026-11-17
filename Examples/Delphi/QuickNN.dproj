@@ -182,6 +182,8 @@
         </BuildConfiguration>
         <DCCReference Include="..\..\src\models\QuickNN.Models.LLM.pas"/>
         <DCCReference Include="..\..\src\models\QuickNN.Models.QwenHybrid.pas"/>
+        <DCCReference Include="..\..\src\models\QuickNN.Models.QwenHybrid.CPU.pas"/>
+        <DCCReference Include="..\..\src\backends\cpu\QuickNN.CPU.Inference.pas"/>
         <DCCReference Include="..\..\src\models\QuickNN.Models.LLM.Vision.pas"/>
         <DCCReference Include="..\..\src\models\QuickNN.Models.LLM.Types.pas"/>
         <DCCReference Include="..\..\src\models\QuickNN.Models.LLM.Text.pas"/>
@@ -1200,6 +1202,16 @@
         </BorlandProject>
         <ProjectFileVersion>12</ProjectFileVersion>
     </ProjectExtensions>
+
+    <ItemGroup>
+        <DCCReference Include="..\..\src\models\QuickNN.Models.Flux1.pas"/>
+        <DCCReference Include="..\..\src\models\QuickNN.Models.Flux1.Transformer.pas"/>
+        <DCCReference Include="..\..\src\models\QuickNN.Models.Flux1.Text.pas"/>
+        <DCCReference Include="..\..\src\models\QuickNN.Models.Flux1.Tokenizers.pas"/>
+    </ItemGroup>
+    <ItemGroup>
+        <DCCReference Include="..\..\src\core\QuickNN.ModelFiles.pas"/>
+    </ItemGroup>
     <Import Project="$(BDS)\Bin\CodeGear.Delphi.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Delphi.Targets')"/>
     <Import Project="$(APPDATA)\Embarcadero\$(BDSAPPDATABASEDIR)\$(PRODUCTVERSION)\UserTools.proj" Condition="Exists('$(APPDATA)\Embarcadero\$(BDSAPPDATABASEDIR)\$(PRODUCTVERSION)\UserTools.proj')"/>
     <Import Project="$(MSBuildProjectName).deployproj" Condition="Exists('$(MSBuildProjectName).deployproj')"/>

@@ -7,7 +7,7 @@ interface
 uses
   System.SysUtils, System.Math, QuickNN.Common, QuickNN.Quantization.Int4, QuickNN.GGUF.Quantization
 {$IF defined(MSWINDOWS) and defined(CPUX64)}
-    , QuickNN.Vulkan.Helpers, System.Generics.Collections
+    , QuickNN.Vulkan.Helpers, QuickNN.Vulkan.API, System.Generics.Collections
 {$ENDIF}
 ;
 
@@ -23,6 +23,9 @@ type
     WeightUploads, WeightUploadBytes, WeightEvictions: UInt64;
     PipelineCalls, Submissions, Readbacks: UInt64;
     ActivationUploadBytes, ActivationDownloadBytes: UInt64;
+    AsyncWeightBatches, AsyncWeightBytes, OverlappedWeightBatches: UInt64;
+    AsyncTransferQueueFamily: Integer;
+    TimedAsyncWeightBatches, AsyncTransferNanoseconds, AsyncOverlapNanoseconds: UInt64;
   end;
 
 // Auto routes sufficiently large products to Vulkan. Force also routes small
@@ -122,7 +125,7 @@ implementation
 uses
   System.SyncObjs
 {$IF defined(MSWINDOWS) and defined(CPUX64)}
-    , QuickNN.Vulkan.API, Winapi.Windows
+    , Winapi.Windows
 {$ENDIF}
 ;
 
@@ -149,6 +152,7 @@ var
 {$I generated/QuickNN.Vulkan.Tensor.SPIRV.inc}
 {$I generated/QuickNN.Vulkan.Moe.SPIRV.inc}
 {$I generated/QuickNN.Vulkan.Hybrid.SPIRV.inc}
+{$I generated/QuickNN.Vulkan.Ggufvector.SPIRV.inc}
 
 destructor TGPUWeight.Destroy;
 begin
@@ -219,6 +223,8 @@ begin
       RESIDENT_DISPATCH_SLOTS
     );
     PreparePipeline(TKernelHandle(5), CreateShader(@QNN_HYBRID_SPIRV[0], SizeOf(QNN_HYBRID_SPIRV)),
+      Workload, 4, RESIDENT_DISPATCH_SLOTS);
+    PreparePipeline(TKernelHandle(6), CreateShader(@QNN_GGUFVECTOR_SPIRV[0], SizeOf(QNN_GGUFVECTOR_SPIRV)),
       Workload, 4, RESIDENT_DISPATCH_SLOTS);
   finally
     SetExceptionMask(PreviousMask);
@@ -785,7 +791,7 @@ begin
         KvHeads,
         HeadDim,
         CausalRows,
-        Ord(Length(KeyLimits) > 0),
+        Ord(Length(KeyLimits) > 0), 0, Single(0), Single(0),
         FInputA.Buffer,
         FInputB.Buffer,
         FOutput.Buffer
@@ -1095,6 +1101,13 @@ begin
   Status.ActivationUploadBytes := FCounters.ActivationUploadBytes;
   Status.ActivationDownloadBytes := FCounters.ActivationDownloadBytes;
   Status.PipelineCalls := FCounters.PipelineCalls;
+  Status.AsyncWeightBatches := FCounters.AsyncWeightBatches;
+  Status.AsyncWeightBytes := FCounters.AsyncWeightBytes;
+  Status.OverlappedWeightBatches := FCounters.OverlappedWeightBatches;
+  Status.AsyncTransferQueueFamily := TransferQueueIndex;
+  Status.TimedAsyncWeightBatches := FCounters.TimedAsyncWeightBatches;
+  Status.AsyncTransferNanoseconds := FCounters.AsyncTransferNanoseconds;
+  Status.AsyncOverlapNanoseconds := FCounters.AsyncOverlapNanoseconds;
 end;
 
 {$ENDIF}
@@ -1506,6 +1519,7 @@ begin
 end;
 
 {$I QuickNN.Vulkan.Context.Implementation.inc}
+{$I QuickNN.Vulkan.Context.Prefetch.inc}
 
 initialization
   GPULock := TCriticalSection.Create;

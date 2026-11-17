@@ -5,20 +5,15 @@ interface
 uses
   System.SysUtils, System.Classes, System.Types, System.UITypes, FMX.Types,
   FMX.Controls, FMX.Forms, FMX.Layouts, FMX.StdCtrls, FMX.Objects, FMX.Graphics,
-  FMX.Controls.Presentation, FMX.Dialogs, Markdown4D.Fmx.Viewer, LLMUI.Data,
-  LLMUI.Images;
+  FMX.Controls.Presentation, FMX.TextLayout, Markdown4D.Fmx.Viewer, LLMUI.Data,
+  LLMUI.Images, LLMUI.Attachment;
 
 type
   TFrameMessage = class(TFrame)
-    SaveDialogImage: TSaveDialog;
-    ButtonNextImage: TButton;
-    LayoutImageDetails: TLayout;
-    ButtonOpenImage: TButton;
-    ButtonSaveImage: TButton;
-    LayoutImageActions: TLayout;
-    LabelImageDetails: TLabel;
-    ImageGenerated: TImage;
-    LayoutImageCard: TLayout;
+    LayoutContent: TLayout;
+    LayoutBubble: TLayout;
+    LayoutAttachments: TLayout;
+    FlowLayoutAttachments: TFlowLayout;
     LayoutRow: TLayout;
     LayoutAvatar: TLayout;
     CircleAvatar: TCircle;
@@ -29,36 +24,49 @@ type
     ExpanderThinking: TExpander;
     LayoutThinkingBody: TLayout;
     LayoutBody: TLayout;
-    TextUserMessage: TText;
     LayoutFooter: TLayout;
+    LayoutNegativePrompt: TLayout;
+    RectangleNegativePrompt: TRectangle;
+    LayoutNegativeHeader: TLayout;
+    ButtonToggleNegativePrompt: TButton;
+    LayoutNegativeCaption: TLayout;
+    LayoutNegativeChevron: TLayout;
+    PathNegativeChevron: TPath;
+    LabelNegativeCaption: TLabel;
+    ButtonCopyNegativePrompt: TButton;
+    PathNegativeCopy: TPath;
+    LayoutNegativeBody: TLayout;
+    LabelNegativePrompt: TLabel;
     LabelMetadata: TLabel;
     ButtonCopy: TButton;
     PathCopyIcon: TPath;
     ButtonContinue: TButton;
     ButtonRetry: TButton;
     PathRetryIcon: TPath;
-    procedure ButtonNextImageClick(Sender: TObject);
-    procedure ButtonOpenImageClick(Sender: TObject);
-    procedure ButtonSaveImageClick(Sender: TObject);
     procedure ThinkingExpandedChanged(Sender: TObject);
     procedure FrameResize(Sender: TObject);
     procedure ButtonCopyClick(Sender: TObject);
+    procedure ToggleNegativePromptClick(Sender: TObject);
+    procedure CopyNegativePromptClick(Sender: TObject);
     procedure ButtonRetryClick(Sender: TObject);
     procedure ButtonContinueClick(Sender: TObject);
   private
     FImages: TArray<TChatImage>;
-    FImageIndex: Integer;
-    FText, FMessageId, FImageFileName: string;
+    FAttachments: TArray<TFrameAttachment>;
+    FText, FMessageId: string;
     FUser, FRendering, FStreaming: Boolean;
-    FThinkingText: string;
-    FLastWidth, FUserHeightWidth, FUserHeight: Single;
-    FUserHeightText: string;
+    FThinkingText, FNegativePrompt: string;
+    FNegativeExpanded: Boolean;
+    FNegativeTextLayout: TTextLayout;
+    FLastWidth: Single;
     FResizePending, FHeightDirty: Boolean;
     FMeasuredAnswerLayout, FMeasuredThinkingLayout: Integer;
     FMeasuredThinkingHeight: Single;
     FMarkdownViewer, FThinkingViewer: TMarkdownViewer;
     FOnRetry, FOnContinue, FOnHeightChanged: TNotifyEvent;
-    procedure ShowAttachment;
+    procedure SetNegativePromptExpanded(const Value: Boolean);
+    procedure UpdateNegativePromptHeight;
+    procedure ShowAttachments;
     procedure RenderBody;
     procedure ApplyContentWidth;
     procedure UpdateMarkdown(const Viewer: TMarkdownViewer; const Value: string);
@@ -69,10 +77,12 @@ type
     function ApplyContentHeight: Boolean;
   public
     constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
     procedure SetMessage(const Message: TChatMessage; const CanRetry: Boolean; const CanContinue: Boolean = False);
     procedure UpdateActions(const CanRetry, CanContinue: Boolean);
     function SyncContentHeight(const AllowResize: Boolean = True): Boolean;
     property MessageId: string read FMessageId;
+    property NegativePromptExpanded: Boolean read FNegativeExpanded write SetNegativePromptExpanded;
     property MarkdownViewer: TMarkdownViewer read FMarkdownViewer;
     property ThinkingViewer: TMarkdownViewer read FThinkingViewer;
     property OnHeightChanged: TNotifyEvent read FOnHeightChanged write FOnHeightChanged;
@@ -83,8 +93,8 @@ type
 implementation
 
 uses
-  System.Math, System.IOUtils, FMX.TextLayout, Winapi.Windows, Winapi.ShellAPI,
-  QuickNN.Models.LLM.Types, LLMUI.Controls, LLMUI.Markdown, LLMUI.ImageViewer;
+  System.Math, Winapi.Windows, Winapi.ShellAPI,
+  QuickNN.Models.LLM.Types, LLMUI.Controls, LLMUI.Markdown;
 
 {$R *.fmx}
 
@@ -94,6 +104,77 @@ begin
   FMarkdownViewer := CreateChatMarkdownViewer(Self, LayoutBody);
   FMarkdownViewer.OnResolveImage := ResolveImage;
   FMarkdownViewer.OnLinkClick := OpenLink;
+end;
+
+destructor TFrameMessage.Destroy;
+begin
+  FNegativeTextLayout.Free;
+  inherited;
+end;
+
+procedure TFrameMessage.UpdateNegativePromptHeight;
+begin
+  LayoutNegativePrompt.Visible := FUser and (FNegativePrompt.Trim <> '');
+  LayoutNegativeBody.Visible := LayoutNegativePrompt.Visible and FNegativeExpanded;
+  var TextHeight: Single := 0;
+  if LayoutNegativeBody.Visible then
+  begin
+    // Plain native text keeps angle brackets and prompt punctuation literal.
+    // Allocate and measure only when expanded, never for collapsed virtual rows.
+    if FNegativeTextLayout = nil then FNegativeTextLayout := TTextLayoutManager.DefaultTextLayout.Create;
+    var TextWidth := Max(1, LayoutNegativePrompt.Width - LayoutNegativeBody.Padding.Left
+      - LayoutNegativeBody.Padding.Right - 2);
+    if (FNegativeTextLayout.Text <> FNegativePrompt)
+      or not SameValue(FNegativeTextLayout.MaxSize.X, TextWidth, 0.1) then
+    begin
+      FNegativeTextLayout.BeginUpdate;
+      try
+        FNegativeTextLayout.Font.Assign(LabelNegativePrompt.TextSettings.Font);
+        FNegativeTextLayout.WordWrap := True;
+        FNegativeTextLayout.HorizontalAlign := TTextAlign.Leading;
+        FNegativeTextLayout.VerticalAlign := TTextAlign.Leading;
+        FNegativeTextLayout.Trimming := TTextTrimming.None;
+        FNegativeTextLayout.MaxSize := PointF(TextWidth, 1000000);
+        FNegativeTextLayout.Text := FNegativePrompt;
+      finally FNegativeTextLayout.EndUpdate end;
+    end;
+    TextHeight := Max(20, Ceil(FNegativeTextLayout.TextHeight + 2));
+  end;
+  LayoutNegativeBody.Height := TextHeight + LayoutNegativeBody.Padding.Top + LayoutNegativeBody.Padding.Bottom;
+  LayoutNegativePrompt.Height := LayoutNegativeHeader.Height;
+  if LayoutNegativeBody.Visible then
+    LayoutNegativePrompt.Height := LayoutNegativePrompt.Height + LayoutNegativeBody.Height;
+  if FNegativeExpanded then
+  begin
+    PathNegativeChevron.RotationAngle := 270;
+    ButtonToggleNegativePrompt.Hint := 'Свернуть негативный промпт';
+  end
+  else
+  begin
+    PathNegativeChevron.RotationAngle := 180;
+    ButtonToggleNegativePrompt.Hint := 'Показать использованный негативный промпт';
+  end;
+end;
+
+procedure TFrameMessage.SetNegativePromptExpanded(const Value: Boolean);
+begin
+  var Expanded := Value and FUser and (FNegativePrompt.Trim <> '');
+  if FNegativeExpanded = Expanded then Exit;
+  FNegativeExpanded := Expanded;
+  FHeightDirty := True;
+  SyncContentHeight;
+end;
+
+procedure TFrameMessage.ToggleNegativePromptClick(Sender: TObject);
+begin
+  NegativePromptExpanded := not NegativePromptExpanded;
+end;
+
+procedure TFrameMessage.CopyNegativePromptClick(Sender: TObject);
+begin
+  if FNegativePrompt = '' then Exit;
+  CopyText(FNegativePrompt);
+  ButtonCopyNegativePrompt.Hint := 'Скопировано';
 end;
 
 procedure TFrameMessage.ResolveImage(const Sender: TObject; const Url: string; const Bitmap: FMX.Graphics.TBitmap; var Handled: Boolean);
@@ -109,34 +190,9 @@ begin
 end;
 
 function TFrameMessage.BodyHeight: Single;
-var
-  TextLayout: TTextLayout;
 begin
-  if not FUser then
-  begin
-    if FMarkdownViewer.Visible then
-      Exit(Max(24, FMarkdownViewer.ContentHeight + 2))
-    else
-      Exit(0);
-  end;
-  if (FUserHeightText = FText) and SameValue(FUserHeightWidth, TextUserMessage.Width, 0.1) then
-    Exit(FUserHeight);
-  TextLayout := TTextLayoutManager.DefaultTextLayout.Create;
-  try
-    TextLayout.BeginUpdate;
-    TextLayout.Font.Family := 'Segoe UI';
-    TextLayout.Font.Size := 16;
-    TextLayout.MaxSize := PointF(Max(80, TextUserMessage.Width), 100000);
-    TextLayout.WordWrap := True;
-    TextLayout.Text := FText;
-    TextLayout.EndUpdate;
-    Result := Max(24, Ceil(TextLayout.TextHeight) + 4);
-    FUserHeightText := FText;
-    FUserHeightWidth := TextUserMessage.Width;
-    FUserHeight := Result;
-  finally
-    TextLayout.Free
-  end;
+  if FMarkdownViewer.Visible then Result := Max(24, FMarkdownViewer.ContentHeight + 2)
+  else Result := 0;
 end;
 
 function TFrameMessage.ApplyContentHeight: Boolean;
@@ -152,8 +208,13 @@ begin
     if (FThinkingViewer <> nil) and ExpanderThinking.IsExpanded then
       ExpanderThinking.ContentHeight :=
         FThinkingViewer.ContentHeight + LayoutThinkingBody.Padding.Top + LayoutThinkingBody.Padding.Bottom + 2;
-  if LayoutImageCard.Visible then
-    LayoutImageCard.Height := 60 + Min(380, Max(120, LayoutMessage.Width * ImageGenerated.Bitmap.Height / Max(1, ImageGenerated.Bitmap.Width)));
+  if LayoutAttachments.Visible then
+  begin
+    for var Attachment in FAttachments do
+      Attachment.Width := Min(MESSAGE_ATTACHMENT_WIDTH, Max(1, FlowLayoutAttachments.Width));
+    LayoutAttachments.Height := MessageAttachmentHeight(Length(FAttachments), FlowLayoutAttachments.Width);
+  end;
+  UpdateNegativePromptHeight;
   DesiredBody := BodyHeight;
   DesiredFrame :=
     DesiredBody
@@ -161,16 +222,17 @@ begin
     + LayoutFooter.Height
     + LayoutMessage.Padding.Top
     + LayoutMessage.Padding.Bottom;
-  if LayoutImageCard.Visible then
-    DesiredFrame := DesiredFrame + LayoutImageCard.Height + LayoutImageCard.Margins.Bottom;
+  if LayoutAttachments.Visible then
+    DesiredFrame := DesiredFrame + LayoutAttachments.Height + LayoutAttachments.Margins.Bottom;
+  if LayoutNegativePrompt.Visible then
+    DesiredFrame := DesiredFrame + LayoutNegativePrompt.Height + LayoutNegativePrompt.Margins.Top;
   if ExpanderThinking.Visible then
     DesiredFrame := DesiredFrame + ExpanderThinking.Height + ExpanderThinking.Margins.Bottom;
   Result := not SameValue(LayoutBody.Height, DesiredBody) or not SameValue(Height, DesiredFrame);
   LayoutBody.Height := DesiredBody;
   Height := DesiredFrame;
   FMeasuredThinkingHeight := ExpanderThinking.Height;
-  if not FUser then
-    TChatMarkdownViewer(FMarkdownViewer).FitContentHeight;
+  TChatMarkdownViewer(FMarkdownViewer).FitContentHeight;
   if FThinkingViewer <> nil then
     TChatMarkdownViewer(FThinkingViewer).FitContentHeight;
 end;
@@ -193,7 +255,7 @@ begin
   if FRendering or (FMarkdownViewer = nil) then
     Exit;
   WidthChanged := FResizePending and AllowResize;
-  LayoutChanged := not FUser and (FMeasuredAnswerLayout <> FMarkdownViewer.LayoutCount);
+  LayoutChanged := FMeasuredAnswerLayout <> FMarkdownViewer.LayoutCount;
   if FThinkingViewer <> nil then
     LayoutChanged := LayoutChanged or (FMeasuredThinkingLayout <> FThinkingViewer.LayoutCount);
   if not WidthChanged and not LayoutChanged and not FHeightDirty
@@ -278,12 +340,28 @@ begin
     end;
     FLastWidth := LayoutRow.Width;
     FResizePending := False;
-    TextUserMessage.Visible := FUser;
-    FMarkdownViewer.Visible := not FUser;
+    if FUser then
+    begin
+      FMarkdownViewer.Theme.BackgroundColor := $00000000;
+      LayoutAttachments.Padding.Right := 46;
+      FlowLayoutAttachments.Justify := TFlowJustify.Right;
+      FlowLayoutAttachments.JustifyLastLine := TFlowJustify.Right;
+    end
+    else
+    begin
+      FMarkdownViewer.Theme.BackgroundColor := $FF0F1416;
+      LayoutAttachments.Padding.Right := 0;
+      FlowLayoutAttachments.Justify := TFlowJustify.Left;
+      FlowLayoutAttachments.JustifyLastLine := TFlowJustify.Left;
+    end;
     ExpanderThinking.Visible := False;
     Realign;
     if FUser then
-      TextUserMessage.Text := FText
+    begin
+      FThinkingText := '';
+      FMarkdownViewer.Visible := FText <> '';
+      if FMarkdownViewer.Visible then UpdateMarkdown(FMarkdownViewer, FText);
+    end
     else
     begin
       Parts := SplitThinkingMarkdown(FText, FStreaming);
@@ -313,13 +391,17 @@ begin
   if FMessageId <> Message.Id then
   begin
     ExpanderThinking.IsExpanded := False;
-    FImageIndex := 0
+    FNegativeExpanded := False;
   end;
   FMessageId := Message.Id;
+  if FNegativePrompt <> Message.NegativePrompt then
+    ButtonCopyNegativePrompt.Hint := 'Копировать негативный промпт';
+  FNegativePrompt := Message.NegativePrompt;
+  if FNegativePrompt.Trim = '' then FNegativeExpanded := False;
+  LabelNegativePrompt.Text := FNegativePrompt;
+  ButtonCopyNegativePrompt.Enabled := FNegativePrompt <> '';
   FImages := Copy(Message.Images);
-  if FImageIndex >= Length(FImages) then
-    FImageIndex := 0;
-  ShowAttachment;
+  ShowAttachments;
   FStreaming := Message.State = msStreaming;
   FText := Message.Text;
   FUser := Message.Role = lrUser;
@@ -373,76 +455,25 @@ begin
     FResizePending := not SameValue(FLastWidth, Min(Width, CHAT_CONTENT_MAX_WIDTH), 0.1);
 end;
 
-procedure TFrameMessage.ShowAttachment;
+procedure TFrameMessage.ShowAttachments;
 begin
-  var NewImage := '';
-  if Length(FImages) > 0 then
-    NewImage := FImages[FImageIndex].FileName;
-  if FImageFileName <> NewImage then
+  while Length(FAttachments) > Length(FImages) do
   begin
-    ImageGenerated.Bitmap.Clear(0);
-    FImageFileName := NewImage;
-    if TFile.Exists(FImageFileName) then
-    try
-      ImageGenerated.Bitmap.LoadThumbnailFromFile(FImageFileName, 1024, 1024, False)
-    except
-      ImageGenerated.Bitmap.Clear(0)
-    end;
+    var Attachment := FAttachments[High(FAttachments)];
+    SetLength(FAttachments, Length(FAttachments) - 1);
+    Attachment.OnRemove := nil;
+    RetireControl(Attachment);
   end;
-  LayoutImageCard.Visible := Length(FImages) > 0;
-  ButtonNextImage.Visible := Length(FImages) > 1;
-  ButtonNextImage.Text := Format('%d/%d · далее', [FImageIndex + 1, Length(FImages)]);
-  if LayoutImageCard.Visible then
+  while Length(FAttachments) < Length(FImages) do
   begin
-    var Image := FImages[FImageIndex];
-    if Image.IsUserImage then
-      LabelImageDetails.Text := Format('%s · %d×%d', [Image.OriginalName, Image.Settings.Width, Image.Settings.Height])
-    else
-      LabelImageDetails.Text := Format('%s · %d×%d · seed %d', [Image.ModelName, Image.Settings.Width, Image.Settings.Height, Image.Settings.Seed]);
-    if not TFile.Exists(FImageFileName) then
-      LabelImageDetails.Text := 'Файл изображения недоступен · ' + LabelImageDetails.Text;
+    var Attachment := TFrameAttachment.Create(Self);
+    Attachment.Name := 'FrameAttachmentImage' + Length(FAttachments).ToString;
+    Attachment.Parent := FlowLayoutAttachments;
+    Attachment.Height := MESSAGE_ATTACHMENT_HEIGHT;
+    FAttachments := FAttachments + [Attachment];
   end;
-end;
-
-procedure TFrameMessage.ButtonNextImageClick(Sender: TObject);
-begin
-  if Length(FImages) < 2 then
-    Exit;
-  FImageIndex := (FImageIndex + 1) mod Length(FImages);
-  ShowAttachment;
-  RenderBody;
-end;
-
-procedure TFrameMessage.ButtonOpenImageClick(Sender: TObject);
-begin
-  var DialogOwner: TComponent := Application;
-  if Root <> nil then
-    DialogOwner := Root.GetObject;
-  TChatImageViewer.Open(DialogOwner, FImages, FImageIndex);
-end;
-
-procedure TFrameMessage.ButtonSaveImageClick(Sender: TObject);
-begin
-  // A modal picker pumps UI updates: virtualization may recycle this frame.
-  var Source := FImageFileName;
-  if not TFile.Exists(Source) then
-    Exit;
-  var DialogOwner: TComponent := Application;
-  if Root <> nil then
-    DialogOwner := Root.GetObject;
-  var Dialog := TSaveDialog.Create(DialogOwner);
-  try
-    // Copy settings before Execute: the frame can be retired during its modal loop.
-    Dialog.DefaultExt := SaveDialogImage.DefaultExt;
-    Dialog.Filter := SaveDialogImage.Filter;
-    Dialog.Options := SaveDialogImage.Options;
-    Dialog.Title := 'Сохранить изображение';
-    Dialog.FileName := ExtractFileName(Source);
-    if Dialog.Execute and not SameFileName(Dialog.FileName, Source) then
-      TFile.Copy(Source, Dialog.FileName, True);
-  finally
-    Dialog.Free;
-  end;
+  for var I := 0 to High(FAttachments) do FAttachments[I].SetHistoryImages(FImages, I);
+  LayoutAttachments.Visible := Length(FAttachments) > 0;
 end;
 
 procedure TFrameMessage.ButtonCopyClick(Sender: TObject);

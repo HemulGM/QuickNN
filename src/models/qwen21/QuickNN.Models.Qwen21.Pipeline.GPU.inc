@@ -126,9 +126,9 @@ begin
     Notify('GPU RGBA VAE decode');
     VAE := TQwen21VAE.Create(Inputs.VAEFile, TPath.Combine(FAssets, 'vae_config.json'), FStatus);
     Pixels := VAE.DecodeGPU(Ctx, Latents, Lh, Lw);
-    Result := TQNNImage.Create(Params.Width, Params.Height, 4);
+    Result := TQNNImage.Create(Lw * 16, Lh * 16, 4);
     try
-      Ctx.Download(Pixels, @Result.Data[0], Params.Width * Params.Height);
+      Ctx.Download(Pixels, @Result.Data[0], Result.Width * Result.Height);
     except
       Result.Free;
       raise;

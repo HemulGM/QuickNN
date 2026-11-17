@@ -6,6 +6,7 @@
 ): TQNNImage;
 var
   Ctx: TQNNGPUContext;
+  Adapters: TQNNLoRASet;
   Work: TGPUWorkspace;
   Positive, Negative, RefPixels, NoiseGPU, Latent, Pixels: TQNNGPUTensor;
   Refs: TGPUImageRefs;
@@ -14,6 +15,7 @@ var
   TextRows, IgnoredRows, H, W, RefH, RefW: Integer;
 begin
   Ctx := nil;
+  Adapters := nil;
   Work := nil;
   if (Params.Width <= 0) and (Length(Images) > 0) then
     Params.Width := Images[0].Width;
@@ -44,10 +46,16 @@ begin
     if Transformer.IsLoaded and not Transformer.ResidentOnly then
       Transformer.Free;
     if not Assigned(Qwen3Encoder.Model.Layers) then
-      Qwen3Encoder.Load(ModelDir, UseMmap, True);
+      Qwen3Encoder.Load(ModelDir, UseMmap, True,
+        ModelComponentDirectory(Components.TextEncoder, ModelDir + '/text_encoder'),
+        ModelComponentFile(Components.Tokenizer, ModelDir + '/tokenizer/tokenizer.json'));
     Qwen3Encoder.Model.SetExtractionMode(False);
     if not Transformer.IsLoaded then
       Transformer := TTransformerFlux.Load(ModelDir, UseMmap, True);
+    Adapters := TQNNLoRASet.Create(LoRAs);
+    Transformer.AttachLoRAs(Adapters);
+    if (Adapters.ModuleCount > 0) and Assigned(PhaseCallback) then
+      PhaseCallback(Format('FLUX.2 GPU LoRA: %d modules, %d enabled', [Adapters.ModuleCount, Adapters.EnabledModuleCount]), False);
     if not VAE.DecConvInWeight.IsAssigned then
       LoadVAE;
     Noise := InitNoise(1, Transformer.LatentChannels, H, W, Params.Seed);
@@ -111,6 +119,10 @@ begin
                 Progress
             )
         );
+    Work.Release(Positive);
+    Work.Release(Negative);
+    Work.Release(NoiseGPU);
+    for var I := 0 to High(Refs) do Work.Release(Refs[I].Latent);
     Pixels := Work.Own(VAEDecodeGPU(Ctx, VAE, Latent, H, W));
     Result := GPUDownloadRGB(Ctx, Pixels, Params.Height, Params.Width);
     if Assigned(PhaseCallback) then
@@ -118,6 +130,8 @@ begin
   finally
     Work.Free;
     Ctx.Free;
+    Transformer.ClearLoRAs;
+    Adapters.Free;
     Noise.Free;
     Schedule.Free;
     // Model members keep their native host mappings and immutable cache identities

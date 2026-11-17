@@ -16,6 +16,7 @@ begin
   if GPU.FResident <> nil then
     raise EInvalidOp.Create('Only one resident context may own the Vulkan command buffer');
   FThread := GetCurrentThreadId;
+  FActivePrefetch := -1; FQueuedPrefetch := -1; FWaitPrefetch := -1;
   FDevice := GPU;
   FDevice.FResident := Self;
   FError := NewTensor(1);
@@ -32,8 +33,9 @@ begin
     if FDevice <> nil then
     begin
       try
-        Flush
+        EndWeightPrefetch
       finally
+        DestroyPrefetch;
         FOnWeightEvicted := nil;
         FDevice.FResident := nil;
         for var Entry in FRetained do
@@ -70,11 +72,45 @@ begin
 {$ENDIF}
 end;
 
+function TQNNGPUContext.ActivationBudget: UInt64;
+{$IF defined(MSWINDOWS) and defined(CPUX64)}
+var
+  Budget, Usage, Reserve: UInt64;
+{$ENDIF}
+begin
+  Result := FBytes;
+{$IF defined(MSWINDOWS) and defined(CPUX64)}
+  Inc(Result, FDevice.LocalMemoryHeadroom(Budget, Usage, Reserve));
+{$ENDIF}
+end;
+
+procedure TQNNGPUContext.TrimActivations;
+{$IF defined(MSWINDOWS) and defined(CPUX64)}
+var
+  Index: Integer;
+{$ENDIF}
+begin
+{$IF defined(MSWINDOWS) and defined(CPUX64)}
+  Flush;
+  Index := 0;
+  while Index < Length(FBuffers) do
+    if not FBuffers[Index].FLive then
+    begin
+      Dec(FBytes, FBuffers[Index].FMemory.Size);
+      FDevice.FreeMemory(FBuffers[Index].FMemory);
+      FBuffers[Index].Free;
+      FBuffers[Index] := FBuffers[High(FBuffers)];
+      SetLength(FBuffers, Length(FBuffers) - 1);
+    end
+    else
+      Inc(Index);
+{$ENDIF}
+end;
+
 function TQNNGPUContext.NewTensor(const Count: Integer): TQNNGPUTensor;
 {$IF defined(MSWINDOWS) and defined(CPUX64)}
 var
-  Bytes: UInt64;
-  Index: Integer;
+  Bytes, Budget, Usage, Reserve, Headroom: UInt64;
 {$ENDIF}
 begin
   Result := nil;
@@ -91,24 +127,19 @@ begin
       Result := Tensor;
   if Result = nil then
   begin
-    if FBytes + Bytes > UInt64(2) * 1024 * 1024 * 1024 then
+    Headroom := FDevice.LocalMemoryHeadroom(Budget, Usage, Reserve);
+    if Bytes > Headroom then
     begin
-      Flush;
-      Index := 0;
-      while Index < Length(FBuffers) do
-        if not FBuffers[Index].FLive then
-        begin
-          Dec(FBytes, FBuffers[Index].FMemory.Size);
-          FDevice.FreeMemory(FBuffers[Index].FMemory);
-          FBuffers[Index].Free;
-          FBuffers[Index] := FBuffers[High(FBuffers)];
-          SetLength(FBuffers, Length(FBuffers) - 1);
-        end
-        else
-          Inc(Index);
+      TrimActivations;
+      Headroom := FDevice.LocalMemoryHeadroom(Budget, Usage, Reserve);
+      // Only unpinned cached weights can yield space to live activations.
+      while (Bytes > Headroom) and FDevice.EvictOne do
+        Headroom := FDevice.LocalMemoryHeadroom(Budget, Usage, Reserve);
     end;
-    if FBytes + Bytes > UInt64(2) * 1024 * 1024 * 1024 then
-      raise ERangeError.Create('Resident activation arena exceeds 2 GiB');
+    if Bytes > Headroom then
+      raise ERangeError.CreateFmt(
+        'GPU activation needs %d MiB; available %d MiB after %d MiB VRAM reserve (budget %d MiB, used %d MiB)',
+        [Bytes div 1048576, Headroom div 1048576, Reserve div 1048576, Budget div 1048576, Usage div 1048576]);
     Result := TQNNGPUTensor.Create;
     Result.FOwner := Self;
     try
@@ -118,6 +149,7 @@ begin
       raise
     end;
     Inc(FBytes, Bytes);
+    FPeakBytes := Max(FPeakBytes, FBytes);
     SetLength(FBuffers, Length(FBuffers) + 1);
     FBuffers[High(FBuffers)] := Result;
     GPUStatus.ResidentPeakBytes := Max(GPUStatus.ResidentPeakBytes, FBytes);
@@ -134,6 +166,23 @@ begin
   Check(Tensor);
   Tensor.FLive := False;
   Tensor := nil
+end;
+
+procedure TQNNGPUContext.CopyCHWRect(const Dst, Src: TQNNGPUTensor;
+  const Channels, SrcWidth, SrcHeight, DstWidth, DstHeight,
+    SrcX, SrcY, DstX, DstY, Width, Height: Integer);
+begin
+  if (Channels < 1) or (Width < 1) or (Height < 1)
+    or (SrcX < 0) or (SrcY < 0) or (DstX < 0) or (DstY < 0)
+    or (Int64(SrcX) + Width > SrcWidth) or (Int64(SrcY) + Height > SrcHeight)
+    or (Int64(DstX) + Width > DstWidth) or (Int64(DstY) + Height > DstHeight)
+    or (Int64(Channels) * Width * Height > MaxInt) or (Dst = Src) then
+    raise EArgumentException.Create('Invalid GPU CHW rectangle');
+  Check(Src, Int64(Channels) * SrcWidth * SrcHeight);
+  Check(Dst, Int64(Channels) * DstWidth * DstHeight);
+  Kernel(GO_CHW_RECT, Channels * Width * Height, Dst, Src, nil, nil,
+    [SrcHeight * SrcWidth, SrcWidth, DstHeight * DstWidth, DstWidth,
+      SrcY * SrcWidth + SrcX, DstY * DstWidth + DstX, Height * Width, Width]);
 end;
 
 function TQNNGPUContext.Scratch(const Slot, Count: Integer): TQNNGPUTensor;
@@ -153,6 +202,7 @@ begin
   Result := FBytes;
 {$IF defined(MSWINDOWS) and defined(CPUX64)}
   Inc(Result, FUpload.Size + FRead.Size + FBatchUpload.Size);
+  for var Slot in FPrefetch do Inc(Result, Slot.Staging.Size);
 {$ENDIF}
 end;
 
@@ -166,7 +216,14 @@ begin
       Break;
     end;
   if FPending = 0 then
+  begin
     FDevice.BeginCommadBuffer;
+    if FComputeTimingPool <> nil then
+    begin
+      VkCmdResetQueryPool(FDevice.Cmd.Buffers[0], FComputeTimingPool, 0, 2);
+      VkCmdWriteTimestamp(FDevice.Cmd.Buffers[0], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, FComputeTimingPool, 0);
+    end;
+  end;
 end;
 procedure TQNNGPUContext.Barrier;
 begin
@@ -254,7 +311,11 @@ begin
   end
   else if Op = GO_LLM_TOPK_TILE then
     Groups := (Args[0] + 511) div 512
-  else if Op = GO_MOE_INT4_MATVEC then
+  else if Op = GO_GGUF_SWIGLU_VECTOR then
+    Groups := (Args[1] + 3) div 4
+  else if Op in [GO_GGUF_MATVEC, GO_LLM_SWIGLU_VECTOR, GO_INT4_SWIGLU_VECTOR] then
+    Groups := (Args[1] + 7) div 8
+  else if Op in [GO_MOE_INT4_MATVEC, GO_MOE_INT4_ACCUMULATE] then
     Groups := (Args[1] + 7) div 8
   else if Op = GO_MOE_INT4_GEMM then
     Groups := ((Args[1] + 31) div 32) * ((Args[2] + 7) div 8)
@@ -262,25 +323,33 @@ begin
     Groups := Args[0] * 2 * Args[1]
   else if Op = GO_HYBRID_DELTA_SCAN then
     Groups := Args[0]
+  else if Op in [GO_FLASH_GROUP_NORM, GO_FLASH_PLE_GATE] then
+    Groups := N div Args[0]
   else if Op = GO_HYBRID_GATED_NORM then
     Groups := N div Args[0]
   else if Op = GO_LLM_MATVEC_BF16 then
     Groups := (N + 7) div 8
   else if Op = GO_LLM_MATVEC then
     Groups := (N + 3) div 4
-  else if Op in [GO_NORM, GO_MOD_NORM, GO_GROUP_NORM, GO_MOE_ROUTE] then
+  else if Op in [GO_NORM, GO_MOD_NORM, GO_GROUP_NORM, GO_GROUP_NORM_STATS, GO_MOE_ROUTE] then
     Groups := Args[0]
   else
     Groups := (N + 255) div 256;
-  if Groups > Integer(FDevice.VulkanDevice.DeviceProperties.Limits.MaxComputeWorkGroupCount[0]) then
-    raise ERangeError.Create('Tensor dispatch exceeds device workgroup limit');
-  Start;
   Pipeline := 3;
-  if Op in [GO_MOE_ROUTE, GO_MOE_GATHER, GO_MOE_SCATTER, GO_MOE_INT4_MATVEC, GO_MOE_INT4_GEMM] then
+  if Op in [GO_MOE_ROUTE, GO_MOE_GATHER, GO_MOE_SCATTER, GO_MOE_INT4_MATVEC, GO_MOE_INT4_GEMM, GO_INT4_SWIGLU_VECTOR, GO_MOE_INT4_ACCUMULATE] then
     Pipeline := 4;
-  if (Op >= GO_HYBRID_INT4_GATHER) and (Op <= GO_HYBRID_ROPE) then
+  if ((Op >= GO_HYBRID_INT4_GATHER) and (Op <= GO_HYBRID_ROPE))
+    or ((Op >= GO_FLASH_GROUP_NORM) and (Op <= GO_FLASH_SHARED_GATE)) then
     Pipeline := 5;
-  FDevice.DispatchPipeline(TKernelHandle(Pipeline), Params, Groups, 1, 1, FSlots[Pipeline]);
+  if Op in [GO_GGUF_MATVEC, GO_GGUF_SWIGLU_VECTOR] then Pipeline := 6;
+  var GroupsX := Min(Groups, Integer(FDevice.VulkanDevice.DeviceProperties.Limits.MaxComputeWorkGroupCount[0]));
+  var GroupsY := (Groups + GroupsX - 1) div GroupsX;
+  if (GroupsY > Integer(FDevice.VulkanDevice.DeviceProperties.Limits.MaxComputeWorkGroupCount[1]))
+    or ((GroupsY > 1) and (Pipeline <> 3)) then
+    raise ERangeError.Create('Tensor dispatch exceeds device workgroup limit');
+  Params[2] := Groups;
+  Start;
+  FDevice.DispatchPipeline(TKernelHandle(Pipeline), Params, GroupsX, GroupsY, 1, FSlots[Pipeline]);
   Inc(FSlots[Pipeline]);
   Barrier;
   Inc(GPUStatus.TensorCalls);
@@ -307,6 +376,7 @@ begin
   try
     SetLength(FRetained, Length(FRetained) + 1);
     FRetained[High(FRetained)] := Entry;
+    Inc(FRetainedBytes, Entry.Memory.Size);
   except
     Dec(Entry.Pins);
     raise;
@@ -335,9 +405,8 @@ begin
     raise EInvalidOp.Create('Resident submission must stay on its creating thread');
   if FPending <> 0 then
   begin
-    FDevice.EndCommandBuffer;
-    FDevice.Finish;
-    Inc(FDevice.FCounters.Submissions);
+    SubmitPending;
+    FDevice.WaitForCompletion;
   end;
   // A synchronous preload can hold pins before any compute is recorded.
   for var Entry in FPins do
@@ -350,32 +419,25 @@ begin
 end;
 
 function TQNNGPUContext.WeightBatchCapacity: UInt64;
-{$IF defined(MSWINDOWS) and defined(CPUX64)}
-var
-  RetainedBytes: UInt64;
-{$ENDIF}
 begin
 {$IF defined(MSWINDOWS) and defined(CPUX64)}
   Check(FError);
-  RetainedBytes := 0;
-  for var Entry in FRetained do
-    Inc(RetainedBytes, Entry.Memory.Size);
-  Result := FDevice.FWeightLimit - Min(FDevice.FWeightLimit, RetainedBytes);
+  Result := FDevice.FWeightLimit - Min(FDevice.FWeightLimit, FRetainedBytes);
 {$ELSE}
   Result := 0;
 {$ENDIF}
 end;
 
-procedure TQNNGPUContext.PreloadWeights(const Weights: array of TMemoryBlock);
+procedure TQNNGPUContext.PreloadWeights(const Weights: array of TMemoryBlock; const StagingBytesLimit: UInt64);
 {$IF defined(MSWINDOWS) and defined(CPUX64)}
 const
-  MAX_STAGING_BYTES: UInt64 = 128 * 1024 * 1024;
+  MAX_STAGING_BYTES: UInt64 = 512 * 1024 * 1024;
 var
   Keys: TArray<string>;
   Sizes, PaddedSizes: TArray<UInt64>;
   Created: TArray<Boolean>;
   Unique: TDictionary<string, Byte>;
-  Total, Capacity, StageBytes, Used, Offset, Chunk, Actual: UInt64;
+  Total, Capacity, StageBytes, StageLimit, Used, Offset, Chunk, Actual: UInt64;
   UploadedBytes, UploadedWeights: UInt64;
   Entry: TGPUWeight;
   Source, Mapped: Pointer;
@@ -443,6 +505,8 @@ begin
   Check(FError);
   if Length(Weights) = 0 then
     Exit;
+  // Vulkan buffer copies require four-byte aligned offsets and lengths.
+  StageLimit := Min(MAX_STAGING_BYTES, Max(UInt64(4), StagingBytesLimit)) and not UInt64(3);
   SetLength(Keys, Length(Weights));
   SetLength(Sizes, Length(Weights));
   SetLength(PaddedSizes, Length(Weights));
@@ -511,8 +575,8 @@ begin
       end;
       Inc(FDevice.FCounters.WeightCacheMisses);
       if FBatchUpload.Size = 0 then
-        FBatchUpload := FDevice.CreateStagingMemory(Min(Total, MAX_STAGING_BYTES));
-      StageBytes := Min(Total, MAX_STAGING_BYTES);
+        FBatchUpload := FDevice.CreateStagingMemory(Min(Total, StageLimit));
+      StageBytes := Min(Total, StageLimit);
       if FBatchUpload.Size < StageBytes then
       begin
         FDevice.FreeMemory(FBatchUpload);
@@ -755,7 +819,7 @@ procedure TQNNGPUContext.Linear(
 var
   Entry: TGPUWeight;
   Input: TQNNGPUTensor;
-  Flags: Integer;
+  Flags, GroupsX: Integer;
 {$ENDIF}
 begin
   Check(Src, Int64(Rows) * InputDim);
@@ -775,11 +839,23 @@ begin
       Input := Scratch(0, Rows * InputDim);
       Kernel(GO_CONV_ROT, Rows * InputDim, Input, Src, nil, nil, [Rotation]);
     end;
+    if (Rows = 1) and (Weight.Encoding <> weNative) then
+    begin
+      RecordKernel(GO_GGUF_MATVEC, OutputDim, Dst, Input, nil, nil,
+        [InputDim, OutputDim, Ord(Weight.Encoding)], Entry, nil, False, False);
+      Pin(Entry); Entry := nil;
+      Inc(GPUStatus.GemmCalls); Inc(GPUStatus.GGUFCalls);
+      if Bias.IsAssigned then KernelWeights(GO_CONV_OUTPUT, OutputDim, Dst, Dst, Bias,
+        Default(TMemoryBlock), [OutputDim, 0, 0, 2]);
+      Exit;
+    end;
     Flags := 2 or (Ord(Weight.Encoding) shl 4);
     if Weight.DataType = DT_I8 then
       Flags := Flags or 8
     else if Weight.DataType = dtBF16 then
       Flags := Flags or 4;
+    GroupsX := (OutputDim + 63) div 64;
+    if (Flags and 256) <> 0 then GroupsX := (OutputDim + 3) div 4;
     Start;
     FDevice.DispatchPipeline(
         TKernelHandle(0),
@@ -800,7 +876,7 @@ begin
             OutputDim,
             Flags
         ],
-        (OutputDim + 63) div 64,
+        GroupsX,
         (Rows + 63) div 64,
         1,
         FSlots[0]
@@ -825,12 +901,13 @@ end;
 procedure TQNNGPUContext.Attention(
     const Dst, Q, K, V: TQNNGPUTensor;
     const Rows, Heads, KvHeads, Dim, Causal: Integer;
-    const Limits: TQNNGPUTensor
+    const Limits: TQNNGPUTensor;
+    const T5Bias: TQNNGPUTensor
 );
 {$IF defined(MSWINDOWS) and defined(CPUX64)}
 var
   PackedKV: TQNNGPUTensor;
-  Base: Integer;
+  Base, Extra, Mode: Integer;
 {$ENDIF}
 begin
   if (Rows < 1)
@@ -849,10 +926,21 @@ begin
   if not FDevice.FAttentionAvailable then
     raise ENotSupportedException.Create('Resident attention needs 32 KiB shared memory');
   Base := 2 * Rows * KvHeads * Dim;
-  PackedKV := Scratch(1, Base + Rows * Ord(Limits <> nil));
+  Extra := Rows * Ord(Limits <> nil);
+  Mode := Ord(Limits <> nil);
+  if T5Bias <> nil then
+  begin
+    if (Limits <> nil) or (Causal <> 0) or (Int64(Heads) * Rows * Rows + Base > MaxInt) then
+      raise EArgumentException.Create('Invalid T5 relative attention bias');
+    Extra := Heads * Rows * Rows;
+    Check(T5Bias, Extra);
+    Mode := 3;
+  end;
+  PackedKV := Scratch(1, Base + Extra);
   Kernel(GO_PACK_KV, Base, PackedKV, K, V, nil, [Rows, KvHeads, Dim]);
   if Limits <> nil then
     Copy(PackedKV, Limits, Rows, Base);
+  if T5Bias <> nil then Copy(PackedKV, T5Bias, Extra, Base);
   Start;
   FDevice.DispatchPipeline(
       TKernelHandle(2),
@@ -862,7 +950,7 @@ begin
           KvHeads,
           Dim,
           Causal,
-          Ord(Limits <> nil),
+          Mode, 0, Single(0), Single(0),
           Q.FMemory.Buffer,
           PackedKV.FMemory.Buffer,
           Dst.FMemory.Buffer
@@ -909,6 +997,83 @@ begin
     if Entry <> nil then
       Dec(Entry.Pins);
   end;
+{$ENDIF}
+end;
+
+function TQNNGPUContext.TrySwiGLUVector(const Dst, Src: TQNNGPUTensor; const Gate, Up: TMemoryBlock;
+  const InputDim, OutputDim: Integer): Boolean;
+{$IF defined(MSWINDOWS) and defined(CPUX64)}
+var
+  GateEntry, UpEntry: TGPUWeight;
+  Op, Width: Integer;
+  PairBytes: UInt64;
+{$ENDIF}
+begin
+  Result := False;
+  Check(Src, InputDim); Check(Dst, OutputDim);
+  if (InputDim < 1) or (OutputDim < 1) or (Dst = Src) then
+    raise EArgumentException.Create('Invalid fused SwiGLU dimensions');
+{$IF defined(MSWINDOWS) and defined(CPUX64)}
+  Op := GO_LLM_SWIGLU_VECTOR; Width := InputDim;
+  if (Gate.Encoding <> weNative) and (Up.Encoding <> weNative) then Op := GO_GGUF_SWIGLU_VECTOR
+  else if (Gate.DataType = dtU8) and (Up.DataType = dtU8) and (Gate.Encoding = weNative) and (Up.Encoding = weNative) then
+  begin Op := GO_INT4_SWIGLU_VECTOR; Width := Int4RowBytes(InputDim) end
+  else if (Gate.Encoding <> weNative) or (Up.Encoding <> weNative)
+    or not (Gate.DataType in [dtF32, dtBF16]) or not (Up.DataType in [dtF32, dtBF16]) then Exit;
+  if (Length(Gate.Shape) <> 2) or (Length(Up.Shape) <> 2)
+    or (Gate.Shape[0] <> OutputDim) or (Up.Shape[0] <> OutputDim)
+    or (Gate.Shape[1] <> Width) or (Up.Shape[1] <> Width) then
+    raise EArgumentException.Create('Invalid fused SwiGLU weight shape');
+  if Op = GO_GGUF_SWIGLU_VECTOR then
+    PairBytes := GGUFWeightBytes(Gate, OutputDim, Width) + GGUFWeightBytes(Up, OutputDim, Width)
+  else PairBytes := UInt64(Gate.Count) * UInt64(DATATYPE_BITS[Gate.DataType] div 8)
+    + UInt64(Up.Count) * UInt64(DATATYPE_BITS[Up.DataType] div 8);
+  // Scalar streaming remains available when a deliberately tiny cache cannot
+  // hold both projections simultaneously. Existing resident pairs need no space.
+  if (PairBytes > WeightBatchCapacity) and not (IsWeightResident(Gate, OutputDim, Width)
+    and IsWeightResident(Up, OutputDim, Width)) then Exit;
+  GateEntry := nil; UpEntry := nil;
+  try
+    GateEntry := FDevice.AcquireWeight(Gate, OutputDim, Width, Gate.DataType = dtU8);
+    UpEntry := FDevice.AcquireWeight(Up, OutputDim, Width, Up.DataType = dtU8);
+    if Op = GO_GGUF_SWIGLU_VECTOR then
+      RecordKernel(Op, OutputDim, Dst, Src, nil, nil, [InputDim, OutputDim, Ord(Gate.Encoding), Ord(Up.Encoding)], GateEntry, UpEntry, False, False)
+    else if Op = GO_INT4_SWIGLU_VECTOR then
+      RecordKernel(Op, OutputDim, Dst, Src, nil, nil, [InputDim, OutputDim, Width div 4], GateEntry, UpEntry, False, False)
+    else RecordKernel(Op, OutputDim, Dst, Src, nil, nil, [InputDim, OutputDim], GateEntry, UpEntry, Gate.DataType = dtBF16, Up.DataType = dtBF16);
+    Pin(GateEntry); GateEntry := nil; Pin(UpEntry); UpEntry := nil;
+    Inc(GPUStatus.GemmCalls, 2);
+    if Op = GO_GGUF_SWIGLU_VECTOR then Inc(GPUStatus.GGUFCalls, 2);
+    if Op = GO_INT4_SWIGLU_VECTOR then Inc(GPUStatus.Int4Calls, 2);
+    if Gate.DataType = dtBF16 then Inc(GPUStatus.BF16Calls);
+    if Up.DataType = dtBF16 then Inc(GPUStatus.BF16Calls);
+    Result := True;
+  finally
+    if GateEntry <> nil then Dec(GateEntry.Pins);
+    if UpEntry <> nil then Dec(UpEntry.Pins);
+  end;
+{$ENDIF}
+end;
+
+procedure TQNNGPUContext.Int4LinearAccumulate(const Dst, Src, Probabilities: TQNNGPUTensor;
+  const Weight: TMemoryBlock; const InputDim, OutputDim, ProbabilityIndex: Integer);
+{$IF defined(MSWINDOWS) and defined(CPUX64)}
+var Entry: TGPUWeight;
+{$ENDIF}
+begin
+  Check(Dst, OutputDim); Check(Src, InputDim); Check(Probabilities, Int64(ProbabilityIndex) + 1);
+  if (InputDim < 1) or (OutputDim < 1) or (ProbabilityIndex < 0) or (Dst = Src) or (Dst = Probabilities)
+    or (Weight.DataType <> dtU8) or (Weight.Encoding <> weNative) or (Weight.Offset <> 0)
+    or (Length(Weight.Shape) <> 2) or (Weight.Shape[0] <> OutputDim) or (Weight.Shape[1] <> Int4RowBytes(InputDim)) then
+    raise EArgumentException.Create('Invalid accumulated INT4 vector projection');
+{$IF defined(MSWINDOWS) and defined(CPUX64)}
+  Entry := FDevice.AcquireWeight(Weight, OutputDim, Int4RowBytes(InputDim), True);
+  try
+    RecordKernel(GO_MOE_INT4_ACCUMULATE, OutputDim, Dst, Src, nil, Probabilities,
+      [InputDim, OutputDim, Int4RowBytes(InputDim) div 4, ProbabilityIndex], Entry, nil, False, False);
+    Pin(Entry); Entry := nil;
+    Inc(GPUStatus.Int4Calls);
+  finally if Entry <> nil then Dec(Entry.Pins) end;
 {$ENDIF}
 end;
 
@@ -1023,7 +1188,8 @@ end;
 
 procedure TQNNGPUContext.CachedAttention(
     const Dst, Q, Cache: TQNNGPUTensor;
-    const QueryRows, Capacity, Heads, KvHeads, Dim, Position: Integer
+    const QueryRows, Capacity, Heads, KvHeads, Dim, Position: Integer;
+    const Window: Integer; const Softcap, Scale: Single; const Masked: Boolean
 );
 begin
   if (QueryRows < 1)
@@ -1035,18 +1201,19 @@ begin
       or (KvHeads < 1)
       or (Heads mod KvHeads <> 0)
       or (Dim < 1)
-      or (Dim > 1152) then
+      or (Dim > 1152) or (Window < 0) or (Softcap < 0) or IsNan(Softcap) or IsInfinite(Softcap)
+      or (Scale < 0) or IsNan(Scale) or IsInfinite(Scale) then
     raise EArgumentException.Create('Invalid resident cached attention');
   Check(Q, Int64(QueryRows) * Heads * Dim);
   Check(Dst, Int64(QueryRows) * Heads * Dim);
-  Check(Cache, Int64(2) * Capacity * KvHeads * Dim);
+  Check(Cache, Int64(2) * Capacity * KvHeads * Dim + Int64(Ord(Masked))*QueryRows*Capacity);
 {$IF defined(MSWINDOWS) and defined(CPUX64)}
   if not FDevice.FAttentionAvailable then
     raise ENotSupportedException.Create('Cached attention needs 32 KiB shared memory');
   Start;
   FDevice.DispatchPipeline(
       TKernelHandle(2),
-      [Capacity, Heads, KvHeads, Dim, Position, 2, Q.FMemory.Buffer, Cache.FMemory.Buffer, Dst.FMemory.Buffer],
+      [Capacity, Heads, KvHeads, Dim, Position, 2 + 2*Ord(Masked), Window, Softcap, Scale, Q.FMemory.Buffer, Cache.FMemory.Buffer, Dst.FMemory.Buffer],
       QueryRows,
       Heads,
       1,
@@ -1084,7 +1251,8 @@ begin
     begin
       Entry := FDevice.AcquireWeight(Weight, Vocab, Dim);
       if Weight.DataType = dtBF16 then
-        Kind := 1
+        Kind := 1;
+      if Weight.Encoding <> weNative then Kind := 16 + Ord(Weight.Encoding);
     end;
     RecordKernel(GO_GATHER, Rows * Dim, Dst, nil, nil, Ids, [Dim, Kind, Vocab], Entry, nil, False, False);
     Pin(Entry);

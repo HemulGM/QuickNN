@@ -38,7 +38,9 @@ begin
     if Transformer.IsLoaded and not Transformer.ResidentOnly then
       Transformer.Free;
     if not Embeddings.IsAssigned and not Assigned(Qwen3Encoder.Model.Layers) then
-      Qwen3Encoder.Load(ModelDir, UseMmap, True);
+      Qwen3Encoder.Load(ModelDir, UseMmap, True,
+        ModelComponentDirectory(Components.TextEncoder, ModelDir + '/text_encoder'),
+        ModelComponentFile(Components.Tokenizer, ModelDir + '/tokenizer/tokenizer.json'));
     if not Transformer.IsLoaded then
       Transformer.Load(
           ModelDir,
@@ -75,6 +77,9 @@ begin
     NoiseGPU := Work.Own(Ctx.Upload(Noise));
     Denoised := Work.Own(ZImageSampleGPU(Ctx, Transformer, NoiseGPU, H, W, Text, TextRows, Schedule, Params.NumSteps));
     Latent := Work.Patch(Denoised, H, W, Transformer.InChannels, Transformer.PatchSize, 2);
+    Work.Release(Text);
+    Work.Release(NoiseGPU);
+    Work.Release(Denoised);
     Pixels := Work.Own(VAEDecodeGPU(Ctx, VAE, Latent, H div ZiPatchSize, W div ZiPatchSize));
     Result := GPUDownloadRGB(Ctx, Pixels, Params.Height, Params.Width);
     if Assigned(PhaseCallback) then

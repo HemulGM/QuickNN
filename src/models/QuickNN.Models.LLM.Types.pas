@@ -48,15 +48,22 @@ type
     ExpertBatchBytes: UInt64;
     ExpertQuantization: TLLMExpertQuantization;
     DenseQuantization: TLLMWeightQuantization;
+    // Hybrid layers may overlap DMA copies with compute when two layers fit.
+    AsyncLayerPrefetch: Boolean;
+    // Hybrid decode runs a contiguous RAM prefix on CPU; prefill stays on GPU.
+    CPUOffload: Boolean;
+    CPUWeightPacking: Boolean; // Prepare GGUF scales once, inside the RAM budget.
+    CPUThreads: Integer; // Zero selects up to 8 persistent workers.
     ExpertCacheDirectory: string;
     OnExpertCacheProgress: TProc<Integer, Integer>;
     class function Defaults: TLLMMemoryOptions; static;
   end;
 
   TLLMMemoryStatus = record
-    IsMoE, IsHybrid: Boolean;
+    IsMoE, IsHybrid, IsGGUF, LayerPrefetchEnabled: Boolean;
     DenseQuantization: TLLMWeightQuantization;
-    ResidentLayers, StreamedLayers: Integer;
+    ResidentLayers, StreamedLayers, CPULayers: Integer;
+    CPUStateBytes, CPUPreparedWeightBytes: UInt64;
     RecurrentBytes, ActivationBytes: UInt64;
     ExpertQuantization: TLLMExpertQuantization;
     QuantizedMappedWeightBytes: UInt64;
@@ -112,6 +119,9 @@ class function TLLMMemoryOptions.Defaults: TLLMMemoryOptions;
 begin
   Result := Default(TLLMMemoryOptions);
   Result.DenseQuantization := wqInt4;
+  Result.AsyncLayerPrefetch := True;
+  Result.CPUOffload := True;
+  Result.CPUWeightPacking := True;
   Result.RAMCacheLimitBytes := UInt64(4) * 1024 * 1024 * 1024;
   Result.ExpertBatchBytes := UInt64(128) * 1024 * 1024;
 end;

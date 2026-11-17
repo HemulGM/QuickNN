@@ -1,4 +1,4 @@
-﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
     <PropertyGroup>
         <ProjectGuid>{6988F8E4-C19A-4D90-9696-02DF617F610D}</ProjectGuid>
         <ProjectVersion>20.4</ProjectVersion>
@@ -186,6 +186,16 @@
         </BorlandProject>
         <ProjectFileVersion>12</ProjectFileVersion>
     </ProjectExtensions>
+
+    <ItemGroup>
+        <DCCReference Include="..\..\src\models\QuickNN.Models.Flux1.pas"/>
+        <DCCReference Include="..\..\src\models\QuickNN.Models.Flux1.Transformer.pas"/>
+        <DCCReference Include="..\..\src\models\QuickNN.Models.Flux1.Text.pas"/>
+        <DCCReference Include="..\..\src\models\QuickNN.Models.Flux1.Tokenizers.pas"/>
+    </ItemGroup>
+    <ItemGroup>
+        <DCCReference Include="..\..\src\core\QuickNN.ModelFiles.pas"/>
+    </ItemGroup>
     <Import Project="$(BDS)\Bin\CodeGear.Delphi.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Delphi.Targets')"/>
     <Import Project="$(APPDATA)\Embarcadero\$(BDSAPPDATABASEDIR)\$(PRODUCTVERSION)\UserTools.proj" Condition="Exists('$(APPDATA)\Embarcadero\$(BDSAPPDATABASEDIR)\$(PRODUCTVERSION)\UserTools.proj')"/>
 </Project>

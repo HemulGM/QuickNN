@@ -1,4 +1,30 @@
-﻿procedure FluxRoPEGPU(
+﻿function FluxLinearGPU(const Work: TGPUWorkspace; const Model: TTransformerFlux; const Target: string;
+  const Src: TQNNGPUTensor; const Weight: TMemoryBlock; const Rows, Inputs, Outputs: Integer): TQNNGPUTensor;
+begin
+  var Layer := Model.LoRALinear(Target);
+  if (Layer = nil) or not Layer.HasAdapters then Exit(Work.Linear(Src, Weight, Rows, Inputs, Outputs));
+  if (Layer.InputDim <> Inputs) or (Layer.OutputDim <> Outputs) then
+    raise EArgumentException.Create('FLUX.2 LoRA projection geometry mismatch: ' + Target);
+  Result := Work.New(Int64(Rows) * Outputs);
+  Layer.ForwardGPU(Work.Ctx, Result, Src, Rows);
+end;
+
+function FluxFFNGPU(const Work: TGPUWorkspace; const Model: TTransformerFlux; const Prefix: string;
+  const Src: TQNNGPUTensor; const GateWeight, UpWeight, DownWeight: TMemoryBlock;
+  const Rows, Hidden, Intermediate: Integer): TQNNGPUTensor;
+begin
+  var GateLayer := Model.LoRALinear(Prefix + '.linear_in');
+  var DownLayer := Model.LoRALinear(Prefix + '.linear_out');
+  if ((GateLayer = nil) or not GateLayer.HasAdapters) and ((DownLayer = nil) or not DownLayer.HasAdapters) then
+    Exit(Work.SwiGLU(Src, GateWeight, UpWeight, DownWeight, Rows, Hidden, Intermediate));
+  var Fused := FluxLinearGPU(Work, Model, Prefix + '.linear_in', Src, GateWeight, Rows, Hidden, 2 * Intermediate);
+  var Gate := Work.Slice(Fused, Rows, Intermediate, 2 * Intermediate, 0);
+  var Up := Work.Slice(Fused, Rows, Intermediate, 2 * Intermediate, Intermediate);
+  Work.Ctx.Kernel(GO_SWIGLU, Rows * Intermediate, Gate, Gate, Up, nil, [Intermediate, 0]);
+  Result := FluxLinearGPU(Work, Model, Prefix + '.linear_out', Gate, DownWeight, Rows, Intermediate, Hidden);
+end;
+
+procedure FluxRoPEGPU(
     const Ctx: TQNNGPUContext;
     const Tensor: TQNNGPUTensor;
     const Heads, HeadDim, Height, Width, TimeOffset, RowOffset: Integer;
@@ -40,6 +66,7 @@ procedure FluxDoubleGPU(
     const Ctx: TQNNGPUContext;
     const Model: TTransformerFlux;
     const Block: TDoubleBlock;
+    const BlockIndex: Integer;
     const Image, Text, ImageMod, TextMod: TQNNGPUTensor;
     const ImageRows, TextRows, Height, Width: Integer;
     const Refs: TGPUImageRefs
@@ -48,25 +75,27 @@ var
   Work: TGPUWorkspace;
   IQ, IK, IV, TQ, TK, TV, Q, K, V, A, N, Proj, ImageA, TextA: TQNNGPUTensor;
   Hidden, Rows: Integer;
+  Prefix: string;
 begin
   Work := TGPUWorkspace.Create(Ctx);
   try
     Hidden := Model.HiddenSize;
     Rows := ImageRows + TextRows;
+    Prefix := Format('transformer_blocks.%d.', [BlockIndex]);
     N := Work.Norm(Image, Default(TMemoryBlock), Default(TMemoryBlock), ImageRows, Hidden, True);
     N := Work.Modulate(N, ImageMod, ImageRows, Hidden, 0, Hidden, 0);
-    IQ := Work.Linear(N, GPUWeight(Block.ImgQWeight, Block.ImgQWeightBF16), ImageRows, Hidden, Hidden);
-    IK := Work.Linear(N, GPUWeight(Block.ImgKWeight, Block.ImgKWeightBF16), ImageRows, Hidden, Hidden);
-    IV := Work.Linear(N, GPUWeight(Block.ImgVWeight, Block.ImgVWeightBF16), ImageRows, Hidden, Hidden);
+    IQ := FluxLinearGPU(Work, Model, Prefix + 'attn.to_q', N, GPUWeight(Block.ImgQWeight, Block.ImgQWeightBF16), ImageRows, Hidden, Hidden);
+    IK := FluxLinearGPU(Work, Model, Prefix + 'attn.to_k', N, GPUWeight(Block.ImgKWeight, Block.ImgKWeightBF16), ImageRows, Hidden, Hidden);
+    IV := FluxLinearGPU(Work, Model, Prefix + 'attn.to_v', N, GPUWeight(Block.ImgVWeight, Block.ImgVWeightBF16), ImageRows, Hidden, Hidden);
     IQ := Work.Norm(IQ, Block.ImgNormQWeight, Default(TMemoryBlock), ImageRows * Model.NumHeads, Model.HeadDim);
     IK := Work.Norm(IK, Block.ImgNormKWeight, Default(TMemoryBlock), ImageRows * Model.NumHeads, Model.HeadDim);
     FluxImageRoPEGPU(Ctx, IQ, Model, Height, Width, 0, Refs);
     FluxImageRoPEGPU(Ctx, IK, Model, Height, Width, 0, Refs);
     N := Work.Norm(Text, Default(TMemoryBlock), Default(TMemoryBlock), TextRows, Hidden, True);
     N := Work.Modulate(N, TextMod, TextRows, Hidden, 0, Hidden, 0);
-    TQ := Work.Linear(N, GPUWeight(Block.TxtQWeight, Block.TxtQWeightBF16), TextRows, Hidden, Hidden);
-    TK := Work.Linear(N, GPUWeight(Block.TxtKWeight, Block.TxtKWeightBF16), TextRows, Hidden, Hidden);
-    TV := Work.Linear(N, GPUWeight(Block.TxtVWeight, Block.TxtVWeightBF16), TextRows, Hidden, Hidden);
+    TQ := FluxLinearGPU(Work, Model, Prefix + 'attn.add_q_proj', N, GPUWeight(Block.TxtQWeight, Block.TxtQWeightBF16), TextRows, Hidden, Hidden);
+    TK := FluxLinearGPU(Work, Model, Prefix + 'attn.add_k_proj', N, GPUWeight(Block.TxtKWeight, Block.TxtKWeightBF16), TextRows, Hidden, Hidden);
+    TV := FluxLinearGPU(Work, Model, Prefix + 'attn.add_v_proj', N, GPUWeight(Block.TxtVWeight, Block.TxtVWeightBF16), TextRows, Hidden, Hidden);
     TQ := Work.Norm(TQ, Block.TxtNormQWeight, Default(TMemoryBlock), TextRows * Model.NumHeads, Model.HeadDim);
     TK := Work.Norm(TK, Block.TxtNormKWeight, Default(TMemoryBlock), TextRows * Model.NumHeads, Model.HeadDim);
     FluxRoPEGPU(Ctx, TQ, Model.NumHeads, Model.HeadDim, 1, TextRows, 0, 0, True, Model.RoPETheta);
@@ -78,15 +107,15 @@ begin
     Ctx.Attention(A, Q, K, V, Rows, Model.NumHeads, Model.NumHeads, Model.HeadDim, 0);
     TextA := Work.Copy(A, TextRows * Hidden);
     ImageA := Work.Copy(A, ImageRows * Hidden, TextRows * Hidden);
-    Proj := Work.Linear(ImageA, GPUWeight(Block.ImgProjWeight, Block.ImgProjWeightBF16), ImageRows, Hidden, Hidden);
+    Proj := FluxLinearGPU(Work, Model, Prefix + 'attn.to_out.0', ImageA, GPUWeight(Block.ImgProjWeight, Block.ImgProjWeightBF16), ImageRows, Hidden, Hidden);
     Work.Modulate(Proj, ImageMod, ImageRows, Hidden, 1, 2 * Hidden, 0, Image);
-    Proj := Work.Linear(TextA, GPUWeight(Block.TxtProjWeight, Block.TxtProjWeightBF16), TextRows, Hidden, Hidden);
+    Proj := FluxLinearGPU(Work, Model, Prefix + 'attn.to_add_out', TextA, GPUWeight(Block.TxtProjWeight, Block.TxtProjWeightBF16), TextRows, Hidden, Hidden);
     Work.Modulate(Proj, TextMod, TextRows, Hidden, 1, 2 * Hidden, 0, Text);
     N := Work.Norm(Image, Default(TMemoryBlock), Default(TMemoryBlock), ImageRows, Hidden, True);
     N := Work.Modulate(N, ImageMod, ImageRows, Hidden, 0, 4 * Hidden, 3 * Hidden);
     Proj :=
-        Work.SwiGLU(
-            N,
+        FluxFFNGPU(
+            Work, Model, Prefix + 'ff', N,
             GPUWeight(Block.ImgMlpGateWeight, Block.ImgMlpGateWeightBF16),
             GPUWeight(Block.ImgMlpUpWeight, Block.ImgMlpUpWeightBF16),
             GPUWeight(Block.ImgMlpDownWeight, Block.ImgMlpDownWeightBF16),
@@ -98,8 +127,8 @@ begin
     N := Work.Norm(Text, Default(TMemoryBlock), Default(TMemoryBlock), TextRows, Hidden, True);
     N := Work.Modulate(N, TextMod, TextRows, Hidden, 0, 4 * Hidden, 3 * Hidden);
     Proj :=
-        Work.SwiGLU(
-            N,
+        FluxFFNGPU(
+            Work, Model, Prefix + 'ff_context', N,
             GPUWeight(Block.TxtMlpGateWeight, Block.TxtMlpGateWeightBF16),
             GPUWeight(Block.TxtMlpUpWeight, Block.TxtMlpUpWeightBF16),
             GPUWeight(Block.TxtMlpDownWeight, Block.TxtMlpDownWeightBF16),
@@ -117,6 +146,7 @@ procedure FluxSingleGPU(
     const Ctx: TQNNGPUContext;
     const Model: TTransformerFlux;
     const Block: TSingleBlock;
+    const BlockIndex: Integer;
     const X, Modulation: TQNNGPUTensor;
     const Rows, TextRows, Height, Width: Integer;
     const Refs: TGPUImageRefs
@@ -125,15 +155,17 @@ var
   Work: TGPUWorkspace;
   N, Fused, Q, K, V, Gate, Up, A, Joined, Proj: TQNNGPUTensor;
   Hidden, Mlp, FusedDim: Integer;
+  Prefix: string;
 begin
   Work := TGPUWorkspace.Create(Ctx);
   try
     Hidden := Model.HiddenSize;
     Mlp := Model.MlpHidden;
     FusedDim := Hidden * 3 + Mlp * 2;
+    Prefix := Format('single_transformer_blocks.%d.', [BlockIndex]);
     N := Work.Norm(X, Default(TMemoryBlock), Default(TMemoryBlock), Rows, Hidden, True);
     N := Work.Modulate(N, Modulation, Rows, Hidden, 0, Hidden, 0);
-    Fused := Work.Linear(N, GPUWeight(Block.QKVMlpWeight, Block.QKVMlpWeightBF16), Rows, Hidden, FusedDim);
+    Fused := FluxLinearGPU(Work, Model, Prefix + 'attn.to_qkv_mlp_proj', N, GPUWeight(Block.QKVMlpWeight, Block.QKVMlpWeightBF16), Rows, Hidden, FusedDim);
     Q := Work.Slice(Fused, Rows, Hidden, FusedDim, 0);
     K := Work.Slice(Fused, Rows, Hidden, FusedDim, Hidden);
     V := Work.Slice(Fused, Rows, Hidden, FusedDim, 2 * Hidden);
@@ -149,7 +181,7 @@ begin
     Ctx.Attention(A, Q, K, V, Rows, Model.NumHeads, Model.NumHeads, Model.HeadDim, 0);
     Ctx.Kernel(GO_SWIGLU, Rows * Mlp, Gate, Gate, Up, nil, [Mlp, 0]);
     Joined := Work.Join(A, Gate, Rows, Hidden, Mlp);
-    Proj := Work.Linear(Joined, GPUWeight(Block.ProjMlpWeight, Block.ProjMlpWeightBF16), Rows, Hidden + Mlp, Hidden);
+    Proj := FluxLinearGPU(Work, Model, Prefix + 'attn.to_out', Joined, GPUWeight(Block.ProjMlpWeight, Block.ProjMlpWeightBF16), Rows, Hidden + Mlp, Hidden);
     Work.Modulate(Proj, Modulation, Rows, Hidden, 1, Hidden * 2, 0, X);
   finally
     Work.Free;
@@ -194,25 +226,19 @@ begin
       Inc(Offset, Ref.H * Ref.W);
     end;
     ImageX :=
-        Work.Linear(
-            Input,
-            GPUWeight(Model.ImgInWeight, Model.ImgInWeightBF16),
-            TotalImageRows,
-            Model.LatentChannels,
-            Hidden
-        );
-    TextX := Work.Linear(Text, GPUWeight(Model.TxtInWeight, Model.TxtInWeightBF16), TextRows, Model.TextDim, Hidden);
+        FluxLinearGPU(Work, Model, 'x_embedder', Input, GPUWeight(Model.ImgInWeight, Model.ImgInWeightBF16), TotalImageRows, Model.LatentChannels, Hidden);
+    TextX := FluxLinearGPU(Work, Model, 'context_embedder', Text, GPUWeight(Model.TxtInWeight, Model.TxtInWeightBF16), TextRows, Model.TextDim, Hidden);
     TEmb := Work.Sinusoidal(Time * 1000, Model.TimeEmbed.SincosDim);
-    TEmb := Work.Linear(TEmb, Model.TimeEmbed.Fc1Weight, 1, Model.TimeEmbed.SincosDim, Hidden);
+    TEmb := FluxLinearGPU(Work, Model, 'time_guidance_embed.timestep_embedder.linear_1', TEmb, Model.TimeEmbed.Fc1Weight, 1, Model.TimeEmbed.SincosDim, Hidden);
     TEmb := Work.Unary(TEmb, Hidden);
-    TEmb := Work.Linear(TEmb, Model.TimeEmbed.Fc2Weight, 1, Hidden, Hidden);
+    TEmb := FluxLinearGPU(Work, Model, 'time_guidance_embed.timestep_embedder.linear_2', TEmb, Model.TimeEmbed.Fc2Weight, 1, Hidden, Hidden);
     Silu := Work.Unary(TEmb, Hidden);
     ImageMod :=
-        Work.Linear(Silu, GPUWeight(Model.AdalnDoubleImgWeight, Model.AdalnDoubleImgWeightBF16), 1, Hidden, Hidden * 6);
+        FluxLinearGPU(Work, Model, 'double_stream_modulation_img.linear', Silu, GPUWeight(Model.AdalnDoubleImgWeight, Model.AdalnDoubleImgWeightBF16), 1, Hidden, Hidden * 6);
     TextMod :=
-        Work.Linear(Silu, GPUWeight(Model.AdalnDoubleTxtWeight, Model.AdalnDoubleTxtWeightBF16), 1, Hidden, Hidden * 6);
+        FluxLinearGPU(Work, Model, 'double_stream_modulation_txt.linear', Silu, GPUWeight(Model.AdalnDoubleTxtWeight, Model.AdalnDoubleTxtWeightBF16), 1, Hidden, Hidden * 6);
     SingleMod :=
-        Work.Linear(Silu, GPUWeight(Model.AdalnSingleWeight, Model.AdalnSingleWeightBF16), 1, Hidden, Hidden * 3);
+        FluxLinearGPU(Work, Model, 'single_stream_modulation.linear', Silu, GPUWeight(Model.AdalnSingleWeight, Model.AdalnSingleWeightBF16), 1, Hidden, Hidden * 3);
     for var I := 0 to Model.NumDoubleLayers - 1 do
     begin
       if not (Model.DoubleBlocks[I].ImgQWeight.IsAssigned or Model.DoubleBlocks[I].ImgQWeightBF16.IsAssigned) then
@@ -221,6 +247,7 @@ begin
           Ctx,
           Model,
           Model.DoubleBlocks[I],
+          I,
           ImageX,
           TextX,
           ImageMod,
@@ -241,22 +268,16 @@ begin
     begin
       if not (Model.SingleBlocks[I].QKVMlpWeight.IsAssigned or Model.SingleBlocks[I].QKVMlpWeightBF16.IsAssigned) then
         Model.SingleBlocks[I].Load(Model.SfFiles, I, Hidden, Model.MlpHidden, Model.UseBF16, Model.UseMmap, True);
-      FluxSingleGPU(Ctx, Model, Model.SingleBlocks[I], Joined, SingleMod, Rows, TextRows, Height, Width, Refs);
+      FluxSingleGPU(Ctx, Model, Model.SingleBlocks[I], I, Joined, SingleMod, Rows, TextRows, Height, Width, Refs);
       if Assigned(SubstepCallback) then
         SubstepCallback(SUBSTEP_SINGLE_BLOCK, I, Model.NumSingleLayers);
     end;
     ImageX := Work.Copy(Joined, ImageRows * Hidden, TextRows * Hidden);
-    FinalMod := Work.Linear(Silu, Model.FinalNormWeight, 1, Hidden, Hidden * 2);
+    FinalMod := FluxLinearGPU(Work, Model, 'norm_out.linear', Silu, Model.FinalNormWeight, 1, Hidden, Hidden * 2);
     N := Work.Norm(ImageX, Default(TMemoryBlock), Default(TMemoryBlock), ImageRows, Hidden, True);
     N := Work.Modulate(N, FinalMod, ImageRows, Hidden, 0, 0, Hidden);
     OutRows :=
-        Work.Linear(
-            N,
-            GPUWeight(Model.FinalProjWeight, Model.FinalProjWeightBF16),
-            ImageRows,
-            Hidden,
-            Model.LatentChannels
-        );
+        FluxLinearGPU(Work, Model, 'proj_out', N, GPUWeight(Model.FinalProjWeight, Model.FinalProjWeightBF16), ImageRows, Hidden, Model.LatentChannels);
     Result := Work.RowsToCHW(OutRows, ImageRows, Model.LatentChannels);
     Ctx.CheckFinite(Result);
     Work.Keep(Result);

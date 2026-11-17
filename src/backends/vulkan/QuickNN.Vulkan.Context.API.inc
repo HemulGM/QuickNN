@@ -12,26 +12,55 @@ public
   Count: Integer;
 end;
 TQNNGPUContext = class
+{$IF defined(MSWINDOWS) and defined(CPUX64)}
+private type
+  TPrefetchSlot = record
+    Staging: TVulkanMemory;
+    Mapped: Pointer;
+    CommandBuffer: VkCommandBuffer;
+    Fence: VkFence;
+    Ready: VkSemaphore;
+    TimingPool: VkQueryPool;
+    ComputeTimes: array[0..1] of UInt64;
+    HasComputeTimes: Boolean;
+    Submitted, SemaphorePending: Boolean;
+    Keys, PreparedKeys: TArray<string>;
+    PreparedOffsets: TArray<UInt64>;
+    PreparedIdentities: TArray<IInterface>;
+    Entries: TArray<TGPUWeight>;
+  end;
+  PPrefetchSlot = ^TPrefetchSlot;
+{$ENDIF}
 private
 {$IF defined(MSWINDOWS) and defined(CPUX64)}
   FBuffers: TArray<TQNNGPUTensor>;
 {$ENDIF}
   FError: TQNNGPUTensor;
   FScratch: array[0..3] of TQNNGPUTensor;
-  FBytes: UInt64;
+  FBytes, FPeakBytes: UInt64;
   FOnWeightEvicted: TProc<IInterface>;
 {$IF defined(MSWINDOWS) and defined(CPUX64)}
   FThread: Cardinal;
   FLocked: Boolean;
   FPending: Integer;
-  FSlots: array[0..5] of Integer;
+  FSlots: array[0..6] of Integer;
 {$ENDIF}
 {$IF defined(MSWINDOWS) and defined(CPUX64)}
   FDevice: TQNNVulkan;
   FPins: TArray<TGPUWeight>;
   FRetained: TArray<TGPUWeight>;
+  FRetainedBytes: UInt64;
   FUpload, FRead, FBatchUpload: TVulkanMemory;
   FMask: TFPUExceptionMask;
+  FPrefetchPool: VkCommandPool;
+  FComputeTimingPool: VkQueryPool;
+  FPrefetch: array[0..1] of TPrefetchSlot;
+  FPrefetchEnabled: Boolean;
+  FPrefetchBytes: UInt64;
+  FActivePrefetch, FQueuedPrefetch, FWaitPrefetch, FNextPrefetch: Integer;
+  procedure SubmitPending;
+  procedure ReleasePrefetchSlot(const Index: Integer);
+  procedure DestroyPrefetch;
   procedure Start;
   procedure Barrier;
   procedure Pin(const Entry: TGPUWeight);
@@ -54,7 +83,16 @@ public
   // Retained static weights cannot be evicted by streamed MoE experts.
   procedure RetainWeight(const Weight: TMemoryBlock; const Rows, Columns: Integer);
   // All sources are consumed synchronously; weights remain pinned until Flush.
-  procedure PreloadWeights(const Weights: array of TMemoryBlock);
+  procedure PreloadWeights(const Weights: array of TMemoryBlock; const StagingBytesLimit: UInt64 = 134217728);
+  // Two immutable layer batches alternate between DMA upload and compute.
+  function EnableWeightPrefetch(const MaxLayerBytes: UInt64): Boolean;
+  procedure BeginWeightPrefetch;
+  procedure PrefetchWeights(const Weights: array of TMemoryBlock; const DeferJoin: Boolean = False);
+  procedure StageWeightPrefetch(const Weights: array of TMemoryBlock);
+  procedure CompleteWeightPrefetch;
+  function ActivatePrefetchedWeights(const Weights: array of TMemoryBlock): Boolean;
+  procedure SealWeightPrefetch;
+  procedure EndWeightPrefetch;
   function WeightBatchCapacity: UInt64;
   function IsWeightResident(const Weight: TMemoryBlock; const Rows, Columns: Integer): Boolean;
   function Upload(const Data: TMemoryBlock): TQNNGPUTensor;
@@ -66,6 +104,9 @@ public
       const DstOffset: Integer = 0;
       const SrcOffset: Integer = 0
   );
+  procedure CopyCHWRect(const Dst, Src: TQNNGPUTensor;
+    const Channels, SrcWidth, SrcHeight, DstWidth, DstHeight,
+      SrcX, SrcY, DstX, DstY, Width, Height: Integer);
   procedure Kernel(const Op, N: Integer; const Dst, A, B, C: TQNNGPUTensor; const Args: array of Integer);
   procedure KernelWeights(
       const Op, N: Integer;
@@ -82,10 +123,16 @@ public
   procedure Attention(
       const Dst, Q, K, V: TQNNGPUTensor;
       const Rows, Heads, KvHeads, Dim, Causal: Integer;
-      const Limits: TQNNGPUTensor = nil
+      const Limits: TQNNGPUTensor = nil;
+      const T5Bias: TQNNGPUTensor = nil
   );
   // A one-token projection avoids padding decoding to a 64-row GEMM tile.
   procedure VectorLinear(const Dst, Src: TQNNGPUTensor; const Weight: TMemoryBlock; const InputDim, OutputDim: Integer);
+  // One decode dispatch computes SiLU(Gate*x)*(Up*x), preserving source storage.
+  function TrySwiGLUVector(const Dst, Src: TQNNGPUTensor; const Gate, Up: TMemoryBlock;
+    const InputDim, OutputDim: Integer): Boolean;
+  procedure Int4LinearAccumulate(const Dst, Src, Probabilities: TQNNGPUTensor; const Weight: TMemoryBlock;
+    const InputDim, OutputDim, ProbabilityIndex: Integer);
   // Exact tiled top-k and nucleus sampling; Dst receives a device token ID.
   // Packed INT4 remains compressed in VRAM, including multi-row prefill.
   procedure Int4Linear(
@@ -100,7 +147,8 @@ public
   );
   procedure CachedAttention(
       const Dst, Q, Cache: TQNNGPUTensor;
-      const QueryRows, Capacity, Heads, KvHeads, Dim, Position: Integer
+      const QueryRows, Capacity, Heads, KvHeads, Dim, Position: Integer;
+      const Window: Integer = 0; const Softcap: Single = 0; const Scale: Single = 0; const Masked: Boolean = False
   );
   procedure Gather(
       const Dst, Ids: TQNNGPUTensor;
@@ -109,6 +157,10 @@ public
   );
   procedure CheckFinite(const Tensor: TQNNGPUTensor; const Count: Integer = -1);
   function AllocatedBytes: UInt64;
+  function ActivationBudget: UInt64;
+  // Flush once, then return unused pooled buffers to the driver.
+  procedure TrimActivations;
+  property PeakActivationBytes: UInt64 read FPeakBytes;
   property OnWeightEvicted: TProc<IInterface> read FOnWeightEvicted write FOnWeightEvicted;
 end;
 function QNNGPUFloatBits(const Value: Single): Integer;
@@ -181,3 +233,26 @@ const
   GO_HYBRID_GATED_NORM = 62;
   GO_HYBRID_ATTN_GATE = 63;
   GO_HYBRID_ROPE = 64;
+  GO_GGUF_MATVEC = 65;
+  GO_LLM_SWIGLU_VECTOR = 66;
+  GO_GGUF_SWIGLU_VECTOR = 67;
+  GO_INT4_SWIGLU_VECTOR = 68;
+  GO_MOE_INT4_ACCUMULATE = 69;
+  GO_CHW_RECT = 70;
+  GO_GROUP_NORM_STATS = 71;
+  GO_NORMALIZED_IM2COL = 72;
+
+  GO_FLUX1_ROPE = 73;
+  GO_T5_POSITION_BIAS = 74;
+  GO_GEGLU = 75;
+  GO_SOFTCAP = 76;
+  GO_FLASH_GROUP_NORM = 77;
+  GO_FLASH_HC_INIT = 78;
+  GO_FLASH_HC_MIX = 79;
+  GO_FLASH_HC_COMBINE = 80;
+  GO_FLASH_PLE_GATE = 81;
+  GO_FLASH_PLE_CONV = 82;
+  GO_FLASH_QSA_POOL = 83;
+  GO_FLASH_QSA_SCORE = 84;
+  GO_FLASH_QSA_MASK = 85;
+  GO_FLASH_SHARED_GATE = 86;

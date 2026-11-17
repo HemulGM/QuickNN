@@ -44,7 +44,7 @@ type
 implementation
 
 uses
-  System.Math, System.IOUtils, QuickNN.Kernels;
+  System.Math, System.IOUtils, System.JSON, System.RegularExpressions, QuickNN.Kernels;
 
 type
   TQNNLoRAModule = class(TInterfacedObject, IQNNLinearAdapter, IQNNLoRAModule, IQNNGPULinearAdapter)
@@ -57,7 +57,7 @@ type
     FBound: Boolean;
   public
     procedure ApplyGPU(const Context: TQNNGPUContext; const Dst, Src: TQNNGPUTensor; const Rows, InputDim, OutputDim: Integer);
-    constructor Create(const FileData: TSafeTensorFile; const Target, DownName, UpName, AlphaName: string; const Strength: Single);
+    constructor Create(const FileData: TSafeTensorFile; const Target, DownName, UpName, AlphaName: string; const Strength: Single; const Metadata: TJSONObject);
     destructor Destroy; override;
     procedure Apply(const Dst, Src: TMemoryBlock; const Rows, InputDim, OutputDim: Integer);
     function Target: string;
@@ -73,11 +73,12 @@ begin
   Result.Strength := Strength
 end;
 
-constructor TQNNLoRAModule.Create(const FileData: TSafeTensorFile; const Target, DownName, UpName, AlphaName: string; const Strength: Single);
+constructor TQNNLoRAModule.Create(const FileData: TSafeTensorFile; const Target, DownName, UpName, AlphaName: string; const Strength: Single; const Metadata: TJSONObject);
 var
   DownTensor, UpTensor, AlphaTensor: PSafeTensor;
   AlphaMemory: TMemoryBlock;
   Scale, Alpha: Double;
+  RankStabilized: Boolean;
 begin
   inherited Create;
   FFile := FileData;
@@ -104,6 +105,22 @@ begin
   FInput := DownTensor.Shape[1];
   FOutput := UpTensor.Shape[0];
   Alpha := FRank;
+  RankStabilized := False;
+  if Metadata <> nil then
+  begin
+    var Value := Metadata.GetValue('transformer.lora_alpha');
+    if Value = nil then Value := Metadata.GetValue('lora_alpha');
+    if Value <> nil then Alpha := Value.AsType<Double>;
+    Value := Metadata.GetValue('transformer.use_rslora');
+    if Value = nil then Value := Metadata.GetValue('use_rslora');
+    if Value <> nil then RankStabilized := Value.AsType<Boolean>;
+    Value := Metadata.GetValue('transformer.alpha_pattern');
+    if Value = nil then Value := Metadata.GetValue('alpha_pattern');
+    if Value is TJSONObject then
+      for var Pair in TJSONObject(Value) do
+        if TRegEx.IsMatch(Target, '(^|.*\.)(' + Pair.JsonString.Value + ')$') then
+        begin Alpha := Pair.JsonValue.AsType<Double>; Break end;
+  end;
   AlphaTensor := FFile.Find(AlphaName);
   if AlphaTensor <> nil then
   begin
@@ -116,7 +133,8 @@ begin
       AlphaMemory.Free
     end;
   end;
-  Scale := Double(Strength) * Alpha / FRank;
+  if RankStabilized then Scale := Double(Strength) * Alpha / Sqrt(FRank)
+  else Scale := Double(Strength) * Alpha / FRank;
   if IsNan(Alpha) or IsInfinite(Alpha) or IsNan(Scale) or IsInfinite(Scale) or (Abs(Scale) > MaxSingle) then
     raise ESafeTensorError.Create('Non-finite LoRA scale/alpha: ' + FDescription);
   FScale := Scale;
@@ -244,6 +262,32 @@ begin
     end;
 end;
 
+function AdapterMetadata(const FileData: TSafeTensorFile): TJSONObject;
+begin
+  Result := nil;
+  var Header := TJSONValue.ParseJSONValue(string(FileData.HeaderJson));
+  try
+    if not (Header is TJSONObject) then Exit;
+    var Metadata := TJSONObject(Header).GetValue('__metadata__');
+    if not (Metadata is TJSONObject) then Exit;
+    var Encoded := TJSONObject(Metadata).GetValue('lora_adapter_metadata');
+    if Encoded = nil then Exit;
+    var Parsed := TJSONValue.ParseJSONValue(Encoded.Value);
+    if not (Parsed is TJSONObject) then
+    begin Parsed.Free; raise ESafeTensorError.Create('Invalid LoRA adapter metadata') end;
+    Result := TJSONObject(Parsed);
+    try
+      for var Name in ['use_dora', 'use_qalora', 'fan_in_fan_out', 'lora_bias'] do
+      begin
+        var Flag := Result.GetValue('transformer.' + Name);
+        if Flag = nil then Flag := Result.GetValue(Name);
+        if (Flag <> nil) and Flag.AsType<Boolean> then
+          raise ESafeTensorError.Create('Unsupported LoRA option: ' + Name);
+      end;
+    except Result.Free; raise end;
+  finally Header.Free end;
+end;
+
 constructor TQNNLoRASet.Create(const Specs: TArray<TQNNLoRASpec>);
 var
   FileData: TSafeTensorFile;
@@ -252,6 +296,7 @@ var
   Module: IQNNLoRAModule;
   Found: Integer;
   Recognized: Boolean;
+  Metadata: TJSONObject;
 begin
   inherited Create;
   FFiles := TDictionary<string, TSafeTensorFile>.Create;
@@ -267,6 +312,7 @@ begin
       FileData := TSafeTensorFile.Open(FileName);
       FFiles.Add(LowerCase(FileName), FileData);
     end;
+    Metadata := AdapterMetadata(FileData);
     Seen := TDictionary<string, Boolean>.Create;
     try
       Found := 0;
@@ -293,7 +339,7 @@ begin
         AlphaName := Target + '.alpha';
         if FileData.Find(AlphaName) = nil then
           AlphaName := Target + '.lora_alpha';
-        Module := TQNNLoRAModule.Create(FileData, CanonicalTarget(Target), DownName, UpName, AlphaName, Spec.Strength);
+        Module := TQNNLoRAModule.Create(FileData, CanonicalTarget(Target), DownName, UpName, AlphaName, Spec.Strength, Metadata);
         FModules.Add(Module);
         Inc(Found);
         Seen.AddOrSetValue(DownName, True);
@@ -310,7 +356,8 @@ begin
           raise ESafeTensorError.Create('Unsupported or unpaired LoRA tensor: ' + Tensor.Name + ' in ' + FileName);
       end;
     finally
-      Seen.Free
+      Seen.Free;
+      Metadata.Free;
     end;
   end;
 end;

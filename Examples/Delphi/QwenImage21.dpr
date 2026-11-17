@@ -14,20 +14,6 @@ uses
   QuickNN.Models.Qwen21.VAE,
   QuickNN.Vulkan;
 
-function FindAssets: string;
-var
-  Dir: string;
-begin
-  Dir := ExtractFileDir(ParamStr(0));
-  for var I := 0 to 7 do
-  begin
-    Result := TPath.Combine(Dir, 'assets/qwen-image-2.1');
-    if TFile.Exists(TPath.Combine(Result, 'tokenizer.json')) then
-      Exit;
-    Dir := ExtractFileDir(Dir);
-  end;
-  raise EFileNotFoundException.Create('Cannot locate assets/qwen-image-2.1; use --assets');
-end;
 
 procedure Run;
 var
@@ -52,7 +38,7 @@ var
 
 begin
   Params := TQwen21Params.Defaults;
-  Models := 'H:\Models';
+  Models := 'H:\Models\Qwen-Image-2.1';
   Assets := '';
   OutputPath := '';
   Precision := 'int8';
@@ -63,7 +49,7 @@ begin
     Arg := ParamStr(Index);
     if Arg = '--help' then
     begin
-      WriteLn('QwenImage21 [--models H:\Models] [--assets DIR] [--precision int8|bf16]');
+      WriteLn('QwenImage21 [--models H:\Models\Qwen-Image-2.1] [--assets DIR] [--precision int8|bf16]');
       WriteLn('  [--transformer FILE.gguf|FILE.safetensors] (text encoder/VAE come from --models)');
       WriteLn('  [--prompt TEXT | --prompt-file UTF8.txt] [--negative TEXT] [--cfg 1]');
       WriteLn('  [--image FILE]... [--reference-size 512] (ordered image references)');
@@ -125,7 +111,7 @@ begin
   if not ((Precision = 'int8') or (Precision = 'bf16')) then
     raise EArgumentException.Create('Precision must be int8 or bf16');
   if Assets = '' then
-    Assets := FindAssets;
+    Assets := Qwen21AssetsDirectory(Models);
   if OutputPath = '' then
     OutputPath :=
       TPath.Combine(

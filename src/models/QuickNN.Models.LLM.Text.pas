@@ -70,6 +70,7 @@ var
   Id, Covered: Integer;
   Input, Pattern: string;
 begin
+  if Tokenizer.SentencePiece then Exit(Tokenizer.EncodeSentencePiece(Text));
   if not Assigned(Tokenizer.VocabsDic) then
     raise EInvalidOp.Create('Load the Qwen3 tokenizer before encoding text');
   Tokens := TList<LongInt>.Create;
@@ -121,6 +122,45 @@ begin
   end;
 end;
 
+function GemmaChatTokens(var Tokenizer: TQNNTokenizer; const Messages: TLLMMessages): TArray<LongInt>;
+var
+  Tokens: TList<LongInt>;
+  SystemText: string;
+  Expected: TLLMRole;
+  HadUser: Boolean;
+  procedure Special(const Text: RawByteString);
+  begin
+    var Id := Tokenizer.GetId(Text);
+    if Id < 0 then raise EArgumentException.Create('Missing Gemma chat token');
+    Tokens.Add(Id);
+  end;
+  procedure Plain(const Text: string);
+  begin Tokens.AddRange(LLMEncodePlain(Tokenizer, Text)) end;
+begin
+  Tokens := TList<LongInt>.Create;
+  try
+    Special('<bos>'); Expected := lrUser; HadUser := False; SystemText := '';
+    for var Message in Messages do
+    begin
+      if Length(Message.Images) <> 0 then raise ENotSupportedException.Create('Gemma 2 is a text-only model');
+      if Message.Role = lrSystem then
+      begin
+        if HadUser then raise EArgumentException.Create('Place system instructions before Gemma user turns');
+        if SystemText <> '' then SystemText := SystemText + #10#10;
+        SystemText := SystemText + Message.Content.Trim; Continue;
+      end;
+      if Message.Role <> Expected then raise EArgumentException.Create('Gemma turns must alternate user and assistant');
+      Special('<start_of_turn>');
+      if Message.Role = lrUser then Plain('user'#10) else Plain('model'#10);
+      if not HadUser and (SystemText <> '') then Plain(SystemText + #10#10);
+      Plain(Message.Content.Trim); Special('<end_of_turn>'); Plain(#10);
+      if Message.Role = lrUser then begin HadUser := True; Expected := lrAssistant end else Expected := lrUser;
+    end;
+    if not HadUser or (Expected <> lrAssistant) then raise EArgumentException.Create('Gemma generation needs a final user message');
+    Special('<start_of_turn>'); Plain('model'#10); Result := Tokens.ToArray;
+  finally Tokens.Free end;
+end;
+
 function LLMChatTokens(var Tokenizer: TQNNTokenizer; const Messages: TLLMMessages; const EnableThinking: Boolean; const PlainTemplate: Boolean; const Hybrid: Boolean): TArray<LongInt>;
 const
   ROLE_NAMES: array[TLLMRole] of string = ('system', 'user', 'assistant');
@@ -147,6 +187,11 @@ var
 begin
   if Length(Messages) = 0 then
     raise EArgumentException.Create('A chat needs at least one message');
+  if Tokenizer.SentencePiece then
+  begin
+    if EnableThinking then raise ENotSupportedException.Create('Gemma 2 has no thinking mode');
+    Exit(GemmaChatTokens(Tokenizer, Messages));
+  end;
   Tokens := TList<LongInt>.Create;
   try
     LastUser := -1;
@@ -263,6 +308,18 @@ var
 begin
   if (Token < 0) or (Token >= Length(Tokenizer.Vocabs)) or (Tokenizer.Vocabs[Token] = '') then
     raise EArgumentOutOfRangeException.Create('Qwen3 token is outside the vocabulary');
+  if Tokenizer.SentencePiece then
+  begin
+    var Piece := UTF8ToString(Tokenizer.GetToken(Token));
+    if Tokenizer.PieceTypes[Token] = 6 then
+    begin
+      var B: Integer;
+      if (Length(Piece) <> 6) or not TryStrToInt('$' + Copy(Piece, 4, 2), B) then
+        raise EArgumentException.Create('Invalid SentencePiece byte token');
+      SetLength(Result, 1); Result[1] := AnsiChar(B); Exit;
+    end;
+    Exit(UTF8String(StringReplace(Piece, #$2581, ' ', [rfReplaceAll])));
+  end;
   Encoded := UTF8ToString(Tokenizer.GetToken(Token));
   SetLength(Result, Length(Encoded));
   for var I := 1 to Length(Encoded) do

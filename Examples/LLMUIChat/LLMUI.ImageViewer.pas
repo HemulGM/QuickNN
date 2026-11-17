@@ -9,6 +9,12 @@ uses
   LLMUI.Images;
 
 type
+  IChatImageReferenceHost = interface
+    ['{632D2A45-4E16-48FC-905C-58FF2B64FBCA}']
+    procedure UseImageAsReference(const Image: TChatImage);
+    procedure ShowImageReferenceMenu(const Image: TChatImage; const ScreenPosition: TPointF);
+  end;
+
   TFrameImageViewer = class(TFrame)
     RectangleShade: TRectangle;
     LayoutViewer: TLayout;
@@ -27,6 +33,7 @@ type
     PathCopyIcon: TPath;
     PopupMenuImage: TPopupMenu;
     MenuItemCopyImage: TMenuItem;
+    MenuItemUseAsReference: TMenuItem;
     ButtonSave: TButton;
     LayoutTools: TLayout;
     LayoutViewport: TLayout;
@@ -61,6 +68,7 @@ type
     procedure ButtonActualSizeClick(Sender: TObject);
     procedure ButtonFitClick(Sender: TObject);
     procedure CopyImageClick(Sender: TObject);
+    procedure UseAsReferenceClick(Sender: TObject);
     procedure ImageMenuPopup(Sender: TObject);
     procedure ButtonSaveClick(Sender: TObject);
     procedure FormKeyDown(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
@@ -78,7 +86,7 @@ type
     FFileName: string;
     FZoom: Single;
     FOffset, FLastMouse: TPointF;
-    FFitToWindow, FDragging: Boolean;
+    FFitToWindow, FDragging, FAutomaticZoom: Boolean;
     procedure AttachHost;
     procedure DetachHost;
     procedure HostCloseQuery(Sender: TObject; var CanClose: Boolean);
@@ -190,6 +198,8 @@ begin
   ButtonSave.Enabled := Loaded;
   ButtonCopy.Enabled := Loaded;
   MenuItemCopyImage.Enabled := Loaded;
+  var ReferenceHost: IChatImageReferenceHost;
+  MenuItemUseAsReference.Enabled := Loaded and TFile.Exists(FFileName) and Supports(FHost, IChatImageReferenceHost, ReferenceHost);
   var MinimumScale: Single := Min(MIN_ZOOM / PixelScale, FitZoom);
   var MaximumScale: Single := MAX_ZOOM / PixelScale;
   ButtonZoomIn.Enabled := Loaded and (FZoom < MaximumScale);
@@ -219,7 +229,7 @@ begin
   FBitmap.SetSize(0, 0);
   FFileName := '';
   FOffset := PointF(0, 0);
-  FFitToWindow := True;
+  FAutomaticZoom := True;
   LabelError.Text := '';
   LabelError.Visible := False;
   var Image := FImages[FIndex];
@@ -245,7 +255,8 @@ begin
   end;
   LabelFileName.Text := Name;
   LabelFileName.Hint := FFileName;
-  FZoom := FitZoom;
+  FZoom := Min(FitZoom, 1 / PixelScale);
+  FFitToWindow := FZoom < 1 / PixelScale;
   UpdateView;
 end;
 
@@ -403,9 +414,14 @@ procedure TFrameImageViewer.ViewportResize(Sender: TObject);
 begin
   if (FBitmap = nil) or FBitmap.IsEmpty then
     Exit;
-  if FFitToWindow then
+  if FAutomaticZoom or FFitToWindow then
   begin
     FZoom := FitZoom;
+    if FAutomaticZoom then
+    begin
+      FZoom := Min(FZoom, 1 / PixelScale);
+      FFitToWindow := FZoom < 1 / PixelScale;
+    end;
     FOffset := PointF(0, 0);
   end;
   ClampOffset;
@@ -437,6 +453,7 @@ begin
   var OldBounds := ImageBounds;
   var Position := (Pivot - OldBounds.TopLeft) / FZoom;
   FZoom := EnsureRange(Value, Min(MIN_ZOOM / PixelScale, FitZoom), MAX_ZOOM / PixelScale);
+  FAutomaticZoom := False;
   FFitToWindow := False;
   FOffset := Pivot - Position * FZoom
     - PointF((PaintBoxImage.Width - FBitmap.Width * FZoom) / 2,
@@ -542,9 +559,22 @@ end;
 
 procedure TFrameImageViewer.ButtonFitClick(Sender: TObject);
 begin
+  FAutomaticZoom := False;
   FFitToWindow := True;
   FOffset := PointF(0, 0);
   ViewportResize(PaintBoxImage);
+end;
+
+procedure TFrameImageViewer.UseAsReferenceClick(Sender: TObject);
+var
+  Host: IChatImageReferenceHost;
+begin
+  if FBitmap.IsEmpty or (FIndex < 0) or (FIndex >= Length(FImages))
+    or not Supports(FHost, IChatImageReferenceHost, Host) then
+    Exit;
+  var Image := FImages[FIndex];
+  Close; // Re-enable the composer before handing it the independent snapshot.
+  Host.UseImageAsReference(Image);
 end;
 
 procedure TFrameImageViewer.CopyImageClick(Sender: TObject);

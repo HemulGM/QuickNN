@@ -10,7 +10,7 @@ interface
 
 uses
   QuickNN.Common, QuickNN.SafeTensors, QuickNN.Models.Transformers,
-  QuickNN.Models.Qwen3, QuickNN.Models.VAE;
+  QuickNN.Models.Qwen3, QuickNN.Models.VAE, QuickNN.ModelFiles;
 
 type
 
@@ -51,6 +51,7 @@ type
     VAEShift: QNNFloat; (* Shift factor (0.1159 for Z-Image, 0 = use batch norm) *)
 
     (* Model info *)
+    Components: TQNNModelFiles;
     ModelName, ModelVersion, ModelDir: string; (* For reloading text encoder if released *)
 
     (* Memory mode *)
@@ -194,7 +195,7 @@ var
   JSON: TJSONValue;
   Sf: TSafeTensorFile;
 begin
-  ModelArc := Format('%s/vae/config.json', [ModelDir]);
+  ModelArc := TPath.Combine(ModelComponentDirectory(Components.VAE, ModelDir + '/vae'), 'config.json');
   if Assigned(PhaseCallback) then
     PhaseCallback('Loading [' + ModelArc + ']', False);
   JSON := TJSONValue.ParseJSONValue(TFile.ReadAllText(ModelArc));
@@ -205,7 +206,7 @@ begin
   if Assigned(PhaseCallback) then
     PhaseCallback('Loading [' + ModelArc + ']', True);
 
-  ModelArc := Format('%s/vae/diffusion_pytorch_model.safetensors', [ModelDir]);
+  ModelArc := ModelComponentFile(Components.VAE, ModelDir + '/vae/diffusion_pytorch_model.safetensors');
   if Assigned(PhaseCallback) then
     PhaseCallback('Loading [' + ModelArc + ']', False);
   Sf := TSafeTensorFile.Open(ModelArc);
@@ -356,7 +357,9 @@ begin
   begin
     if Assigned(PhaseCallback) then
       PhaseCallback('Loading Qwen3 encoder', False);
-    Qwen3Encoder.Load(ModelDir, UseMmap);
+    Qwen3Encoder.Load(ModelDir, UseMmap, False,
+      ModelComponentDirectory(Components.TextEncoder, ModelDir + '/text_encoder'),
+      ModelComponentFile(Components.Tokenizer, ModelDir + '/tokenizer/tokenizer.json'));
     OutSeqLen := QWEN3_MAX_SEQ_LEN;
     ;
     if Assigned(PhaseCallback) then

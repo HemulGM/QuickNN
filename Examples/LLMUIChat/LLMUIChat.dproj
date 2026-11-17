@@ -1,4 +1,4 @@
-﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
     <PropertyGroup>
         <ProjectGuid>{5BC0F14F-E813-4C42-B4DE-9A8B47C751D6}</ProjectGuid>
         <ProjectVersion>20.4</ProjectVersion>
@@ -406,6 +406,11 @@
             <FormType>fmx</FormType>
             <DesignClass>TFrame</DesignClass>
         </DCCReference>
+        <DCCReference Include="LLMUI.RoleSection.pas">
+            <Form>FrameRoleSection</Form>
+            <DesignClass>T</DesignClass>
+        </DCCReference>
+        <DCCReference Include="..\..\src\models\QuickNN.Models.QwenFlashNext.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>
@@ -449,6 +454,12 @@
                 </DeployFile>
                 <DeployFile LocalName="Win32\Debug\LLMUIChat.exe" Configuration="Debug" Class="ProjectOutput">
                     <Platform Name="Win32">
+                        <RemoteName>LLMUIChat.exe</RemoteName>
+                        <Overwrite>true</Overwrite>
+                    </Platform>
+                </DeployFile>
+                <DeployFile LocalName="Win64\Release\LLMUIChat.exe" Configuration="Release" Class="ProjectOutput">
+                    <Platform Name="Win64">
                         <RemoteName>LLMUIChat.exe</RemoteName>
                         <Overwrite>true</Overwrite>
                     </Platform>
@@ -1431,6 +1442,10 @@
         </BorlandProject>
         <ProjectFileVersion>12</ProjectFileVersion>
     </ProjectExtensions>
+    <ItemGroup/>
+    <ItemGroup/>
+    <ItemGroup/>
+    <ItemGroup/>
     <Import Project="$(BDS)\Bin\CodeGear.Delphi.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Delphi.Targets')"/>
     <Import Project="$(APPDATA)\Embarcadero\$(BDSAPPDATABASEDIR)\$(PRODUCTVERSION)\UserTools.proj" Condition="Exists('$(APPDATA)\Embarcadero\$(BDSAPPDATABASEDIR)\$(PRODUCTVERSION)\UserTools.proj')"/>
     <Import Project="$(MSBuildProjectName).deployproj" Condition="Exists('$(MSBuildProjectName).deployproj')"/>

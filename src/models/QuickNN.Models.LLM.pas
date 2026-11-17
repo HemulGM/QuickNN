@@ -7,7 +7,7 @@ interface
 uses
   System.SysUtils, QuickNN.Common, QuickNN.Vulkan, QuickNN.Models.Qwen3,
   QuickNN.Models.LLM.Types, QuickNN.Models.LLM.Text, QuickNN.Models.LLM.MoE,
-  QuickNN.Models.QwenHybrid;
+  QuickNN.Models.QwenHybrid, QuickNN.Models.Gemma2, QuickNN.Models.QwenFlashNext;
 
 type
   // A model/session is bound to its creating thread, like the resident context.
@@ -35,6 +35,8 @@ type
     FGenerating, FPlainTemplate, FRestoreWeightLimit: Boolean;
     FMoE: TLLMMoE;
     FHybrid: TQwenHybrid;
+    FGemma: TGemma2;
+    FFlashNext: TQwenFlashNext;
     FPreviousWeightLimit, FFixedWeightBytes: UInt64;
     function GetMemoryStatus: TLLMMemoryStatus;
     procedure PrepareMoEWeights;
@@ -79,7 +81,7 @@ implementation
 
 uses
   System.JSON, System.Classes, System.Hash, System.Diagnostics, System.IOUtils,
-  System.Math, QuickNN.Vulkan.Operations, QuickNN.SafeTensors;
+  System.Math, QuickNN.Vulkan.Operations, QuickNN.SafeTensors, QuickNN.Models.LLM.GGUF;
 
 const
   PREFILL_ROWS = 128;
@@ -95,7 +97,7 @@ var
   Config, Generation, HybridConfig: TJSONValue;
   Value, StopValue: TJSONValue;
   MaxPositions: Integer;
-  ModelType, CacheDirectory: string;
+  ModelType, CacheDirectory, GGUFFile: string;
   Tied: Boolean;
   Weight: PSafeTensor;
   SeenInitial: TArray<UInt32>;
@@ -131,12 +133,42 @@ begin
     QNNSetGPUWeightCacheLimit(Memory.GPUWeightLimitBytes);
     FRestoreWeightLimit := True;
   end;
-  Config := TJSONValue.ParseJSONValue(TFile.ReadAllText(TPath.Combine(ModelDirectory, 'config.json')));
+  GGUFFile := LLMGGUFCheckpoint(ModelDirectory);
+  if GGUFFile <> '' then
+  begin
+    var Metadata := TJSONObject.Create;
+    try
+      Config := LLMGGUFConfig(GGUFFile, Metadata);
+      try
+        FTokenizer := LLMGGUFTokenizer(Metadata);
+        var Template := Metadata.GetValue('tokenizer.chat_template');
+        FPlainTemplate := (Template <> nil) and not Template.Value.Contains('<think>');
+      except Config.Free; raise end;
+    finally Metadata.Free end;
+  end
+  else Config := TJSONValue.ParseJSONValue(TFile.ReadAllText(TPath.Combine(ModelDirectory, 'config.json')));
   if Config = nil then
     raise EArgumentException.Create('Invalid LLM config.json');
   try
     ModelType := Config.GetValue<string>('model_type', '');
-    if ModelType = 'qwen3_5' then
+    if ModelType = 'qwen4exp' then
+    begin
+      FCapacity := MaxContext;
+      FFlashNext := TQwenFlashNext.Create(FCtx,FModel,Config,MaxContext,Memory);
+      FKVCacheBytes := FFlashNext.CacheBytes;
+      AddStop(Config.FindValue('text_config').FindValue('eos_token_id'));
+    end
+    else if ModelType = 'gemma2' then
+    begin
+      FCapacity := MaxContext; FPlainTemplate := True;
+      FGemma := TGemma2.Create(FCtx, FModel, Config, MaxContext);
+      FKVCacheBytes := FGemma.CacheBytes;
+      AddStop(Config.FindValue('eos_token_id'));
+      var EndTurn := FTokenizer.GetId('<end_of_turn>');
+      if EndTurn < 0 then raise EArgumentException.Create('Missing Gemma end-of-turn token');
+      if not IsStop(EndTurn) then FStopIds := FStopIds + [EndTurn];
+    end
+    else if ModelType = 'qwen3_5' then
     begin
       FCapacity := MaxContext;
       HybridConfig := Config.FindValue('text_config');
@@ -225,7 +257,7 @@ begin
       StopValue := Config.FindValue('eos_token_id');
       AddStop(StopValue);
     end;
-    if TFile.Exists(TPath.Combine(ModelDirectory, 'generation_config.json')) then
+    if (GGUFFile = '') and TFile.Exists(TPath.Combine(ModelDirectory, 'generation_config.json')) then
     begin
       Generation :=
         TJSONValue.ParseJSONValue(TFile.ReadAllText(TPath.Combine(ModelDirectory, 'generation_config.json')));
@@ -242,7 +274,7 @@ begin
   end;
   if Length(FStopIds) = 0 then
     raise EArgumentException.Create('Missing LLM stop tokens');
-  if TFile.Exists(TPath.Combine(TokenizerDirectory, 'tokenizer_config.json')) then
+  if (GGUFFile = '') and TFile.Exists(TPath.Combine(TokenizerDirectory, 'tokenizer_config.json')) then
   begin
     Config := TJSONValue.ParseJSONValue(TFile.ReadAllText(TPath.Combine(TokenizerDirectory, 'tokenizer_config.json')));
     try
@@ -255,10 +287,15 @@ begin
       Config.Free;
     end;
   end;
-  FTokenizer := TQNNTokenizer.Load(TPath.Combine(TokenizerDirectory, 'tokenizer.json'));
+  if GGUFFile = '' then FTokenizer := TQNNTokenizer.Load(TPath.Combine(TokenizerDirectory, 'tokenizer.json'));
+  if (FHybrid <> nil) or (FFlashNext <> nil) then
+  begin
+    var EndOfText := FTokenizer.GetId('<|endoftext|>');
+    if (EndOfText >= 0) and not IsStop(EndOfText) then FStopIds := FStopIds + [EndOfText];
+  end;
   if FMoE <> nil then
     PrepareMoEWeights;
-  if FHybrid = nil then
+  if (FHybrid = nil) and (FGemma = nil) and (FFlashNext = nil) then
   begin
     SetLength(FCaches, Length(FModel.Layers));
     for var I := 0 to High(FCaches) do
@@ -287,6 +324,8 @@ begin
   FCtx.Free;
   FMoE.Free;
   FHybrid.Free;
+  FGemma.Free;
+  FFlashNext.Free;
   FOutputWeight.Free;
   if Length(FModel.SfFiles) <> 0 then
     FModel.Free;
@@ -311,6 +350,8 @@ begin
     FMoE.Status(Result);
   if FHybrid <> nil then
     FHybrid.Status(Result);
+  if FGemma <> nil then FGemma.Status(Result);
+  if FFlashNext <> nil then FFlashNext.Status(Result);
 end;
 
 procedure TQNNLLM.PrepareMoEWeights;
@@ -388,6 +429,8 @@ begin
     FMoE.CancelCheck := Probe;
   if FHybrid <> nil then
     FHybrid.CancelCheck := Probe;
+  if FGemma <> nil then FGemma.CancelCheck := Probe;
+  if FFlashNext <> nil then FFlashNext.CancelCheck := Probe;
 end;
 
 procedure TQNNLLM.ResetContext;
@@ -397,6 +440,7 @@ begin
   FCtx.Copy(FSeen, FSeenInitial, FModel.VocabSize);
   if FHybrid <> nil then
     FHybrid.Reset;
+  if FFlashNext <> nil then FFlashNext.Reset;
   FPosition := 0;
   FHistory := nil;
   FCheckpoint := Default(TLLMContinuationState);
@@ -437,9 +481,11 @@ begin
   for var Id in Ids do
     if (Id < 0) or (Id >= FModel.VocabSize) then
       raise EArgumentOutOfRangeException.Create('LLM token outside vocabulary');
-  if FHybrid <> nil then
+  if (FHybrid <> nil) or (FGemma <> nil) or (FFlashNext <> nil) then
   begin
-    FHybrid.forward(Ids, GPUIds, FLogits, FPosition);
+    if FFlashNext <> nil then FFlashNext.Forward(Ids, GPUIds, FLogits, FPosition)
+    else if FHybrid <> nil then FHybrid.forward(Ids, GPUIds, FLogits, FPosition)
+    else FGemma.Forward(Ids, GPUIds, FLogits, FPosition);
     SetLength(FHistory, FPosition + Rows);
     Move(Ids[0], FHistory[FPosition], Rows * SizeOf(LongInt));
     Inc(FPosition, Rows);
@@ -544,9 +590,15 @@ begin
           Y := FMoE.forward(FCtx, LayerWork, N, I, Rows)
         else
         begin
-          G := Project(N, Layer.Mlp.GateProjWeight, FModel.HiddenSize, FModel.IntermediateSize);
-          U := Project(N, Layer.Mlp.UpProjWeight, FModel.HiddenSize, FModel.IntermediateSize);
-          FCtx.Kernel(GO_SWIGLU, Rows * FModel.IntermediateSize, G, G, U, nil, [FModel.IntermediateSize, 0]);
+          G := LayerWork.New(Int64(Rows) * FModel.IntermediateSize);
+          if (Rows <> 1) or not FCtx.TrySwiGLUVector(G, N, Layer.Mlp.GateProjWeight, Layer.Mlp.UpProjWeight,
+            FModel.HiddenSize, FModel.IntermediateSize) then
+          begin
+            LayerWork.Release(G);
+            G := Project(N, Layer.Mlp.GateProjWeight, FModel.HiddenSize, FModel.IntermediateSize);
+            U := Project(N, Layer.Mlp.UpProjWeight, FModel.HiddenSize, FModel.IntermediateSize);
+            FCtx.Kernel(GO_SWIGLU, Rows * FModel.IntermediateSize, G, G, U, nil, [FModel.IntermediateSize, 0]);
+          end;
           Y := Project(G, Layer.Mlp.DownProjWeight, FModel.IntermediateSize, FModel.HiddenSize);
         end;
         LayerWork.Add(X, Y, Rows * FModel.HiddenSize);
@@ -615,7 +667,9 @@ end;
 
 function TQNNLLM.GetKVCacheIdentity: NativeUInt;
 begin
-  if FHybrid <> nil then
+  if FFlashNext <> nil then Result := FFlashNext.StateIdentity
+  else if FGemma <> nil then Result := FGemma.StateIdentity
+  else if FHybrid <> nil then
     Result := FHybrid.StateIdentity
   else if Length(FCaches) = 0 then
     Result := 0
@@ -642,7 +696,7 @@ begin
     and (State.PromptTokens = FCheckpoint.PromptTokens)
     and (State.GeneratedTokens = FCheckpoint.GeneratedTokens)
     and (Length(State.Tokens) = Length(FCheckpoint.Tokens));
-  if (FHybrid <> nil) and not FHybrid.StateValid then
+  if ((FHybrid <> nil) and not FHybrid.StateValid) or ((FFlashNext <> nil) and not FFlashNext.StateValid) then
     Result := False;
   if Result then
     Result := CompareMem(@State.Tokens[0], @FCheckpoint.Tokens[0], Length(State.Tokens) * SizeOf(LongInt));
@@ -668,10 +722,12 @@ begin
     Dec(Common);
   // Recurrent state describes the complete processed prefix. It cannot be
   // rewound by truncating the token/KV indices; rebuild on a changed prefix.
-  if (FHybrid <> nil) and ((Common <> FPosition) or not FHybrid.StateValid) then
+  if ((FHybrid <> nil) and ((Common <> FPosition) or not FHybrid.StateValid))
+    or ((FFlashNext <> nil) and ((Common <> FPosition) or not FFlashNext.StateValid)) then
   begin
     Common := 0;
-    FHybrid.Reset;
+    if FHybrid <> nil then FHybrid.Reset;
+    if FFlashNext <> nil then FFlashNext.Reset;
   end;
   Response.ReusedTokens := Common;
   FPosition := Common;
@@ -728,7 +784,7 @@ begin
   FirstAt := 0;
   LastAt := 0;
   Cancel := False;
-  if (FHybrid <> nil) and Options.EnableThinking and (InitialGenerated = 0) then
+  if ((FHybrid <> nil) or (FFlashNext <> nil)) and Options.EnableThinking and (InitialGenerated = 0) then
     Emit('<think>'#10);
   DecodeStartedAt := TStopwatch.GetTimeStamp;
   Budget := Options.MaxNewTokens;
@@ -841,7 +897,10 @@ end;
 
 function TQNNLLM.EncodeChat(const Messages: TLLMMessages; const EnableThinking: Boolean): TArray<LongInt>;
 begin
-  Result := LLMChatTokens(FTokenizer, Messages, EnableThinking, FPlainTemplate, FHybrid <> nil);
+  if FFlashNext <> nil then
+    for var Message in Messages do if Length(Message.Images)>0 then
+      raise ENotSupportedException.Create('This qwen4exp GGUF has no vision projector; use a separate image-analysis model');
+  Result := LLMChatTokens(FTokenizer, Messages, EnableThinking, FPlainTemplate, (FHybrid <> nil) or (FFlashNext <> nil));
 end;
 
 function TQNNLLM.PrepareChat(const Messages: TLLMMessages; const EnableThinking: Boolean): TArray<LongInt>;
@@ -929,6 +988,7 @@ begin
     except
       if FHybrid <> nil then
         FHybrid.Reset;
+      if FFlashNext <> nil then FFlashNext.Reset;
       FPosition := 0;
       FHistory := nil;
       FCheckpoint := Default(TLLMContinuationState);
@@ -988,6 +1048,7 @@ begin
     except
       if FHybrid <> nil then
         FHybrid.Reset;
+      if FFlashNext <> nil then FFlashNext.Reset;
       FPosition := 0;
       FHistory := nil;
       FCheckpoint := Default(TLLMContinuationState);

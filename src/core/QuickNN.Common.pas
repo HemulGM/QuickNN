@@ -127,7 +127,8 @@ type
   // todo link TMemoryBlock to IMemoryArena for allocations
 
   // Packed GGUF storage is separate from the logical element type/shape.
-  TQNNWeightEncoding = (weNative, weGGUFQ8_0, weGGUFQ4_K, weGGUFQ6_K);
+  TQNNWeightEncoding = (weNative, weGGUFQ8_0, weGGUFQ4_K, weGGUFQ6_K,
+    weGGUFQ3_K, weGGUFQ5_K, weGGUFIQ4_NL, weGGUFIQ3_S, weGGUFIQ4_XS, weGGUFQ2_K, weGGUFIQ2_XXS, weGGUFIQ2_S, weGGUFQ2_0, weGGUFIQ3_XXS);
 
   { TMemoryBlock }
   PMemoryBlock = ^TMemoryBlock;

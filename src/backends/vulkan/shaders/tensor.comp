@@ -1,4 +1,5 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
 // Pure Vulkan 1.0 tensor operations. Weights retain their native BF16 / INT8
 // storage. Workgroups own independent reductions/ConvRot groups.
 layout(local_size_x=256) in;
@@ -12,6 +13,7 @@ shared float rotation[1024];
 shared uint candidates[512];
 shared uint topIds[64];
 shared float topValues[64];
+#include "gguf.glsl"
 float av(uint i){return uintBitsToFloat(a[i]);}
 float bv(uint i){if(p.v8!=0u)return uintBitsToFloat(((b[i>>1u]>>((i&1u)*16u))&65535u)<<16u);return uintBitsToFloat(b[i]);}
 float cv(uint i){if(p.v9!=0u)return uintBitsToFloat(((c[i>>1u]>>((i&1u)*16u))&65535u)<<16u);return uintBitsToFloat(c[i]);}
@@ -21,8 +23,31 @@ float silu(float x){return x>=20.0?x:(x<=-20.0?0.0:x/(1.0+exp(-x)));}
 float gelu(float x){return 0.5*x*(1.0+tanh(0.7978845608028654*(x+0.044715*x*x*x)));}
 float geluExact(float x){float z=abs(x)*0.7071067811865475,t=1.0/(1.0+0.3275911*z);float e=1.0-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-0.284496736)*t+0.254829592)*t*exp(-z*z);return 0.5*x*(1.0+(x<0.0?-e:e));}
 float sumGroup(float x){uint lane=gl_LocalInvocationID.x;reduction[lane]=x;barrier();for(uint s=128u;s>0u;s>>=1u){if(lane<s)reduction[lane]+=reduction[lane+s];barrier();}float r=reduction[0];barrier();return r;}
+vec4 weightB4(uint i) {
+ if(p.v8!=0u){uint lo=b[i>>1u],hi=b[(i>>1u)+1u];return uintBitsToFloat(uvec4(lo<<16u,lo&0xffff0000u,hi<<16u,hi&0xffff0000u));}
+ return uintBitsToFloat(uvec4(b[i],b[i+1u],b[i+2u],b[i+3u]));
+}
+vec4 weightC4(uint i) {
+ if(p.v9!=0u){uint lo=c[i>>1u],hi=c[(i>>1u)+1u];return uintBitsToFloat(uvec4(lo<<16u,lo&0xffff0000u,hi<<16u,hi&0xffff0000u));}
+ return uintBitsToFloat(uvec4(c[i],c[i+1u],c[i+2u],c[i+3u]));
+}
 void main(){
- uint id=gl_GlobalInvocationID.x,lane=gl_LocalInvocationID.x,row=gl_WorkGroupID.x;
+ uint lane=gl_LocalInvocationID.x,row=gl_WorkGroupID.x+gl_WorkGroupID.y*gl_NumWorkGroups.x;
+ if(row>=p.unused0)return;
+ uint id=row*256u+lane;
+ if(p.op==66u){
+  uint outputRow=row*8u+lane/32u,ll=lane%32u;vec4 g=vec4(0.0),u=vec4(0.0);
+  if(outputRow<p.v1){
+   uint base=outputRow*p.v0;
+   if((p.v0&3u)==0u)for(uint j=ll*4u;j<p.v0;j+=128u){
+    vec4 x=vec4(av(j),av(j+1u),av(j+2u),av(j+3u));g+=x*weightB4(base+j);u+=x*weightC4(base+j);
+   }else for(uint j=ll;j<p.v0;j+=32u){g.x+=av(j)*bv(base+j);u.x+=av(j)*cv(base+j);}
+  }
+  reduction[lane]=(g.x+g.y)+(g.z+g.w);rotation[lane]=(u.x+u.y)+(u.z+u.w);barrier();
+  for(uint stride=16u;stride>0u;stride>>=1u){if(ll<stride){reduction[lane]+=reduction[lane+stride];rotation[lane]+=rotation[lane+stride];}barrier();}
+  if(ll==0u && outputRow<p.v1)put(outputRow,silu(reduction[lane])*rotation[lane]);return;
+ }
+
  if(p.op==1u){
   uint size=p.v0,base=row*size;
   for(uint j=lane;j<size;j+=256u)rotation[j]=av(base+j);barrier();
@@ -48,12 +73,15 @@ void main(){
  }
 
  // GroupNorm reduces contiguous CHW groups, then applies per-channel affine weights.
- if(p.op==30u){uint size=p.n/p.v0,base=row*size;float part=0.0;
+ if(p.op==30u||p.op==71u){uint size=p.n/p.v0,base=row*size;float part=0.0;
   for(uint j=lane;j<size;j+=256u)part+=av(base+j);
   float mean=sumGroup(part)/float(size);part=0.0;
   for(uint j=lane;j<size;j+=256u){float x=av(base+j)-mean;part+=x*x;}
   float inv=inversesqrt(sumGroup(part)/float(size)+uintBitsToFloat(p.v3));
-  for(uint j=lane;j<size;j+=256u){uint i=base+j,ch=i/p.v2;put(i,(av(i)-mean)*inv*bv(ch)+cv(ch));}return;
+  if(p.op==71u){uint channels=p.v1/p.v0;
+   for(uint j=lane;j<channels;j+=256u){uint ch=row*channels+j;
+    put(4u*ch,mean);put(4u*ch+1u,inv);put(4u*ch+2u,bv(ch));put(4u*ch+3u,cv(ch));}
+  }else for(uint j=lane;j<size;j+=256u){uint i=base+j,ch=i/p.v2;put(i,(av(i)-mean)*inv*bv(ch)+cv(ch));}return;
  }
 
  // Eight 32-lane rows per group: read four BF16 weights from two packed
@@ -170,8 +198,26 @@ void main(){
   return;
  }
  if(id>=p.n)return;
+ // FLUX.1 uses adjacent-pair RoPE with independently configurable axes.
+ if(p.op==73u){uint dim=p.v1,j=id%(dim/2u),hr=id/(dim/2u),r=hr/p.v0;
+  uint a0=p.v5,a1=p.v6,ad,localj;float pos;
+  if(j<a0/2u){ad=a0;localj=j;pos=0.0;}
+  else if(j<(a0+a1)/2u){ad=a1;localj=j-a0/2u;pos=r<p.v2?0.0:float((r-p.v2)/p.v3);}
+  else{ad=dim-a0-a1;localj=j-(a0+a1)/2u;pos=r<p.v2?0.0:float((r-p.v2)%p.v3);}
+  float angle=pos*exp(-log(uintBitsToFloat(p.v4))*float(2u*localj)/float(ad));
+  uint off=hr*dim+2u*j;float x=av(off),y=av(off+1u);
+  put(off,x*cos(angle)-y*sin(angle));put(off+1u,x*sin(angle)+y*cos(angle));return;
+ }
+ if(p.op==74u){uint key=id%p.v0,query=id/p.v0%p.v0,head=id/(p.v0*p.v0);
+  int relative=int(key)-int(query);uint halfBuckets=p.v2/2u,exact=halfBuckets/2u,n=uint(abs(relative));
+  uint bucket=relative>0?halfBuckets:0u;
+  bucket+=n<exact?n:min(halfBuckets-1u,exact+uint(log(float(n)/float(exact))/log(float(p.v3)/float(exact))*float(halfBuckets-exact)));
+  put(id,bv(bucket*p.v1+head));return;
+ }
+ if(p.op==70u){uint ch=id/p.v6,pix=id%p.v6,y=pix/p.v7,x=pix%p.v7;
+  d[ch*p.v2+p.v5+y*p.v3+x]=a[ch*p.v0+p.v4+y*p.v1+x];return;}
  if(p.op==0u){put(id,uintBitsToFloat(p.v0));return;}
- if(p.op==3u){float x=av(id);put(id,p.v0==0u?silu(x):(p.v0==1u?gelu(x):geluExact(x)));return;}
+ if(p.op==3u){float x=av(id);put(id,p.v0==0u?silu(x):(p.v0==1u?gelu(x):(p.v0==3u?x/(1.0+exp(-1.702*x)):geluExact(x))));return;}
  if(p.op==4u){uint r=id/p.v0,j=id%p.v0;put(p.v3+r*p.v1+j,dv(p.v3+r*p.v1+j)+uintBitsToFloat(p.v2)*av(p.v4+id));return;}
  if(p.op==6u){uint dim=p.v0,r=id/dim,j=id%dim;put(id,dv(id)+tanh(bv(p.v2+(r<p.v1?4u*dim:0u)+j))*av(id));return;}
  if(p.op==7u){uint dim=p.v1,j=id%(dim/2u),hrow=id/(dim/2u),r=hrow/p.v0,axis=j<60u?j%3u:0u;float pos=float(b[axis*p.v2+r]);float angle=pos*exp(-log(uintBitsToFloat(p.v3))*float(2u*j)/float(dim));uint off=hrow*dim+j;float x=av(off),y=av(off+dim/2u);put(off,x*cos(angle)-y*sin(angle));put(off+dim/2u,x*sin(angle)+y*cos(angle));return;}
@@ -179,7 +225,7 @@ void main(){
   if(j<8u){axis=0u;localj=j;dim=16u;off=0u;}else if(j<36u){axis=1u;localj=j-8u;dim=56u;off=16u;}else{axis=2u;localj=j-36u;dim=56u;off=72u;}
   float angle=bv(r*3u+axis)*exp(-log(10000.0)*float(2u*localj)/float(dim));uint i=hrow*128u+off+2u*localj;float x=av(i),y=av(i+1u);put(i,x*cos(angle)-y*sin(angle));put(i+1u,x*sin(angle)+y*cos(angle));return;
  }
- if(p.op==9u){uint r=id/p.v0,j=id%p.v0;if(p.v1!=0u)put(id,silu(av(r*2u*p.v0+j))*av(r*2u*p.v0+p.v0+j));else put(id,silu(av(id))*bv(id));return;}
+ if(p.op==9u||p.op==75u){uint r=id/p.v0,j=id%p.v0;if(p.v1!=0u)put(id,silu(av(r*2u*p.v0+j))*av(r*2u*p.v0+p.v0+j));else put(id,(p.op==75u?gelu(av(id)):silu(av(id)))*bv(id));return;}
  if(p.op==10u){uint base=p.v0*p.v1*p.v2;
   if(id<base){uint r=id%p.v0,hd=id/p.v0,h=hd/p.v2,j=hd%p.v2;put(id,av((r*p.v1+h)*p.v2+j));}
   else{uint i=id-base,j=i%p.v2,r=(i/p.v2)%p.v0,h=i/(p.v0*p.v2);put(id,bv((r*p.v1+h)*p.v2+j));}return;
@@ -189,15 +235,21 @@ void main(){
  if(p.op==13u){float x=av(id);if(isnan(x)||isinf(x))atomicOr(d[0],1u);return;}
  if(p.op==14u){put(id,bv(id)+uintBitsToFloat(p.v0)*(av(id)-bv(id)));return;}
  if(p.op==15u){uint r=id/p.v0,j=id%p.v0,token=c[r],index=token*p.v0+j;float x;
-  if(p.v1==2u){int value=int((b[index>>2u]>>((index&3u)*8u))&255u);if(value>=128)value-=256;x=float(value)*uintBitsToFloat(b[((p.v2*p.v0+3u)>>2u)+token]);}
+  if(token>=p.v2){put(id,0.0);return;}
+  if(p.v1>=16u)x=readGGUF(index,p.v1-16u);
+  else if(p.v1==2u){int value=int((b[index>>2u]>>((index&3u)*8u))&255u);if(value>=128)value-=256;x=float(value)*uintBitsToFloat(b[((p.v2*p.v0+3u)>>2u)+token]);}
   else if(p.v1==1u)x=uintBitsToFloat(((b[index>>1u]>>((index&1u)*16u))&65535u)<<16u);else x=uintBitsToFloat(b[index]);put(id,x);return;
  }
  if(p.op==16u){uint token=id/1536u,f=id%1536u,block=token/4u,sub=token%4u,py=(block/(p.v1/2u)*2u+sub/2u)*16u,px=(block%(p.v1/2u)*2u+sub%2u)*16u;uint channel=f/512u,y=f/16u%16u,x=f%16u;uint pixel=a[(py+y)*(p.v1*16u)+px+x];put(id,float((pixel>>(channel*8u))&255u)/127.5-1.0);return;}
  if(p.op==17u){uint token=id/1152u,j=id%1152u,block=token/4u,sub=token%4u;float y=float(block/(p.v1/2u)*2u+sub/2u)*47.0/float(p.v0-1u),x=float(block%(p.v1/2u)*2u+sub%2u)*47.0/float(p.v1-1u);uint y0=uint(floor(y)),x0=uint(floor(x)),y1=min(y0+1u,47u),x1=min(x0+1u,47u);float fy=y-float(y0),fx=x-float(x0);float pos=(1.0-fy)*((1.0-fx)*bv((y0*48u+x0)*1152u+j)+fx*bv((y0*48u+x1)*1152u+j))+fy*((1.0-fx)*bv((y1*48u+x0)*1152u+j)+fx*bv((y1*48u+x1)*1152u+j));put(id,av(id)+pos);return;}
  if(p.op==18u){uint j=id%36u,hrow=id/36u,token=hrow/16u,block=token/4u,sub=token%4u,y=block/(p.v1/2u)*2u+sub/2u,x=block%(p.v1/2u)*2u+sub%2u;float angle=float(j<18u?y:x)*exp(-log(10000.0)*float(2u*(j%18u))/36.0);uint off=hrow*72u+j;float aa=av(off),bb=av(off+36u);put(off,aa*cos(angle)-bb*sin(angle));put(off+36u,aa*sin(angle)+bb*cos(angle));return;}
  if(p.op==19u){uint channel=id/p.v0,pixel=id%p.v0;put(id,float((a[pixel]>>(8u*channel))&255u)/127.5-1.0);return;}
- if(p.op==20u){uint inner=p.v2*p.v3*p.v3,r=id/inner,f=id%inner,channel=f/(p.v3*p.v3),ky=f/p.v3%p.v3,kx=f%p.v3,sp=p.v4+r;int y=int(sp/p.v5*p.v6+ky)-int(p.v7),x=int(sp%p.v5*p.v6+kx)-int(p.v7);float value=0.0;if(y>=0&&x>=0&&y<int(p.v0)&&x<int(p.v1))value=av(channel*p.v0*p.v1+uint(y)*p.v1+uint(x));put(id,value);return;}
- if(p.op==21u){uint r=id/p.v0,ch=id%p.v0;put(p.v3==2u?id:ch*p.v1+p.v2+r,av(id)+(p.v3!=0u?bv(ch):0.0));return;}
+ if(p.op==20u||p.op==72u){uint inner=p.v2*p.v3*p.v3,r=id/inner,f=id%inner,channel=f/(p.v3*p.v3),ky=f/p.v3%p.v3,kx=f%p.v3,sp=p.v4+r;int y=int(sp/p.v5*p.v6+ky)-int(p.v7),x=int(sp%p.v5*p.v6+kx)-int(p.v7);float value=0.0;if(y>=0&&x>=0&&y<int(p.v0)&&x<int(p.v1)){
+  value=av(channel*p.v0*p.v1+uint(y)*p.v1+uint(x));
+  if(p.op==72u)value=silu((value-bv(4u*channel))*bv(4u*channel+1u)*bv(4u*channel+2u)+bv(4u*channel+3u));
+ }put(id,value);return;}
+ if(p.op==21u){uint r=id/p.v0,ch=id%p.v0;uint dest=p.v3==2u?id:ch*p.v1+p.v2+r;
+ put(dest,av(id)+(p.v3!=0u?bv(ch):0.0)+(p.v4!=0u?dv(dest):0.0));return;}
  if(p.op==22u){uint ch=id/p.v0,pix=id%p.v0;put(id,av(pix*64u+ch)*cv(ch)+bv(ch));return;}
  if(p.op==23u){uint pix=id/64u,ch=id%64u;put(id,(av(ch*p.v0+pix)-bv(ch))/cv(ch));return;}
  if(p.op==24u){uint sp=p.v0*p.v1,os=4u*sp,ch=id/os,pix=id%os,y=pix/(p.v1*2u),x=pix%(p.v1*2u);put(id,av(ch*sp+y/2u*p.v1+x/2u));return;}
@@ -253,6 +305,7 @@ void main(){
   else pos=axis==0u?float(p.v4):(axis==1u?float(r/p.v2):(axis==2u?float(r%p.v2):0.0));
   float angle=pos*exp(-log(uintBitsToFloat(p.v6))*float(2u*localj)/float(ad));
   uint i=(p.v7*p.v0+hr)*dim+2u*j;float x=av(i),y=av(i+1u);put(i,x*cos(angle)-y*sin(angle));put(i+1u,x*sin(angle)+y*cos(angle));return;}
+ if(p.op==76u){float cap=uintBitsToFloat(p.v0);put(id,cap*tanh(clamp(av(id)/cap,-20.0,20.0)));return;}
  if(p.op==43u){put(id,av(id)*uintBitsToFloat(p.v0)+uintBitsToFloat(p.v1));return;}
 
 

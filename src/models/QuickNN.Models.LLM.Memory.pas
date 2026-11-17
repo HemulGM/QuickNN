@@ -3,7 +3,7 @@
 interface
 
 uses
-  System.SysUtils, System.Generics.Collections, QuickNN.Common,
+  System.SysUtils, System.Generics.Collections, QuickNN.Common, QuickNN.GGUF.Quantization,
   QuickNN.Models.LLM.Types;
 
 type
@@ -103,11 +103,12 @@ function TLLMHostWeightCache.KeyFor(const Weight: TMemoryBlock): string;
 var
   Bytes: UInt64;
 begin
-  Bytes := UInt64(Weight.Size) * UInt64(DATATYPE_BITS[Weight.DataType] div 8);
+  if Weight.Encoding <> weNative then Bytes := GGUFQuantBytes(Weight.Encoding, Weight.Size)
+  else Bytes := UInt64(Weight.Size) * UInt64(DATATYPE_BITS[Weight.DataType] div 8);
   Result :=
     IntToHex(NativeUInt(Pointer(Weight.WeightIdentity)), SizeOf(Pointer) * 2)
     + '/'
-    + IntToStr(Ord(Weight.DataType))
+    + IntToStr(Ord(Weight.DataType)) + ':' + IntToStr(Ord(Weight.Encoding))
     + '/'
     + UIntToStr(Bytes);
 end;
@@ -164,7 +165,8 @@ begin
   // Expert tensors are full matrices. Slices keep their original offset/cache key.
   if (FLimit = 0) or (Weight.Offset <> 0) then
     Exit(Weight);
-  Bytes := UInt64(Weight.Size) * UInt64(DATATYPE_BITS[Weight.DataType] div 8);
+  if Weight.Encoding <> weNative then Bytes := GGUFQuantBytes(Weight.Encoding, Weight.Size)
+  else Bytes := UInt64(Weight.Size) * UInt64(DATATYPE_BITS[Weight.DataType] div 8);
   if Bytes > FLimit then
     Exit(Weight);
   Key := KeyFor(Weight);
@@ -188,7 +190,14 @@ begin
       Source := PBF16(Weight)
     else
       Source := System.PSingle(Weight);
-    Entry.Memory := TMemoryBlock.Create(Weight.Shape, Weight.Name, Weight.DataType, Source);
+    if Weight.Encoding <> weNative then
+    begin
+      Entry.Memory := TMemoryBlock.Create([Int64(Bytes)], Weight.Name, dtU8, GGUFWeightPointer(Weight));
+      Entry.Memory.Shape := Copy(Weight.Shape);
+      Entry.Memory.Size := Weight.Size;
+      Entry.Memory.Encoding := Weight.Encoding;
+    end
+    else Entry.Memory := TMemoryBlock.Create(Weight.Shape, Weight.Name, Weight.DataType, Source);
     Entry.Memory.WeightIdentity := Weight.WeightIdentity;
     Entry.Key := Key;
     Entry.Bytes := Bytes;

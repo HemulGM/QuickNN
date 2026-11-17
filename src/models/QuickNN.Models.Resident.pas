@@ -26,7 +26,7 @@ function ZImageForwardGPU(const Ctx: TQNNGPUContext; var Model: TTransformerZI; 
 
 function VAEEncodeGPU(const Ctx: TQNNGPUContext; const Model: TVAE; const Pixels: TQNNGPUTensor; const Height, Width: Integer): TQNNGPUTensor;
 
-function VAEDecodeGPU(const Ctx: TQNNGPUContext; const Model: TVAE; const Latent: TQNNGPUTensor; const Height, Width: Integer): TQNNGPUTensor;
+function VAEDecodeGPU(const Ctx: TQNNGPUContext; const Model: TVAE; const Latent: TQNNGPUTensor; const Height, Width: Integer; const Tiled: Boolean = True): TQNNGPUTensor;
 
 function FluxSampleGPU(const Ctx: TQNNGPUContext; var Model: TTransformerFlux; const Noise: TQNNGPUTensor; const Height, Width: Integer; const Refs: TGPUImageRefs; const Positive, Negative: TQNNGPUTensor; const PositiveRows, NegativeRows: Integer; const Guidance: Single; const Schedule: TMemoryBlock; const Steps: Integer; const Progress: TProgressCallback = nil
 ): TQNNGPUTensor;
@@ -38,7 +38,7 @@ function UploadImageGPU(const Ctx: TQNNGPUContext; const Image: TQNNImage): TQNN
 implementation
 
 uses
-  System.SysUtils, System.Math, QuickNN.Vulkan.Operations;
+  System.SysUtils, System.Math, QuickNN.Quantization, QuickNN.Vulkan.Operations;
 
 {$I QuickNN.Models.Resident.Text.inc}
 {$I QuickNN.Models.Resident.Flux.inc}

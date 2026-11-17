@@ -42,6 +42,8 @@ type
     TemporalFactor: Integer;
     procedure Load(const Files: TSafeTensorFiles; const Index: Integer);
     function ForwardGPU(const Ctx: TQNNGPUContext; const Src: TQNNGPUTensor; var Height, Width: Integer): TQNNGPUTensor;
+    function ForwardTiledGPU(const Ctx: TQNNGPUContext; const Src: TQNNGPUTensor;
+      var Height, Width: Integer; const TileSize: Integer): TQNNGPUTensor;
     function forward(const Src: TMemoryBlock; var Height, Width: Integer): TMemoryBlock;
     procedure Free;
   end;
@@ -79,7 +81,7 @@ type
     constructor Create(const Checkpoint, ConfigPath: string; const Status: TQwen21Status = nil);
     destructor Destroy; override;
     function EncodeGPU(const Ctx: TQNNGPUContext; const Pixels: TQNNGPUTensor; const ImageHeight, ImageWidth: Integer): TQNNGPUTensor;
-    function DecodeGPU(const Ctx: TQNNGPUContext; const Latents: TQNNGPUTensor; const Height, Width: Integer): TQNNGPUTensor;
+    function DecodeGPU(const Ctx: TQNNGPUContext; const Latents: TQNNGPUTensor; const Height, Width: Integer; const TileSize: Integer = 128): TQNNGPUTensor;
     function Encode(const Image: TQNNImage): TMemoryBlock;
     function Decode(const Latents: TMemoryBlock; const Height, Width: Integer): TQNNImage;
   end;

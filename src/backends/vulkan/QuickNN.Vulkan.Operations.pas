@@ -36,6 +36,12 @@ type
     function SwiGLU(const Src: TQNNGPUTensor; const Gate, Up, Down: TMemoryBlock; const Rows, Hidden, Intermediate: Integer): TQNNGPUTensor;
     function Conv(const Src: TQNNGPUTensor; const Weight, Bias: TMemoryBlock; const H, W, InCh, OutCh, Kernel: Integer; const Stride: Integer = 1; const Padding: Integer = 1; const PadEnd: Boolean = False
 ): TQNNGPUTensor;
+    // Full-image GroupNorm statistics, tiled normalized im2col and projection.
+    // An optional accumulator permits residual output without a third full map.
+    function NormalizedConv(const Src: TQNNGPUTensor;
+      const NormWeight, NormBias, Weight, Bias: TMemoryBlock;
+      const H, W, InCh, OutCh, Groups: Integer; const Dst: TQNNGPUTensor = nil;
+      const TileRows: Integer = 1024): TQNNGPUTensor;
     function GroupNorm(const Src: TQNNGPUTensor; const Weight, Bias: TMemoryBlock; const Channels, Spatial, Groups: Integer; const Epsilon: Single = 1E-6
 ): TQNNGPUTensor;
     function Patch(const Src: TQNNGPUTensor; const H, W, Channels, PatchSize, Mode: Integer): TQNNGPUTensor;
@@ -253,6 +259,53 @@ begin
         Default(TMemoryBlock),
         [OutCh, Spatial, Start, Ord(Bias.IsAssigned)]
       );
+      Inc(Start, Count);
+    end;
+  finally
+    Work.Free;
+  end;
+end;
+
+function TGPUWorkspace.NormalizedConv(const Src: TQNNGPUTensor;
+  const NormWeight, NormBias, Weight, Bias: TMemoryBlock;
+  const H, W, InCh, OutCh, Groups: Integer; const Dst: TQNNGPUTensor;
+  const TileRows: Integer): TQNNGPUTensor;
+var
+  Work: TGPUWorkspace;
+  Stats, Col, Projected: TQNNGPUTensor;
+  Spatial, Inner, Start, Count: Integer;
+begin
+  if (H < 1) or (W < 1) or (InCh < 1) or (OutCh < 1)
+    or (Groups < 1) or (InCh mod Groups <> 0) or (TileRows < 1)
+    or (Int64(H) * W * Max(InCh, OutCh) > MaxInt) then
+    raise EArgumentException.Create('Invalid tiled VAE convolution');
+  if (Dst <> nil) and (Dst = Src) then
+    raise EArgumentException.Create('Tiled convolution cannot overwrite its input');
+  Spatial := H * W;
+  Inner := InCh * 9;
+  Work := TGPUWorkspace.Create(Ctx);
+  try
+    Stats := Work.New(InCh * 4);
+    Ctx.KernelWeights(GO_GROUP_NORM_STATS, InCh * Spatial, Stats, Src,
+      NormWeight, NormBias, [Groups, InCh, Spatial, QNNGPUFloatBits(1E-6)]);
+    if Dst = nil then Result := New(Int64(OutCh) * Spatial)
+    else
+    begin
+      if Dst.Count <> OutCh * Spatial then
+        raise EArgumentException.Create('Invalid tiled VAE residual span');
+      Result := Dst;
+    end;
+    Col := Work.New(Int64(Min(TileRows, Spatial)) * Inner);
+    Projected := Work.New(Int64(Min(TileRows, Spatial)) * OutCh);
+    Start := 0;
+    while Start < Spatial do
+    begin
+      Count := Min(TileRows, Spatial - Start);
+      Ctx.Kernel(GO_NORMALIZED_IM2COL, Count * Inner, Col, Src, Stats, nil,
+        [H, W, InCh, 3, Start, W, 1, 1]);
+      Ctx.Linear(Projected, Col, Weight, Default(TMemoryBlock), Default(TMemoryBlock), Count, Inner, OutCh);
+      Ctx.KernelWeights(GO_CONV_OUTPUT, Count * OutCh, Result, Projected, Bias,
+        Default(TMemoryBlock), [OutCh, Spatial, Start, Ord(Bias.IsAssigned), Ord(Dst <> nil)]);
       Inc(Start, Count);
     end;
   finally

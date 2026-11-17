@@ -32,6 +32,7 @@ type
     MemoryProperties: VkPhysicalDeviceMemoryProperties;
     DeviceProperties: VkPhysicalDeviceProperties;
     DeviceFeatures: VkPhysicalDeviceFeatures;
+    SupportsMemoryBudget: Boolean;
     QueueIndex: LongInt;
     QueuePropCount: LongWord;
     QueueProperties: TArray<VkQueueFamilyProperties>;
@@ -183,8 +184,12 @@ type
 
   protected
     VulkanDevice: TVulkanDevice;
+    FAllocations: TDictionary<VkDeviceMemory, TPair<Cardinal, UInt64>>;
+    FHeapCommitted: array[0..VK_MAX_MEMORY_HEAPS - 1] of UInt64;
     Device: VkDevice;
-    Queue: VkQueue;
+    Queue, TransferQueue: VkQueue;
+    TransferQueueIndex: Integer;
+    ComputeSubmitted: Boolean;
     CmdPool: VkCommandPool;
     Cmd: TVulkanCommand;
 
@@ -200,6 +205,7 @@ type
   public
     class var
       Instance: VkInstance;
+      MemoryProperties2: PFN_vkGetPhysicalDeviceMemoryProperties2KHR;
       VulkanDevices: TArray<TVulkanDevice>;
     constructor Create(const DeviceIndex: LongInt = 0; const QueuePriority: Single = 1.0);
     destructor Destroy; override;
@@ -208,6 +214,8 @@ type
         ): VkBuffer;
     function AllocMem(const Buffer: VkBuffer; const MemProperty: VkMemoryPropertyFlags = VK_MEMORY_PROPERTY_STORAGE; const Preferred: VkMemoryPropertyFlags = 0
         ): VkDeviceMemory;
+    // Returns device-local headroom after a driver-aware safety reserve.
+    function LocalMemoryHeadroom(out Budget, Usage, Reserve: UInt64): UInt64;
     function CreateStorageMemory(const Size: UInt64): TVulkanMemory;
     function CreateStagingMemory(const Size: UInt64; const HostCached: Boolean = False): TVulkanMemory;
     procedure FreeMemory(const Mem: TVulkanMemory);
@@ -225,6 +233,8 @@ type
         );
     procedure BeginCommadBuffer;
     procedure EndCommandBuffer;
+    procedure Submit(const WaitSemaphore: VkSemaphore = nil);
+    procedure WaitForCompletion;
     procedure Finish;
   end;
 
@@ -500,6 +510,9 @@ class procedure TVulkanCompute.CreateInstance(const AppName: AnsiString);
 var
   Info: VkInstanceCreateInfo;
   Application: VkApplicationInfo;
+  Extensions: TArray<VkExtensionProperties>;
+  Count: Cardinal;
+  PropertiesExtension: PAnsiChar;
 begin
   Instance := nil;
   Application := Default(VkApplicationInfo);
@@ -510,7 +523,24 @@ begin
   Info := Default(VkInstanceCreateInfo);
   Info.SType := VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
   Info.PApplicationInfo := @Application;
+  // Keep the Vulkan 1.0 baseline; load properties2 through its KHR extension.
+  Count := 0;
+  CheckVulkanResult(VkEnumerateInstanceExtensionProperties(nil, @Count, nil));
+  SetLength(Extensions, Count);
+  CheckVulkanResult(VkEnumerateInstanceExtensionProperties(nil, @Count, Pointer(Extensions)));
+  PropertiesExtension := VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME;
+  for var Extension in Extensions do
+    if AnsiString(PAnsiChar(@Extension.ExtensionName[0])) = AnsiString(PropertiesExtension) then
+    begin
+      Info.EnabledExtensionCount := 1;
+      Info.PpEnabledExtensionNames := @PropertiesExtension;
+      Break;
+    end;
   CheckVulkanResult(VkCreateInstance(@Info, nil, @Instance));
+  MemoryProperties2 := nil;
+  if Info.EnabledExtensionCount <> 0 then
+    MemoryProperties2 := PFN_vkGetPhysicalDeviceMemoryProperties2KHR(
+      VkGetInstanceProcAddr(Instance, 'vkGetPhysicalDeviceMemoryProperties2KHR'));
 end;
 
 class procedure TVulkanCompute.DestroyInstance;
@@ -530,7 +560,8 @@ class function TVulkanCompute.QueryPhysicalDevices(const Flags: VkQueueFlags): T
 var
   Pd: TArray<VkPhysicalDevice>;
   R: TArray<TVulkanDevice>;
-  DevCount: LongWord;
+  DevCount, ExtensionCount: LongWord;
+  Extensions: TArray<VkExtensionProperties>;
   I, J: Integer;
 begin
   DevCount := DeviceCount();
@@ -546,6 +577,13 @@ begin
     VkGetPhysicalDeviceProperties(Pd[I], @R[I].DeviceProperties);
     VkGetPhysicalDeviceFeatures(Pd[I], @R[I].DeviceFeatures);
     VkGetPhysicalDeviceMemoryProperties(Pd[I], @R[I].MemoryProperties);
+    ExtensionCount := 0;
+    CheckVulkanResult(VkEnumerateDeviceExtensionProperties(Pd[I], nil, @ExtensionCount, nil));
+    SetLength(Extensions, ExtensionCount);
+    CheckVulkanResult(VkEnumerateDeviceExtensionProperties(Pd[I], nil, @ExtensionCount, Pointer(Extensions)));
+    for var Extension in Extensions do
+      if AnsiString(PAnsiChar(@Extension.ExtensionName[0])) = VK_EXT_MEMORY_BUDGET_EXTENSION_NAME then
+        R[I].SupportsMemoryBudget := Assigned(MemoryProperties2);
     VkGetPhysicalDeviceQueueFamilyProperties(Pd[I], @R[I].QueuePropCount, nil);
     SetLength(R[I].QueueProperties, R[I].QueuePropCount);
     VkGetPhysicalDeviceQueueFamilyProperties(Pd[I], @R[I].QueuePropCount, Pointer(R[I].QueueProperties));
@@ -561,14 +599,18 @@ end;
 
 constructor TVulkanCompute.Create(const DeviceIndex: LongInt; const QueuePriority: Single);
 var
-  QueueInfo: VkDeviceQueueCreateInfo;
+  QueueInfo: array[0..1] of VkDeviceQueueCreateInfo;
+  Priorities: array[0..1] of Single;
+  QueueInfoCount: Integer;
   DeviceInfo: VkDeviceCreateInfo;
   PoolInfo: VkCommandPoolCreateInfo;
   AllocInfo: VkCommandBufferAllocateInfo;
   FenceInfo: VkFenceCreateInfo;
+  BudgetExtension: PAnsiChar;
   I: Integer;
 begin
   inherited Create;
+  FAllocations := TDictionary<VkDeviceMemory, TPair<Cardinal, UInt64>>.Create;
   if Instance = nil then
   begin
     CreateInstance(AnsiString(ExtractFileName(ParamStr(0))));
@@ -595,18 +637,49 @@ begin
   if I >= Length(VulkanDevices) then
     raise ERangeError.Create('Invalid Vulkan device index');
   VulkanDevice := VulkanDevices[I];
-  QueueInfo := Default(VkDeviceQueueCreateInfo);
-  QueueInfo.SType := VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-  QueueInfo.QueueFamilyIndex := VulkanDevice.QueueIndex;
-  QueueInfo.QueueCount := 1;
-  QueueInfo.PQueuePriorities := @QueuePriority;
-
+  // Prefer a DMA-only queue. A second compute-family queue is a portable
+  // fallback; devices exposing only one queue keep synchronous uploads.
+  TransferQueueIndex := -1;
+  for var Family := 0 to High(VulkanDevice.QueueProperties) do
+    if (VulkanDevice.QueueProperties[Family].QueueCount > 0)
+      and ((VulkanDevice.QueueProperties[Family].QueueFlags and LongWord(VK_QUEUE_TRANSFER_BIT)) <> 0)
+      and ((VulkanDevice.QueueProperties[Family].QueueFlags and
+        (LongWord(VK_QUEUE_COMPUTE_BIT) or LongWord(VK_QUEUE_GRAPHICS_BIT))) = 0) then
+    begin
+      TransferQueueIndex := Family;
+      Break;
+    end;
+  if (TransferQueueIndex < 0) and (VulkanDevice.QueueProperties[VulkanDevice.QueueIndex].QueueCount >= 2) then
+    TransferQueueIndex := VulkanDevice.QueueIndex;
+  Priorities[0] := QueuePriority; Priorities[1] := QueuePriority;
+  QueueInfo[0] := Default(VkDeviceQueueCreateInfo);
+  QueueInfo[0].SType := VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+  QueueInfo[0].QueueFamilyIndex := VulkanDevice.QueueIndex;
+  QueueInfo[0].QueueCount := 1;
+  QueueInfo[0].PQueuePriorities := @Priorities[0];
+  QueueInfoCount := 1;
+  if TransferQueueIndex = VulkanDevice.QueueIndex then
+    QueueInfo[0].QueueCount := 2
+  else if TransferQueueIndex >= 0 then
+  begin
+    QueueInfo[1] := QueueInfo[0];
+    QueueInfo[1].QueueFamilyIndex := TransferQueueIndex;
+    QueueInfoCount := 2;
+  end;
   DeviceInfo := Default(VkDeviceCreateInfo);
   DeviceInfo.SType := VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-  DeviceInfo.QueueCreateInfoCount := 1;
-  DeviceInfo.PQueueCreateInfos := @QueueInfo;
+  DeviceInfo.QueueCreateInfoCount := QueueInfoCount;
+  DeviceInfo.PQueueCreateInfos := @QueueInfo[0];
+  BudgetExtension := VK_EXT_MEMORY_BUDGET_EXTENSION_NAME;
+  if VulkanDevice.SupportsMemoryBudget then
+  begin
+    DeviceInfo.EnabledExtensionCount := 1;
+    DeviceInfo.PpEnabledExtensionNames := @BudgetExtension;
+  end;
   CheckVulkanResult(VkCreateDevice(VulkanDevice.PhysicalDevice, @DeviceInfo, nil, @Device));
   VkGetDeviceQueue(Device, VulkanDevice.QueueIndex, 0, @Queue);
+  if TransferQueueIndex >= 0 then
+    VkGetDeviceQueue(Device, TransferQueueIndex, Ord(TransferQueueIndex = VulkanDevice.QueueIndex), @TransferQueue);
 
   PoolInfo := Default(VkCommandPoolCreateInfo);
   PoolInfo.SType := VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -650,6 +723,7 @@ begin
       VkDestroyCommandPool(Device, CmdPool, nil);
     VkDestroyDevice(Device, nil);
   end;
+  FAllocations.Free;
   inherited;
 end;
 
@@ -682,12 +756,22 @@ end;
 function TVulkanCompute.CreateBuffer(const ByteSize: VkDeviceSize; const Usage: VkBufferUsageFlags): VkBuffer;
 var
   CreateInfo: VkBufferCreateInfo;
+  Families: array[0..1] of Cardinal;
 begin
   CreateInfo := Default(VkBufferCreateInfo);
   CreateInfo.SType := VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
   CreateInfo.Size := ByteSize;
   CreateInfo.Usage := Usage;
   CreateInfo.SharingMode := VK_SHARING_MODE_EXCLUSIVE;
+  if (TransferQueueIndex >= 0) and (TransferQueueIndex <> VulkanDevice.QueueIndex) then
+  begin
+    // Both queues access immutable weight buffers. Concurrent sharing avoids
+    // ownership transfers; semaphore waits provide the memory dependency.
+    Families[0] := VulkanDevice.QueueIndex; Families[1] := TransferQueueIndex;
+    CreateInfo.SharingMode := VK_SHARING_MODE_CONCURRENT;
+    CreateInfo.QueueFamilyIndexCount := 2;
+    CreateInfo.PQueueFamilyIndices := @Families[0];
+  end;
   CheckVulkanResult(VkCreateBuffer(Device, @CreateInfo, nil, @Result))
 end;
 
@@ -710,10 +794,44 @@ begin
   end;
   try
     CheckVulkanResult(VkBindBufferMemory(Device, Buffer, Result, 0));
+    var Heap := VulkanDevice.MemoryProperties.MemoryTypes[MemInfo.MemoryTypeIndex].HeapIndex;
+    FAllocations.Add(Result, TPair<Cardinal, UInt64>.Create(Heap, MemReq.Size));
+    Inc(FHeapCommitted[Heap], MemReq.Size);
   except
     VkFreeMemory(Device, Result, nil);
     raise;
   end;
+end;
+
+function TVulkanCompute.LocalMemoryHeadroom(out Budget, Usage, Reserve: UInt64): UInt64;
+var
+  Properties: VkPhysicalDeviceMemoryProperties2;
+  DriverBudget: VkPhysicalDeviceMemoryBudgetPropertiesEXT;
+  Heap: Cardinal;
+begin
+  // Storage buffers select the first compatible device-local memory type.
+  Heap := VulkanDevice.MemoryProperties.MemoryTypes[
+    VulkanDevice.GetMemoryIndex(High(Cardinal), LongWord(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))].HeapIndex;
+  Budget := VulkanDevice.MemoryProperties.MemoryHeaps[Heap].Size * 3 div 4;
+  Usage := FHeapCommitted[Heap];
+  if VulkanDevice.SupportsMemoryBudget then
+  begin
+    DriverBudget := Default(VkPhysicalDeviceMemoryBudgetPropertiesEXT);
+    DriverBudget.SType := VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT;
+    Properties := Default(VkPhysicalDeviceMemoryProperties2);
+    Properties.SType := VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2;
+    Properties.PNext := @DriverBudget;
+    MemoryProperties2(VulkanDevice.PhysicalDevice, @Properties);
+    if DriverBudget.HeapBudget[Heap] <> 0 then
+    begin
+      Budget := DriverBudget.HeapBudget[Heap];
+      // Driver usage can lag newly committed allocations.
+      Usage := Max(DriverBudget.HeapUsage[Heap], FHeapCommitted[Heap]);
+    end;
+  end;
+  Reserve := Min(Budget div 4, Max(UInt64(256) * 1024 * 1024, Budget div 16));
+  Result := Budget - Min(Budget, Usage);
+  Result := Result - Min(Result, Reserve);
 end;
 
 function TVulkanCompute.CreateStorageMemory(const Size: UInt64): TVulkanMemory;
@@ -748,7 +866,14 @@ begin
 end;
 
 procedure TVulkanCompute.FreeMemory(const Mem: TVulkanMemory);
+var
+  Allocation: TPair<Cardinal, UInt64>;
 begin
+  if (Mem.Memory <> nil) and FAllocations.TryGetValue(Mem.Memory, Allocation) then
+  begin
+    Dec(FHeapCommitted[Allocation.Key], Allocation.Value);
+    FAllocations.Remove(Mem.Memory);
+  end;
   if Mem.Buffer <> nil then
     VkDestroyBuffer(Device, Mem.Buffer, nil);
   if Mem.Memory <> nil then
@@ -1087,6 +1212,8 @@ var
 begin
   if CommandBufferStarted then
     Exit;
+  if ComputeSubmitted then
+    raise EInvalidOp.Create('Cannot reset a submitted Vulkan command buffer');
   CheckVulkanResult(VkResetCommandBuffer(Cmd.Buffers[0], 0));
   Info := Default(VkCommandBufferBeginInfo);
   Info.SType := VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -1102,21 +1229,40 @@ begin
   CommandBufferStarted := False
 end;
 
-procedure TVulkanCompute.Finish;
+procedure TVulkanCompute.Submit(const WaitSemaphore: VkSemaphore);
 var
   SubmitInfo: VkSubmitInfo;
+  WaitStage: VkPipelineStageFlags;
 begin
+  if CommandBufferStarted or ComputeSubmitted then
+    raise EInvalidOp.Create('Invalid Vulkan compute submission state');
   SubmitInfo := Default(VkSubmitInfo);
   SubmitInfo.SType := VK_STRUCTURE_TYPE_SUBMIT_INFO;
   SubmitInfo.CommandBufferCount := 1;
   SubmitInfo.PCommandBuffers := @Cmd.Buffers[0];
+  WaitStage := LongWord(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT) or LongWord(VK_PIPELINE_STAGE_TRANSFER_BIT);
+  if WaitSemaphore <> nil then
+  begin
+    SubmitInfo.WaitSemaphoreCount := 1;
+    SubmitInfo.PWaitSemaphores := @WaitSemaphore;
+    SubmitInfo.PWaitDstStageMask := @WaitStage;
+  end;
   CheckVulkanResult(VkResetFences(Device, 1, @Cmd.Fences[0]));
   CheckVulkanResult(VkQueueSubmit(Queue, 1, @SubmitInfo, Cmd.Fences[0]));
-  CheckVulkanResult(VkWaitForFences(Device, 1, @Cmd.Fences[0], VK_TRUE, UInt64.MaxValue));
+  ComputeSubmitted := True;
+end;
 
-  // SAFE_CALL(vkQueueSubmit(queue, 1, @submitInfo, nil));
-  // SAFE_CALL(vkQueueWaitIdle(queue));
-  // SAFE_CALL(vkDeviceWaitIdle(device));
+procedure TVulkanCompute.WaitForCompletion;
+begin
+  if not ComputeSubmitted then Exit;
+  CheckVulkanResult(VkWaitForFences(Device, 1, @Cmd.Fences[0], VK_TRUE, UInt64.MaxValue));
+  ComputeSubmitted := False;
+end;
+
+procedure TVulkanCompute.Finish;
+begin
+  Submit;
+  WaitForCompletion;
 end;
 
 function CeilDiv(const M, N: LongWord): LongWord; inline;
